@@ -1,0 +1,10 @@
+[package]
+name = "justact-core"
+version = "0.1.0"
+edition.workspace = true
+authors = ["Tim Müller"]
+repository.workspace = true
+description = "Implements the core framework part of the JustAct framework. For more details, see the paper:"
+
+
+[dependencies]

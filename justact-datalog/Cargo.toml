@@ -1,0 +1,21 @@
+[package]
+name = "justact-datalog"
+version = "0.1.0"
+edition.workspace = true
+authors = ["Tim Müller"]
+repository.workspace = true
+description = "A simple Datalog^\\neg interpreter to support the language as discussed in the paper."
+
+
+[dependencies]
+ast-toolkit-punctuated = { git = "https://github.com/Lut99/ast-toolkit-rs" }
+ast-toolkit-span = { git = "https://github.com/Lut99/ast-toolkit-rs" }
+enum-debug = { git = "https://github.com/Lut99/enum-debug", features = ["derive"] }
+
+# justact-core = { path = "../justact-core" }
+
+
+[features]
+default = []
+
+interpreter = []
