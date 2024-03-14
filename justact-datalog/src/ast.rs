@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 16:43:37
 //  Last edited:
-//    13 Mar 2024, 17:59:19
+//    14 Mar 2024, 16:57:13
 //  Auto updated?
 //    Yes
 //
@@ -45,7 +45,7 @@ pub struct Rule<F, S> {
     /// A list of consequences (i.e., instances produced by this rule).
     pub consequences: Punctuated<Atom<F, S>, Comma<F, S>>,
     /// An optional second part that describes the antecedants.
-    pub antecedent: Option<RuleAntecedent<F, S>>,
+    pub tail: Option<RuleAntecedents<F, S>>,
     /// The closing dot after each rule.
     pub dot: Dot<F, S>,
 }
@@ -57,7 +57,7 @@ pub struct Rule<F, S> {
 /// :- foo, bar(baz)
 /// ```
 #[derive(Clone, Debug)]
-pub struct RuleAntecedent<F, S> {
+pub struct RuleAntecedents<F, S> {
     /// The arrow token.
     pub arrow_token: Arrow<F, S>,
     /// The list of antecedents.
@@ -79,7 +79,7 @@ pub enum Literal<F, S> {
     /// Non-negated atom.
     ///
     /// # Syntax
-    /// ```
+    /// ```plain
     /// foo
     /// foo(bar)
     /// ```
@@ -87,7 +87,7 @@ pub enum Literal<F, S> {
     /// Negated atom.
     ///
     /// # Syntax
-    /// ```
+    /// ```plain
     /// not foo
     /// ```
     NegAtom(NegAtom<F, S>),
