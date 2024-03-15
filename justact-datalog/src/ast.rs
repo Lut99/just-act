@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 16:43:37
 //  Last edited:
-//    14 Mar 2024, 16:57:13
+//    15 Mar 2024, 15:21:04
 //  Auto updated?
 //    Yes
 //
@@ -12,9 +12,103 @@
 //!   Defines the datalog-with-negation AST.
 //
 
+use std::hash::{Hash, Hasher};
+
 use ast_toolkit_punctuated::Punctuated;
-use ast_toolkit_span::Span;
+use ast_toolkit_span::{Span, Spannable};
 use enum_debug::EnumDebug;
+use paste::paste;
+
+
+/***** HELPER MACROS *****/
+/// Automatically implements `Eq`, `Hash` and `PartialEq` for the given fields in the given struct.
+macro_rules! impl_map {
+    ($for:ident, $($fields:ident),+) => {
+        impl<F, S> Eq for $for<F, S>
+        where
+            S: Spannable,
+            for<'s> S::Slice<'s>: Eq,
+        {}
+
+        impl<F, S> Hash for $for<F, S>
+        where
+            S: Spannable,
+            for<'s> S::Slice<'s>: Hash,
+        {
+            #[inline]
+            fn hash<H: Hasher>(&self, state: &mut H) {
+                $(
+                    self.$fields.hash(state);
+                )+
+            }
+        }
+
+        impl<F, S> PartialEq for $for<F, S>
+        where
+            S: Spannable,
+            for<'s> S::Slice<'s>: PartialEq,
+        {
+            #[inline]
+            fn eq(&self, other: &Self) -> bool {
+                $(
+                    self.$fields == other.$fields
+                )&&+
+            }
+        }
+    };
+}
+macro_rules! impl_enum_map {
+    ($for:ident, $($variants:ident($($fields:ident),+)),+) => {
+        impl<F, S> Eq for $for<F, S>
+        where
+            S: Spannable,
+            for<'s> S::Slice<'s>: Eq,
+        {}
+
+        impl<F, S> Hash for $for<F, S>
+        where
+            S: Spannable,
+            for<'s> S::Slice<'s>: Hash,
+        {
+            #[inline]
+            fn hash<H: Hasher>(&self, state: &mut H) {
+                match self {
+                    $(
+                        Self::$variants ( $($fields),+ ) => {
+                            stringify!($variants).hash(state);
+                            $($fields.hash(state);)+
+                        }
+                    ),+
+                }
+            }
+        }
+
+        paste! {
+            impl<F, S> PartialEq for $for<F, S>
+            where
+                S: Spannable,
+                for<'s> S::Slice<'s>: PartialEq,
+            {
+                #[inline]
+                fn eq(&self, other: &Self) -> bool {
+                    match (self, other) {
+                        $(
+                            (Self::$variants ( $([< $fields _lhs >]),+ ), Self::$variants ( $([< $fields _rhs >]),+ )) => {
+                                $([< $fields _lhs >] == [< $fields _rhs >])&&+
+                            }
+                        ),+
+
+                        // Any other variant is inequal by default
+                        (_, _) => false,
+                    }
+                }
+            }
+        }
+    };
+}
+
+
+
 
 
 /***** LIBRARY *****/
@@ -30,6 +124,7 @@ pub struct Spec<F, S> {
     /// The list of rules in this program.
     pub rules: Vec<Rule<F, S>>,
 }
+impl_map!(Spec, rules);
 
 
 
@@ -49,6 +144,7 @@ pub struct Rule<F, S> {
     /// The closing dot after each rule.
     pub dot: Dot<F, S>,
 }
+impl_map!(Rule, consequences, tail, dot);
 
 /// Defines the second half of the rule, if any.
 ///
@@ -63,6 +159,7 @@ pub struct RuleAntecedents<F, S> {
     /// The list of antecedents.
     pub antecedants: Punctuated<Literal<F, S>, Comma<F, S>>,
 }
+impl_map!(RuleAntecedents, arrow_token, antecedants);
 
 
 
@@ -92,6 +189,30 @@ pub enum Literal<F, S> {
     /// ```
     NegAtom(NegAtom<F, S>),
 }
+impl<F, S> Literal<F, S> {
+    /// Returns the atom that appears in all variants of the literal.
+    ///
+    /// # Returns
+    /// A reference to the [`Atom`] contained within.
+    pub fn atom(&self) -> &Atom<F, S> {
+        match self {
+            Self::Atom(a) => a,
+            Self::NegAtom(na) => &na.atom,
+        }
+    }
+
+    /// Returns the atom that appears in all variants of the literal.
+    ///
+    /// # Returns
+    /// A mutable reference to the [`Atom`] contained within.
+    pub fn atom_mut(&mut self) -> &mut Atom<F, S> {
+        match self {
+            Self::Atom(a) => a,
+            Self::NegAtom(na) => &mut na.atom,
+        }
+    }
+}
+impl_enum_map!(Literal, Atom(atom), NegAtom(atom));
 
 /// Wraps around an [`Atom`] to express its non-existance.
 ///
@@ -107,6 +228,7 @@ pub struct NegAtom<F, S> {
     /// The atom that was negated.
     pub atom:      Atom<F, S>,
 }
+impl_map!(NegAtom, not_token, atom);
 
 
 
@@ -124,6 +246,7 @@ pub struct Atom<F, S> {
     /// Any arguments.
     pub args:  Option<AtomArgs<F, S>>,
 }
+impl_map!(Atom, ident, args);
 
 /// Defines the (optional) arguments-part of the constructor application.
 ///
@@ -138,6 +261,7 @@ pub struct AtomArgs<F, S> {
     /// The arguments contained within.
     pub args: Punctuated<AtomArg<F, S>, Comma<F, S>>,
 }
+impl_map!(AtomArgs, paren_tokens, args);
 
 /// Represents an argument to an Atom, which is either a variable or a nested atom.
 ///
@@ -151,12 +275,13 @@ pub struct AtomArgs<F, S> {
 pub enum AtomArg<F, S> {
     /// It's a nested atom.
     ///
+    /// Note that $Datalog^\neg$ does not support full nesting, so only direct identifiers allowed.
+    ///
     /// # Syntax
     /// ```plain
     /// foo
-    /// foo(bar)
     /// ```
-    Atom(Atom<F, S>),
+    Atom(Ident<F, S>),
     /// It's a variable.
     ///
     /// # Syntax
@@ -165,6 +290,7 @@ pub enum AtomArg<F, S> {
     /// ```
     Var(Ident<F, S>),
 }
+impl_enum_map!(AtomArg, Atom(ident), Var(ident));
 
 /// Represents identifiers.
 ///
@@ -177,6 +303,7 @@ pub struct Ident<F, S> {
     /// The value of the identifier itself.
     pub value: Span<F, S>,
 }
+impl_map!(Ident, value);
 
 
 
@@ -191,6 +318,7 @@ pub struct Arrow<F, S> {
     /// The source of this arrow in the source.
     pub span: Span<F, S>,
 }
+impl_map!(Arrow, span);
 
 /// Defines a comma token.
 ///
@@ -203,6 +331,7 @@ pub struct Comma<F, S> {
     /// The source of this comma in the source.
     pub span: Span<F, S>,
 }
+impl_map!(Comma, span);
 
 /// Defines a dot token.
 ///
@@ -215,6 +344,7 @@ pub struct Dot<F, S> {
     /// The source of this dot in the source.
     pub span: Span<F, S>,
 }
+impl_map!(Dot, span);
 
 /// Defines a not token.
 ///
@@ -227,6 +357,7 @@ pub struct Not<F, S> {
     /// The source of this not in the source.
     pub span: Span<F, S>,
 }
+impl_map!(Not, span);
 
 /// Defines parenthesis.
 ///
@@ -241,3 +372,4 @@ pub struct Parens<F, S> {
     /// The closing-parenthesis.
     pub close: Span<F, S>,
 }
+impl_map!(Parens, open, close);

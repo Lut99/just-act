@@ -8,9 +8,11 @@ description = "A simple Datalog^\\neg interpreter to support the language as dis
 
 
 [dependencies]
-ast-toolkit-punctuated = { git = "https://github.com/Lut99/ast-toolkit-rs" }
-ast-toolkit-span = { git = "https://github.com/Lut99/ast-toolkit-rs" }
+ast-toolkit-punctuated = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack" }
+ast-toolkit-span = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack" }
 enum-debug = { git = "https://github.com/Lut99/enum-debug", features = ["derive"] }
+indexmap = "2.2"
+paste = "1.0"
 
 # justact-core = { path = "../justact-core" }
 
