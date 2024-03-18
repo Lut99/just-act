@@ -4,7 +4,7 @@
 //  Created:
 //    18 Mar 2024, 13:25:32
 //  Last edited:
-//    18 Mar 2024, 18:08:29
+//    18 Mar 2024, 18:13:42
 //  Auto updated?
 //    Yes
 //
@@ -280,9 +280,9 @@ pub fn datalog(input: TokenStream) -> TokenStream {
 
                             // Note it down as a variable if it starts with an uppercase
                             if sarg.chars().next().expect("Got empty antecedent argument identifier").is_uppercase() {
-                                quote_spanned! { arg.span() => #crate_path::ast::AtomArg::Var(#crate_path::ast::Ident { value: :#crate_path::ast::Span::new(#from_str, #sarg) }) }
+                                quote_spanned! { arg.span() => #crate_path::ast::AtomArg::Var(#crate_path::ast::Ident { value: #crate_path::ast::Span::new(#from_str, #sarg) }) }
                             } else {
-                                quote_spanned! { arg.span() => #crate_path::ast::AtomArg::Atom(#crate_path::ast::Ident { value: :#crate_path::ast::Span::new(#from_str, #sarg) }) }
+                                quote_spanned! { arg.span() => #crate_path::ast::AtomArg::Atom(#crate_path::ast::Ident { value: #crate_path::ast::Span::new(#from_str, #sarg) }) }
                             }
                         }).collect();
 

@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 17:54:05
 //  Last edited:
-//    18 Mar 2024, 18:09:46
+//    18 Mar 2024, 18:15:37
 //  Auto updated?
 //    Yes
 //
@@ -270,17 +270,7 @@ mod tests {
 
     #[test]
     fn test_find_herbert_universe() {
-        let rule: Spec<&str, &str> = datalog! {#![crate]};
-        let rule: Spec<&str, &str> = datalog! {#![crate]
-            foo.
-        };
-        let rule: Spec<&str, &str> = datalog! {#![crate]
-            foo(bar).
-        };
-        let rule: Spec<&str, &str> = datalog! {#![crate]
-            bar.
-            foo :- bar.
-        };
+        assert_eq!(find_herbert_universe(&datalog! { #![crate] foo. }), vec![Ident { value: Span::new("assertion", "foo") }]);
     }
 }
 
