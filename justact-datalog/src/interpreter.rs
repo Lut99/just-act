@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 17:54:05
 //  Last edited:
-//    18 Mar 2024, 11:48:44
+//    18 Mar 2024, 18:09:46
 //  Auto updated?
 //    Yes
 //
@@ -19,13 +19,13 @@ use crate::ast::{Atom, AtomArg, Comma, Ident, Literal, NegAtom, Rule, RuleAntece
 
 
 /***** TESTS *****/
-#[cfg(test)]
-pub mod tests {
+#[cfg(all(test, feature = "derive"))]
+mod tests {
     use ast_toolkit_punctuated::punct;
     use ast_toolkit_span::Span;
 
     use super::*;
-    use crate::ast::{Arrow, AtomArgs, Dot, Ident, Parens};
+    use crate::ast::{datalog, Arrow, AtomArgs, Dot, Ident, Parens};
 
     #[test]
     fn test_knowledge_base_iterator() {
@@ -267,6 +267,21 @@ pub mod tests {
         assert_eq!(iter.next(), Some(make_rule_two_var(&source, AtomArg::Atom(baz), AtomArg::Atom(baz))));
         assert_eq!(iter.next(), None);
     }
+
+    #[test]
+    fn test_find_herbert_universe() {
+        let rule: Spec<&str, &str> = datalog! {#![crate]};
+        let rule: Spec<&str, &str> = datalog! {#![crate]
+            foo.
+        };
+        let rule: Spec<&str, &str> = datalog! {#![crate]
+            foo(bar).
+        };
+        let rule: Spec<&str, &str> = datalog! {#![crate]
+            bar.
+            foo :- bar.
+        };
+    }
 }
 
 
@@ -364,6 +379,60 @@ fn replace_vars_in_rule<'i, 'r, 'f, 's>(
 
     // K done
     Rule { consequences, tail, dot: rule.dot.clone() }
+}
+
+
+
+/// Finds the Herbert base of a given [program](Spec).
+///
+/// Specifically, a Herbert universe are all "concrete" atoms in a program. Since $Datalog^\neg$ does not support nested, it sufficies for us to simply collect all identifiers.
+///
+/// # Arguments
+/// - `spec`: A [`Spec`] that denotes the program to find a Herbert universe of.
+///
+/// # Returns
+/// A [`Vec`] with all the found identifiers.
+fn find_herbert_universe<'f, 's>(spec: &'_ Spec<&'f str, &'s str>) -> Vec<Ident<&'f str, &'s str>> {
+    let mut idents: Vec<Ident<&'f str, &'s str>> = Vec::with_capacity(spec.rules.len());
+    for rule in &spec.rules {
+        // Fetch all identifiers from the rule's consequents
+        for con in rule.consequences.values() {
+            idents.push(con.ident);
+            for arg in con.args.iter().map(|a| a.args.values()).flatten() {
+                match arg {
+                    AtomArg::Atom(a) => idents.push(*a),
+                    AtomArg::Var(_) => continue,
+                }
+            }
+        }
+
+        // Fetch all identifiers from the rule's antecedents
+        for ant in rule.tail.iter().map(|t| t.antecedants.values()).flatten() {
+            match ant {
+                Literal::Atom(a) => {
+                    idents.push(a.ident);
+                    for arg in a.args.iter().map(|a| a.args.values()).flatten() {
+                        match arg {
+                            AtomArg::Atom(a) => idents.push(*a),
+                            AtomArg::Var(_) => continue,
+                        }
+                    }
+                },
+                Literal::NegAtom(a) => {
+                    idents.push(a.atom.ident);
+                    for arg in a.atom.args.iter().map(|a| a.args.values()).flatten() {
+                        match arg {
+                            AtomArg::Atom(a) => idents.push(*a),
+                            AtomArg::Var(_) => continue,
+                        }
+                    }
+                },
+            }
+        }
+    }
+
+    // OK cool
+    idents
 }
 
 
@@ -636,6 +705,11 @@ impl<'f, 's> Interpreter<'f, 's> {
     ///
     /// This updates the internal `knowledge_base`. You can manually inspect this.
     ///
+    /// # Algorithm
+    /// The interpreter relies on the _well-founded semantics_ to do derivation in a way that deals more intuitively with negate antecedents.
+    ///
+    /// Concretely, the well-founded semantics works
+    ///
     /// # Arguments
     /// - `spec`: The $Datalog^\neg$ [`Spec`]ification to evaluate.
     ///
@@ -649,6 +723,8 @@ impl<'f, 's> Interpreter<'f, 's> {
     /// assert!(int.holds("foo"));
     /// ```
     pub fn evaluate(&mut self, spec: &Spec<&'f str, &'s str>) {
+        //
+
         // Go thru the rules
         for rule in &spec.rules {
             // Consider all concrete instances based on variables

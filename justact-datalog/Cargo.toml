@@ -9,15 +9,21 @@ description = "A simple Datalog^\\neg interpreter to support the language as dis
 
 [dependencies]
 ast-toolkit-punctuated = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack" }
+# ast-toolkit-snack = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack", optional = true }
 ast-toolkit-span = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack" }
 enum-debug = { git = "https://github.com/Lut99/enum-debug", features = ["derive"] }
 indexmap = "2.2"
 paste = "1.0"
 
 # justact-core = { path = "../justact-core" }
+justact-datalog-derive = { path = "../derive/justact-datalog-derive", optional = true }
 
 
 [features]
 default = []
 
 interpreter = []
+# parser = ["dep:ast-toolkit-snack"]
+parser = []
+
+derive = ["dep:justact-datalog-derive"]

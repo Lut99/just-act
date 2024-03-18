@@ -1,11 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-    # Libraries that concretize it
-    "justact-datalog",
-
     # The main framework library
     "justact-core",
+
+    # Derive libs
+    "justact-datalog",
+    "derive/justact-datalog-derive",
 ]
 
 

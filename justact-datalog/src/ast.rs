@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 16:43:37
 //  Last edited:
-//    15 Mar 2024, 15:21:04
+//    18 Mar 2024, 17:52:39
 //  Auto updated?
 //    Yes
 //
@@ -14,9 +14,14 @@
 
 use std::hash::{Hash, Hasher};
 
+pub use ast_toolkit_punctuated::punct;
 use ast_toolkit_punctuated::Punctuated;
-use ast_toolkit_span::{Span, Spannable};
+pub use ast_toolkit_span::Span;
+use ast_toolkit_span::Spannable;
 use enum_debug::EnumDebug;
+// Re-export the derive macro
+#[cfg(feature = "derive")]
+pub use justact_datalog_derive::datalog;
 use paste::paste;
 
 
