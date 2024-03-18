@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 17:54:05
 //  Last edited:
-//    15 Mar 2024, 16:56:48
+//    18 Mar 2024, 10:31:09
 //  Auto updated?
 //    Yes
 //
@@ -23,10 +23,11 @@ use crate::ast::{Atom, AtomArg, Comma, Ident, Literal, NegAtom, Rule, RuleAntece
 /***** TESTS *****/
 #[cfg(test)]
 pub mod tests {
+    use ast_toolkit_punctuated::punct;
     use ast_toolkit_span::Span;
 
     use super::*;
-    use crate::ast::{AtomArgs, Ident, Parens};
+    use crate::ast::{Arrow, AtomArgs, Dot, Ident, Parens};
 
     #[test]
     fn test_knowledge_base_iterator() {
@@ -113,91 +114,159 @@ pub mod tests {
 
     #[test]
     fn test_rule_concretizer() {
-        let source: Span<&str, &str> = Span::new("test_knowledge_base_iterator::example", "foo. bar. baz. quz(X) :- X.");
-        let rule: Rule<&str, &str> = Rule {
-            consequences: []
+        /// Builds a rule with the given placeholder as argument.
+        ///
+        /// # Arguments
+        /// - `source`: The source to take slices from.
+        /// - `lhs`: The thing to put as `X` in `quz(X) :- foo(Y).`.
+        /// - `rhs`: The thing to put as `Y` in `quz(X) :- foo(Y).`.
+        ///
+        /// # Returns
+        /// A new [`Rule`] that is the AST of the rule above.
+        fn make_rule_one_var<'f, 's>(
+            source: &Span<&'f str, &'s str>,
+            lhs: AtomArg<&'f str, &'s str>,
+            rhs: AtomArg<&'f str, &'s str>,
+        ) -> Rule<&'f str, &'s str> {
+            Rule {
+                consequences: punct![ v => Atom {
+                    ident: Ident { value: source.slice(20..23) },
+                    args: Some(AtomArgs {
+                        paren_tokens: Parens { open: source.slice(23..24), close: source.slice(25..26) },
+                        args: punct![v => lhs]
+                    })
+                }],
+                tail: Some(RuleAntecedents {
+                    arrow_token: Arrow { span: source.slice(27..29) },
+                    antecedants: punct![ v => Literal::Atom(Atom {
+                        ident: Ident { value: source.slice(30..33) },
+                        args: Some(AtomArgs {
+                            paren_tokens: Parens { open: source.slice(33..34), close: source.slice(35..36) },
+                            args: punct![v => rhs]
+                        })
+                    })],
+                }),
+                dot: Dot { span: source.slice(36..37) },
+            }
+        }
+
+        /// Builds a rule with the given placeholder as argument.
+        ///
+        /// # Arguments
+        /// - `source`: The source to take slices from.
+        /// - `lhs`: The thing to put as `X` in `qux(X, Y) :- foo(X), quz(Y).`.
+        /// - `rhs`: The thing to put as `Y` in `qux(X, Y) :- foo(X), quz(Y).`.
+        ///
+        /// # Returns
+        /// A new [`Rule`] that is the AST of the rule above.
+        fn make_rule_two_var<'f, 's>(
+            source: &Span<&'f str, &'s str>,
+            lhs: AtomArg<&'f str, &'s str>,
+            rhs: AtomArg<&'f str, &'s str>,
+        ) -> Rule<&'f str, &'s str> {
+            Rule {
+                consequences: punct![ v => Atom {
+                    ident: Ident { value: source.slice(48..51) },
+                    args: Some(AtomArgs {
+                        paren_tokens: Parens { open: source.slice(51..52), close: source.slice(56..57) },
+                        args: punct![v => lhs.clone(), p => Comma { span: source.slice(53..54) }, v => rhs.clone()]
+                    })
+                }],
+                tail: Some(RuleAntecedents {
+                    arrow_token: Arrow { span: source.slice(58..60) },
+                    antecedants: punct![
+                        v => Literal::Atom(Atom {
+                            ident: Ident { value: source.slice(61..64) },
+                            args: Some(AtomArgs {
+                                paren_tokens: Parens { open: source.slice(64..65), close: source.slice(66..67) },
+                                args: punct![v => lhs]
+                            })
+                        }),
+                        p => Comma { span: source.slice(67..68) },
+                        v => Literal::Atom(Atom {
+                            ident: Ident { value: source.slice(69..70) },
+                            args: Some(AtomArgs {
+                                paren_tokens: Parens { open: source.slice(72..73), close: source.slice(74..75) },
+                                args: punct![v => rhs]
+                            })
+                        })
+                    ],
+                }),
+                dot: Dot { span: source.slice(75..76) },
+            }
         }
 
 
 
+        // Setup the source text and an AST "parsed" from it
+        let source: Span<&str, &str> =
+            Span::new("test_rule_concretizer::example", "bar. baz. foo(bar). foo(baz). quz(X) :- foo(X). qux(X, Y) :- foo(X), quz(Y).");
+
+        // The rule to concretize (`quz(X) :- foo(X)`)
+        let rule: Rule<&str, &str> =
+            make_rule_one_var(&source, AtomArg::Var(Ident { value: source.slice(34..35) }), AtomArg::Var(Ident { value: source.slice(44..45) }));
+
+
+
+        // Empty knowledge base test
         let kb: IndexSet<Atom<&str, &str>> = IndexSet::new();
-        assert_eq!(RuleConcretizer::new(&kb, 0).next(), None);
-        assert_eq!(RuleConcretizer::new(&kb, 1).next(), None);
-        assert_eq!(RuleConcretizer::new(&kb, 2).next(), None);
-        assert_eq!(RuleConcretizer::new(&kb, 3).next(), None);
-        assert_eq!(RuleConcretizer::new(&kb, 4).next(), None);
+        assert_eq!(RuleConcretizer::new(&rule, &kb).next(), None);
 
+        // Non-empty knowledge base test but no "elementary" atoms (i.e., no arguments)
+        let kb: IndexSet<Atom<&str, &str>> = IndexSet::from([
+            Atom {
+                ident: Ident { value: source.slice(10..13) },
+                args:  Some(AtomArgs {
+                    paren_tokens: Parens { open: source.slice(13..14), close: source.slice(17..18) },
+                    args: punct![v => AtomArg::Atom(Ident { value: source.slice(14..17) })],
+                }),
+            },
+            Atom {
+                ident: Ident { value: source.slice(20..23) },
+                args:  Some(AtomArgs {
+                    paren_tokens: Parens { open: source.slice(23..24), close: source.slice(27..28) },
+                    args: punct![v => AtomArg::Atom(Ident { value: source.slice(24..27) })],
+                }),
+            },
+        ]);
+        assert_eq!(RuleConcretizer::new(&rule, &kb).next(), None);
 
-
-        let source: Span<&str, &str> = Span::new("test_knowledge_base_iterator::example", "foo :- bar, baz, quz(qux).");
-        let foo: Ident<&str, &str> = Ident { value: source.slice(..3) };
-        let bar: Ident<&str, &str> = Ident { value: source.slice(7..10) };
-        let kb: IndexSet<Atom<&str, &str>> = IndexSet::from([Atom { ident: foo, args: None }, Atom { ident: bar, args: None }]);
-
-        let mut iter = KnowledgeBaseIterator::new(&kb, 0);
-        assert_eq!(iter.next(), None);
-
-        let mut iter = KnowledgeBaseIterator::new(&kb, 1);
-        assert_eq!(iter.next(), Some([&foo].as_slice()));
-        assert_eq!(iter.next(), Some([&bar].as_slice()));
-        assert_eq!(iter.next(), None);
-
-        let mut iter = KnowledgeBaseIterator::new(&kb, 2);
-        assert_eq!(iter.next(), Some([&foo, &foo].as_slice()));
-        assert_eq!(iter.next(), Some([&foo, &bar].as_slice()));
-        assert_eq!(iter.next(), Some([&bar, &foo].as_slice()));
-        assert_eq!(iter.next(), Some([&bar, &bar].as_slice()));
-        assert_eq!(iter.next(), None);
-
-        let mut iter = KnowledgeBaseIterator::new(&kb, 3);
-        assert_eq!(iter.next(), Some([&foo, &foo, &foo].as_slice()));
-        assert_eq!(iter.next(), Some([&foo, &foo, &bar].as_slice()));
-        assert_eq!(iter.next(), Some([&foo, &bar, &foo].as_slice()));
-        assert_eq!(iter.next(), Some([&foo, &bar, &bar].as_slice()));
-        assert_eq!(iter.next(), Some([&bar, &foo, &foo].as_slice()));
-        assert_eq!(iter.next(), Some([&bar, &foo, &bar].as_slice()));
-        assert_eq!(iter.next(), Some([&bar, &bar, &foo].as_slice()));
-        assert_eq!(iter.next(), Some([&bar, &bar, &bar].as_slice()));
-        assert_eq!(iter.next(), None);
-
-
-
-        let baz: Ident<&str, &str> = Ident { value: source.slice(12..15) };
-        let kb: IndexSet<Atom<&str, &str>> =
-            IndexSet::from([Atom { ident: foo, args: None }, Atom { ident: bar, args: None }, Atom { ident: baz, args: None }]);
-
-        let mut iter = KnowledgeBaseIterator::new(&kb, 2);
-        assert_eq!(iter.next(), Some([&foo, &foo].as_slice()));
-        assert_eq!(iter.next(), Some([&foo, &bar].as_slice()));
-        assert_eq!(iter.next(), Some([&foo, &baz].as_slice()));
-        assert_eq!(iter.next(), Some([&bar, &foo].as_slice()));
-        assert_eq!(iter.next(), Some([&bar, &bar].as_slice()));
-        assert_eq!(iter.next(), Some([&bar, &baz].as_slice()));
-        assert_eq!(iter.next(), Some([&baz, &foo].as_slice()));
-        assert_eq!(iter.next(), Some([&baz, &bar].as_slice()));
-        assert_eq!(iter.next(), Some([&baz, &baz].as_slice()));
+        // Non-empty knowledge base test
+        let bar: Ident<&str, &str> = Ident { value: source.slice(0..3) };
+        let baz: Ident<&str, &str> = Ident { value: source.slice(5..8) };
+        let kb: IndexSet<Atom<&str, &str>> = IndexSet::from([
+            Atom { ident: bar, args: None },
+            Atom { ident: baz, args: None },
+            Atom {
+                ident: Ident { value: source.slice(10..13) },
+                args:  Some(AtomArgs {
+                    paren_tokens: Parens { open: source.slice(13..14), close: source.slice(17..18) },
+                    args: punct![v => AtomArg::Atom(Ident { value: source.slice(14..17) })],
+                }),
+            },
+            Atom {
+                ident: Ident { value: source.slice(20..23) },
+                args:  Some(AtomArgs {
+                    paren_tokens: Parens { open: source.slice(23..24), close: source.slice(27..28) },
+                    args: punct![v => AtomArg::Atom(Ident { value: source.slice(24..27) })],
+                }),
+            },
+        ]);
+        let mut iter = RuleConcretizer::new(&rule, &kb);
+        assert_eq!(iter.next(), Some(make_rule_one_var(&source, AtomArg::Atom(bar), AtomArg::Atom(bar))));
+        assert_eq!(iter.next(), Some(make_rule_one_var(&source, AtomArg::Atom(baz), AtomArg::Atom(baz))));
         assert_eq!(iter.next(), None);
 
 
 
-        let mut args: Punctuated<AtomArg<&str, &str>, Comma<&str, &str>> = Punctuated::with_capacity(1);
-        args.push_first(AtomArg::Atom(Ident { value: source.slice(21..24) }));
-        let kb: IndexSet<Atom<&str, &str>> =
-            IndexSet::from([Atom { ident: foo, args: None }, Atom { ident: bar, args: None }, Atom { ident: baz, args: None }, Atom {
-                ident: Ident { value: source.slice(17..20) },
-                args:  Some(AtomArgs { paren_tokens: Parens { open: source.slice(20..21), close: source.slice(24..25) }, args }),
-            }]);
-
-        let mut iter = KnowledgeBaseIterator::new(&kb, 2);
-        assert_eq!(iter.next(), Some([&foo, &foo].as_slice()));
-        assert_eq!(iter.next(), Some([&foo, &bar].as_slice()));
-        assert_eq!(iter.next(), Some([&foo, &baz].as_slice()));
-        assert_eq!(iter.next(), Some([&bar, &foo].as_slice()));
-        assert_eq!(iter.next(), Some([&bar, &bar].as_slice()));
-        assert_eq!(iter.next(), Some([&bar, &baz].as_slice()));
-        assert_eq!(iter.next(), Some([&baz, &foo].as_slice()));
-        assert_eq!(iter.next(), Some([&baz, &bar].as_slice()));
-        assert_eq!(iter.next(), Some([&baz, &baz].as_slice()));
+        // Now with two vars
+        let rule: Rule<&str, &str> =
+            make_rule_two_var(&source, AtomArg::Var(Ident { value: source.slice(52..53) }), AtomArg::Var(Ident { value: source.slice(55..56) }));
+        let mut iter = RuleConcretizer::new(&rule, &kb);
+        assert_eq!(iter.next(), Some(make_rule_two_var(&source, AtomArg::Atom(bar), AtomArg::Atom(bar))));
+        assert_eq!(iter.next(), Some(make_rule_two_var(&source, AtomArg::Atom(bar), AtomArg::Atom(baz))));
+        assert_eq!(iter.next(), Some(make_rule_two_var(&source, AtomArg::Atom(baz), AtomArg::Atom(bar))));
+        assert_eq!(iter.next(), Some(make_rule_two_var(&source, AtomArg::Atom(baz), AtomArg::Atom(baz))));
         assert_eq!(iter.next(), None);
     }
 }
@@ -413,8 +482,14 @@ impl<'k, 'f, 's> KnowledgeBaseIterator<'k, 'f, 's> {
 
             // Alright collect the initial step
             for iter in &mut self.iters {
-                // SAFETY: We can call unwrap() because we asserted above the knowledge base is non-empty, and we know this one's only executed at first
-                self.res.push(iter.next().unwrap());
+                match iter.next() {
+                    Some(first) => self.res.push(first),
+                    // NOTE: This can happen if the knowledge base only contains atoms with arguments.
+                    None => {
+                        self.iters.clear();
+                        return None;
+                    },
+                }
             }
 
             // Cool, return this combination
