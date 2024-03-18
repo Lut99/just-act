@@ -4,15 +4,13 @@
 //  Created:
 //    13 Mar 2024, 17:54:05
 //  Last edited:
-//    18 Mar 2024, 10:31:09
+//    18 Mar 2024, 11:48:44
 //  Auto updated?
 //    Yes
 //
 //  Description:
 //!   Evaluates a given $Datalog^\neg$ AST.
 //
-
-// use std::collections::{IndexMap, IndexSet};
 
 use ast_toolkit_punctuated::Punctuated;
 use indexmap::{IndexMap, IndexSet};
