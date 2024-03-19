@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 17:54:05
 //  Last edited:
-//    19 Mar 2024, 11:45:02
+//    19 Mar 2024, 13:51:03
 //  Auto updated?
 //    Yes
 //
@@ -12,10 +12,9 @@
 //!   Evaluates a given $Datalog^\neg$ AST.
 //
 
-use std::borrow::Cow;
+use std::cmp::Ordering;
 
 use ast_toolkit_punctuated::Punctuated;
-use ast_toolkit_span::Span;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools as _;
 
@@ -274,7 +273,7 @@ mod tests {
 
     #[test]
     fn test_herbrand_base_iterator() {
-        fn make_atom(name: &'static str, args: Option<Vec<&'static str>>) -> Cow<'static, Atom<&'static str, &'static str>> {
+        fn make_atom(name: &'static str, args: Option<Vec<&'static str>>) -> Atom<&'static str, &'static str> {
             // Convert the arguments
             let puncs: Option<Punctuated<AtomArg<&'static str, &'static str>, Comma<&'static str, &'static str>>> = args.map(|args| {
                 let mut puncs: Punctuated<_, _> = Punctuated::new();
@@ -292,13 +291,13 @@ mod tests {
             });
 
             // Leggo
-            Cow::Owned(Atom {
+            Atom {
                 ident: Ident { value: Span::new("make_atom::ident", name) },
                 args:  puncs.map(|puncs| AtomArgs {
                     paren_tokens: Parens { open: Span::new("make_atom::parens::open", "("), close: Span::new("make_atom::parens::close", ")") },
                     args: puncs,
                 }),
-            })
+            }
         }
 
 
@@ -313,9 +312,9 @@ mod tests {
             foo. bar. baz.
         };
         let mut iter = HerbrandBaseIterator::new(&consts);
-        assert_eq!(iter.next(), Some(make_atom("foo", None)));
         assert_eq!(iter.next(), Some(make_atom("bar", None)));
         assert_eq!(iter.next(), Some(make_atom("baz", None)));
+        assert_eq!(iter.next(), Some(make_atom("foo", None)));
         assert_eq!(iter.next(), None);
 
         // Check functions
@@ -327,15 +326,83 @@ mod tests {
         assert_eq!(iter.next(), Some(make_atom("bar", None)));
         assert_eq!(iter.next(), Some(make_atom("baz", None)));
         assert_eq!(iter.next(), Some(make_atom("quz", None)));
-        assert_eq!(iter.next(), Some(make_atom("foo", Some(vec!["bar"]))));
-        assert_eq!(iter.next(), Some(make_atom("foo", Some(vec!["baz"]))));
-        assert_eq!(iter.next(), Some(make_atom("foo", Some(vec!["quz"]))));
         assert_eq!(iter.next(), Some(make_atom("bar", Some(vec!["bar"]))));
         assert_eq!(iter.next(), Some(make_atom("bar", Some(vec!["baz"]))));
         assert_eq!(iter.next(), Some(make_atom("bar", Some(vec!["quz"]))));
-        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["bar"]))));
-        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["baz"]))));
-        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["quz"]))));
+        assert_eq!(iter.next(), Some(make_atom("baz", Some(vec!["bar"]))));
+        assert_eq!(iter.next(), Some(make_atom("baz", Some(vec!["baz"]))));
+        assert_eq!(iter.next(), Some(make_atom("baz", Some(vec!["quz"]))));
+        assert_eq!(iter.next(), Some(make_atom("foo", Some(vec!["bar"]))));
+        assert_eq!(iter.next(), Some(make_atom("foo", Some(vec!["baz"]))));
+        assert_eq!(iter.next(), Some(make_atom("foo", Some(vec!["quz"]))));
+        assert_eq!(iter.next(), None);
+
+        // Multi-argument functions
+        let multi_funcs: Spec<&str, &str> = datalog! {
+            #![crate]
+            foo. bar. baz.
+            quz(foo, bar, baz).
+        };
+        let mut iter = HerbrandBaseIterator::new(&multi_funcs);
+        println!(
+            "{:?}",
+            HerbrandBaseIterator::new(&multi_funcs)
+                .map(|a| format!(
+                    "{}({})",
+                    a.ident.value.value(),
+                    a.args
+                        .iter()
+                        .map(|a| a.args.values())
+                        .flatten()
+                        .map(|v| if let AtomArg::Atom(a) = v { a.value.value().to_string() } else { panic!() })
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                ))
+                .collect::<Vec<String>>()
+                .join(". ")
+        );
+        assert_eq!(iter.next(), Some(make_atom("bar", None)));
+        assert_eq!(iter.next(), Some(make_atom("baz", None)));
+        assert_eq!(iter.next(), Some(make_atom("foo", None)));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["bar", "bar", "bar"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["bar", "bar", "baz"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["bar", "bar", "foo"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["bar", "baz", "bar"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["bar", "baz", "baz"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["bar", "baz", "foo"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["bar", "foo", "bar"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["bar", "foo", "baz"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["bar", "foo", "foo"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["baz", "bar", "bar"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["baz", "bar", "baz"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["baz", "bar", "foo"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["baz", "baz", "bar"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["baz", "baz", "baz"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["baz", "baz", "foo"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["baz", "foo", "bar"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["baz", "foo", "baz"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["baz", "foo", "foo"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["foo", "bar", "bar"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["foo", "bar", "baz"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["foo", "bar", "foo"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["foo", "baz", "bar"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["foo", "baz", "baz"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["foo", "baz", "foo"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["foo", "foo", "bar"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["foo", "foo", "baz"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["foo", "foo", "foo"]))));
+        assert_eq!(iter.next(), None);
+
+        // Alright now some complex rules
+        let rules: Spec<&str, &str> = datalog! {
+            #![crate]
+            foo. bar(foo).
+            baz(X) :- bar(X).
+        };
+        let mut iter = HerbrandBaseIterator::new(&rules);
+        assert_eq!(iter.next(), Some(make_atom("foo", None)));
+        assert_eq!(iter.next(), Some(make_atom("bar", Some(vec!["foo"]))));
+        assert_eq!(iter.next(), Some(make_atom("baz", Some(vec!["foo"]))));
         assert_eq!(iter.next(), None);
     }
 }
@@ -477,11 +544,11 @@ fn find_largest_unfounded_set<'a, 'f, 's>(
 /// - All constants (arity-0 functions) (e.g., `foo`, `bar`, ...)
 /// - All functions of found arity with all constants (e.g., `bar(foo)`, `bar(baz)`, `quz(foo, bar)`, ...)
 #[derive(Debug)]
-pub struct HerbrandBaseIterator<'p, 'f, 's> {
+pub struct HerbrandBaseIterator<'f, 's> {
     /// The list of atoms we found on construction and now just iterate over.
-    iter: std::vec::IntoIter<Cow<'p, Atom<&'f str, &'s str>>>,
+    iter: std::vec::IntoIter<Atom<&'f str, &'s str>>,
 }
-impl<'p, 'f, 's> HerbrandBaseIterator<'p, 'f, 's> {
+impl<'f, 's> HerbrandBaseIterator<'f, 's> {
     /// Constructor for the HerbrandBaseIterator that does all the work.
     ///
     /// # Arguments
@@ -489,10 +556,10 @@ impl<'p, 'f, 's> HerbrandBaseIterator<'p, 'f, 's> {
     ///
     /// # Returns
     /// A new HerbrandBaseIterator that will generate the base.
-    pub fn new(spec: &'p Spec<&'f str, &'s str>) -> Self {
+    pub fn new<'p>(spec: &'p Spec<&'f str, &'s str>) -> Self {
         // Organise all atoms in the spec into constants and functions
-        let mut constants: Vec<Cow<'p, Atom<&'f str, &'s str>>> = Vec::new();
-        let mut functions: Vec<&'p Atom<&'f str, &'s str>> = Vec::new();
+        let mut constants: Vec<&'p Ident<&'f str, &'s str>> = Vec::new();
+        let mut functions: Vec<(&'p Ident<&'f str, &'s str>, &'p Parens<&'f str, &'s str>, usize)> = Vec::new();
         for rule in &spec.rules {
             // Search the rule's consequences
             for cons in rule.consequences.values() {
@@ -500,13 +567,13 @@ impl<'p, 'f, 's> HerbrandBaseIterator<'p, 'f, 's> {
                 if let Some(args) = &cons.args {
                     for arg in args.args.values() {
                         match arg {
-                            AtomArg::Atom(ident) => constants.push(Cow::Owned(Atom { ident: *ident, args: None })),
+                            AtomArg::Atom(ident) => constants.push(ident),
                             AtomArg::Var(_) => continue,
                         }
                     }
-                    functions.push(cons);
+                    functions.push((&cons.ident, &args.paren_tokens, args.args.len()));
                 } else {
-                    constants.push(Cow::Borrowed(cons));
+                    constants.push(&cons.ident);
                 }
             }
 
@@ -517,41 +584,44 @@ impl<'p, 'f, 's> HerbrandBaseIterator<'p, 'f, 's> {
                     if let Some(args) = &ante.atom().args {
                         for arg in args.args.values() {
                             match arg {
-                                AtomArg::Atom(ident) => constants.push(Cow::Owned(Atom { ident: *ident, args: None })),
+                                AtomArg::Atom(ident) => constants.push(ident),
                                 AtomArg::Var(_) => continue,
                             }
                         }
-                        functions.push(ante.atom());
+                        functions.push((&ante.atom().ident, &args.paren_tokens, args.args.len()));
                     } else {
-                        constants.push(Cow::Borrowed(ante.atom()));
+                        constants.push(&ante.atom().ident);
                     }
                 }
             }
         }
 
+        // De-duplicate both lists
+        constants.sort_by(|lhs, rhs| -> Ordering { lhs.value.value().cmp(rhs.value.value()) });
+        constants.dedup_by(|lhs, rhs| -> bool { lhs.value.value() == rhs.value.value() });
+        functions.sort_by(|(lhs, _, _), (rhs, _, _)| -> Ordering { lhs.value.value().cmp(rhs.value.value()) });
+        functions.dedup_by(|(lhs, _, _), (rhs, _, _)| -> bool { lhs.value.value() == rhs.value.value() });
+
         // Now re-generate the functions into all possible combinations of them + constants
-        let mut herbrand_base: Vec<Cow<'p, Atom<&'f str, &'s str>>> = constants.clone();
+        // NOTE: The re-building of the atom below is quite cheap, because constants don't have argument vectors to clone
+        let mut herbrand_base: Vec<Atom<&'f str, &'s str>> = constants.iter().map(|i| Atom { ident: **i, args: None }).collect();
         herbrand_base.reserve(functions.len() * constants.len());
-        for func in functions {
+        for (func, parens, arity) in functions {
             // Iterate over the function's arity
-            let arity: usize = func.args.as_ref().map(|a| a.args.len()).unwrap_or(0);
-            for args in constants.iter().combinations(arity) {
+            for args in (0..arity).map(|_| constants.iter()).multi_cartesian_product() {
                 // Turn it into a punctuated list
                 let mut puncs: Punctuated<AtomArg<&'f str, &'s str>, Comma<&'f str, &'s str>> = Punctuated::new();
-                for (i, a) in args.into_iter().enumerate() {
+                for (i, ident) in args.into_iter().enumerate() {
                     if i == 0 {
-                        puncs.push_first(AtomArg::Atom(a.ident));
+                        puncs.push_first(AtomArg::Atom(**ident));
                     } else {
                         // Compute a span that covers the value
-                        puncs.push(Comma { span: a.span() }, AtomArg::Atom(a.ident));
+                        puncs.push(Comma { span: ident.value }, AtomArg::Atom(**ident));
                     }
                 }
 
                 // Build a new atom with it
-                herbrand_base.push(Cow::Owned(Atom {
-                    ident: func.ident,
-                    args:  Some(AtomArgs { paren_tokens: func.args.as_ref().unwrap().paren_tokens, args: puncs }),
-                }))
+                herbrand_base.push(Atom { ident: *func, args: Some(AtomArgs { paren_tokens: *parens, args: puncs }) })
             }
         }
 
@@ -559,8 +629,8 @@ impl<'p, 'f, 's> HerbrandBaseIterator<'p, 'f, 's> {
         Self { iter: herbrand_base.into_iter() }
     }
 }
-impl<'p, 'f, 's> Iterator for HerbrandBaseIterator<'p, 'f, 's> {
-    type Item = Cow<'p, Atom<&'f str, &'s str>>;
+impl<'f, 's> Iterator for HerbrandBaseIterator<'f, 's> {
+    type Item = Atom<&'f str, &'s str>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> { self.iter.next() }
