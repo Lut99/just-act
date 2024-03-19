@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 16:43:01
 //  Last edited:
-//    18 Mar 2024, 12:05:57
+//    19 Mar 2024, 17:06:52
 //  Auto updated?
 //    Yes
 //
@@ -19,3 +19,5 @@ pub mod ast;
 pub mod interpreter;
 #[cfg(feature = "parser")]
 pub mod parser;
+#[cfg(feature = "interpreter")]
+pub mod refhash;
