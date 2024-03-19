@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 16:43:37
 //  Last edited:
-//    18 Mar 2024, 17:52:39
+//    19 Mar 2024, 11:25:52
 //  Auto updated?
 //    Yes
 //
@@ -144,7 +144,7 @@ impl_map!(Spec, rules);
 pub struct Rule<F, S> {
     /// A list of consequences (i.e., instances produced by this rule).
     pub consequences: Punctuated<Atom<F, S>, Comma<F, S>>,
-    /// An optional second part that describes the antecedants.
+    /// An optional second part that describes the antecedents.
     pub tail: Option<RuleAntecedents<F, S>>,
     /// The closing dot after each rule.
     pub dot: Dot<F, S>,
@@ -162,13 +162,13 @@ pub struct RuleAntecedents<F, S> {
     /// The arrow token.
     pub arrow_token: Arrow<F, S>,
     /// The list of antecedents.
-    pub antecedants: Punctuated<Literal<F, S>, Comma<F, S>>,
+    pub antecedents: Punctuated<Literal<F, S>, Comma<F, S>>,
 }
-impl_map!(RuleAntecedents, arrow_token, antecedants);
+impl_map!(RuleAntecedents, arrow_token, antecedents);
 
 
 
-/// Represents a single antecedant, as it were.
+/// Represents a single antecedent, as it were.
 ///
 /// # Syntax
 /// ```plain
@@ -250,6 +250,18 @@ pub struct Atom<F, S> {
     pub ident: Ident<F, S>,
     /// Any arguments.
     pub args:  Option<AtomArgs<F, S>>,
+}
+impl<F: Clone, S: Clone + Spannable> Atom<F, S> {
+    /// Creates a new [`Span`] that covers the entire Atom.
+    ///
+    /// # Returns
+    /// A new [`Span`] that is this atom.
+    pub fn span(&self) -> Span<F, S> {
+        match &self.args {
+            Some(args) => self.ident.value.join(&args.paren_tokens.span()).unwrap_or_else(|| self.ident.value.clone()),
+            None => self.ident.value.clone(),
+        }
+    }
 }
 impl_map!(Atom, ident, args);
 
@@ -376,5 +388,13 @@ pub struct Parens<F, S> {
     pub open:  Span<F, S>,
     /// The closing-parenthesis.
     pub close: Span<F, S>,
+}
+impl<F: Clone, S: Clone + Spannable> Parens<F, S> {
+    /// Creates a new [`Span`] that covers the entire parentheses' range.
+    ///
+    /// # Returns
+    /// A new [`Span`] that wraps these parenthesis.
+    #[inline]
+    pub fn span(&self) -> Span<F, S> { self.open.join(&self.close).unwrap_or_else(|| self.open.clone()) }
 }
 impl_map!(Parens, open, close);

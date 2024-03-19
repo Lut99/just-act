@@ -4,7 +4,7 @@
 //  Created:
 //    18 Mar 2024, 13:25:32
 //  Last edited:
-//    18 Mar 2024, 18:13:42
+//    19 Mar 2024, 10:34:49
 //  Auto updated?
 //    Yes
 //
@@ -182,7 +182,7 @@ pub fn datalog(input: TokenStream) -> TokenStream {
         let from_str: &LitStr = &attrs.from;
         let mut rules: Vec<TokenStream2> = Vec::new();
         while !input.is_empty() {
-            let (consequences, antecedants, _): (
+            let (consequences, antecedents, _): (
                 Punctuated<(Ident, Option<(Paren, Punctuated<Ident, Comma>)>), Comma>,
                 Option<((Colon, Minus), Punctuated<(Option<Ident>, Ident, Option<(Paren, Punctuated<Ident, Comma>)>), Comma>)>,
                 Dot,
@@ -193,15 +193,15 @@ pub fn datalog(input: TokenStream) -> TokenStream {
                     return Err(input.error("Expected at least one consequent"));
                 }
 
-                // Parse the antecedants, if any
-                let antecedants = if let (Ok(colon), Ok(minus)) = (input.parse::<Colon>(), input.parse::<Minus>()) {
-                    // Parse a punctuated list of antecedants
-                    let antecedants: Punctuated<(Option<Ident>, Ident, Option<(Paren, Punctuated<Ident, Comma>)>), Comma> =
+                // Parse the antecedents, if any
+                let antecedents = if let (Ok(colon), Ok(minus)) = (input.parse::<Colon>(), input.parse::<Minus>()) {
+                    // Parse a punctuated list of antecedents
+                    let antecedents: Punctuated<(Option<Ident>, Ident, Option<(Paren, Punctuated<Ident, Comma>)>), Comma> =
                         parse_punctuated(input, parse_antecedent)?;
-                    if antecedants.is_empty() {
+                    if antecedents.is_empty() {
                         return Err(input.error("Expected at least one antecedent"));
                     }
-                    Some(((colon, minus), antecedants))
+                    Some(((colon, minus), antecedents))
                 } else {
                     None
                 };
@@ -210,7 +210,7 @@ pub fn datalog(input: TokenStream) -> TokenStream {
                 let dot: Dot = input.parse()?;
 
                 // Done parsing!
-                (consequences, antecedants, dot)
+                (consequences, antecedents, dot)
             };
 
             // Now we re-serialize. First, generate consequences
@@ -268,10 +268,10 @@ pub fn datalog(input: TokenStream) -> TokenStream {
             }
             let consequences_tokens: TokenStream2 = quote_spanned! { first_span => #crate_path::ast::punct![ #consequences_tokens_punct ] };
 
-            // Next, generate the antecedants
-            let antecedants_tokens: TokenStream2 = if let Some(((colon, _), antecedants)) = antecedants {
-                // Generate all the antecedants
-                let antecedants: Vec<TokenStream2> = antecedants.into_iter().map(|(not, name, args)| {
+            // Next, generate the antecedents
+            let antecedents_tokens: TokenStream2 = if let Some(((colon, _), antecedents)) = antecedents {
+                // Generate all the antecedents
+                let antecedents: Vec<TokenStream2> = antecedents.into_iter().map(|(not, name, args)| {
                     // Generate the arguments
                     let (paren_span, args_tokens): (Option<Span>, TokenStream2) = if let Some((paren, args)) = args {
                         // Generate the individual arguments
@@ -330,13 +330,13 @@ pub fn datalog(input: TokenStream) -> TokenStream {
                 }).collect();
 
                 // Serialize them to a single buffer
-                let mut antecedants_tokens: TokenStream2 = TokenStream2::new();
-                for (i, ant) in antecedants.into_iter().enumerate() {
+                let mut antecedents_tokens: TokenStream2 = TokenStream2::new();
+                for (i, ant) in antecedents.into_iter().enumerate() {
                     // Push the punctuation first
                     if i > 0 {
-                        antecedants_tokens.extend(quote_spanned! { ant.span() => , p => #crate_path::ast::Comma { span: #crate_path::ast::Span::new(#from_str, ",") } , });
+                        antecedents_tokens.extend(quote_spanned! { ant.span() => , p => #crate_path::ast::Comma { span: #crate_path::ast::Span::new(#from_str, ",") } , });
                     }
-                    antecedants_tokens.extend(quote_spanned!{ ant.span() => v => #ant });
+                    antecedents_tokens.extend(quote_spanned!{ ant.span() => v => #ant });
                 }
 
                 // Serialize them to a single RuleAntecedents
@@ -344,14 +344,14 @@ pub fn datalog(input: TokenStream) -> TokenStream {
                 //     colon.span.join(last_span).expect("Colon and last antecedent are from different files") =>
                 //     Some(#crate_path::ast::RuleAntecedents {
                 //         arrow_token: #crate_path::ast::Arrow { span: #crate_path::ast::Span::new(#from_str, ":-") },
-                //         antecedants: #crate_path::ast::punct![ #antecedants_tokens ],
+                //         antecedents: #crate_path::ast::punct![ #antecedents_tokens ],
                 //     })
                 // }
                 quote_spanned! {
                     colon.span =>
                     Some(#crate_path::ast::RuleAntecedents {
                         arrow_token: #crate_path::ast::Arrow { span: #crate_path::ast::Span::new(#from_str, ":-") },
-                        antecedants: #crate_path::ast::punct![ #antecedants_tokens ],
+                        antecedents: #crate_path::ast::punct![ #antecedents_tokens ],
                     })
                 }
             } else {
@@ -360,10 +360,10 @@ pub fn datalog(input: TokenStream) -> TokenStream {
 
             // Alright; now we can build the parsed versions
             // rules.push(quote_spanned! {
-            //     consequences_tokens.span().join(antecedants_tokens.span()).expect("Consequences and antecedants are from different files") =>
+            //     consequences_tokens.span().join(antecedents_tokens.span()).expect("Consequences and antecedents are from different files") =>
             //     #crate_path::ast::Rule {
             //         consequences: #consequences_tokens,
-            //         tail: #antecedants_tokens,
+            //         tail: #antecedents_tokens,
             //         dot: #crate_path::ast::Dot { span: #crate_path::ast::Span::new(#from_str, ".") },
             //     }
             // });
@@ -371,7 +371,7 @@ pub fn datalog(input: TokenStream) -> TokenStream {
                 consequences_tokens.span() =>
                 #crate_path::ast::Rule {
                     consequences: #consequences_tokens,
-                    tail: #antecedants_tokens,
+                    tail: #antecedents_tokens,
                     dot: #crate_path::ast::Dot { span: #crate_path::ast::Span::new(#from_str, ".") },
                 }
             });

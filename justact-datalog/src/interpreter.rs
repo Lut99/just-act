@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 17:54:05
 //  Last edited:
-//    18 Mar 2024, 18:15:37
+//    19 Mar 2024, 11:45:02
 //  Auto updated?
 //    Yes
 //
@@ -12,10 +12,14 @@
 //!   Evaluates a given $Datalog^\neg$ AST.
 //
 
-use ast_toolkit_punctuated::Punctuated;
-use indexmap::{IndexMap, IndexSet};
+use std::borrow::Cow;
 
-use crate::ast::{Atom, AtomArg, Comma, Ident, Literal, NegAtom, Rule, RuleAntecedents, Spec};
+use ast_toolkit_punctuated::Punctuated;
+use ast_toolkit_span::Span;
+use indexmap::{IndexMap, IndexSet};
+use itertools::Itertools as _;
+
+use crate::ast::{Atom, AtomArg, AtomArgs, Comma, Ident, Literal, NegAtom, Parens, Rule, RuleAntecedents, Spec};
 
 
 /***** TESTS *****/
@@ -136,7 +140,7 @@ mod tests {
                 }],
                 tail: Some(RuleAntecedents {
                     arrow_token: Arrow { span: source.slice(27..29) },
-                    antecedants: punct![ v => Literal::Atom(Atom {
+                    antecedents: punct![ v => Literal::Atom(Atom {
                         ident: Ident { value: source.slice(30..33) },
                         args: Some(AtomArgs {
                             paren_tokens: Parens { open: source.slice(33..34), close: source.slice(35..36) },
@@ -172,7 +176,7 @@ mod tests {
                 }],
                 tail: Some(RuleAntecedents {
                     arrow_token: Arrow { span: source.slice(58..60) },
-                    antecedants: punct![
+                    antecedents: punct![
                         v => Literal::Atom(Atom {
                             ident: Ident { value: source.slice(61..64) },
                             args: Some(AtomArgs {
@@ -269,8 +273,70 @@ mod tests {
     }
 
     #[test]
-    fn test_find_herbert_universe() {
-        assert_eq!(find_herbert_universe(&datalog! { #![crate] foo. }), vec![Ident { value: Span::new("assertion", "foo") }]);
+    fn test_herbrand_base_iterator() {
+        fn make_atom(name: &'static str, args: Option<Vec<&'static str>>) -> Cow<'static, Atom<&'static str, &'static str>> {
+            // Convert the arguments
+            let puncs: Option<Punctuated<AtomArg<&'static str, &'static str>, Comma<&'static str, &'static str>>> = args.map(|args| {
+                let mut puncs: Punctuated<_, _> = Punctuated::new();
+                for (i, a) in args.into_iter().enumerate() {
+                    if i == 0 {
+                        puncs.push_first(AtomArg::Atom(Ident { value: Span::new("make_atom::arg::ident", a) }));
+                    } else {
+                        puncs.push(
+                            Comma { span: Span::new("make_atom::arg::comma", ",") },
+                            AtomArg::Atom(Ident { value: Span::new("make_atom::arg::ident", a) }),
+                        );
+                    }
+                }
+                puncs
+            });
+
+            // Leggo
+            Cow::Owned(Atom {
+                ident: Ident { value: Span::new("make_atom::ident", name) },
+                args:  puncs.map(|puncs| AtomArgs {
+                    paren_tokens: Parens { open: Span::new("make_atom::parens::open", "("), close: Span::new("make_atom::parens::close", ")") },
+                    args: puncs,
+                }),
+            })
+        }
+
+
+
+        // Check some empty programs
+        let empty: Spec<&str, &str> = datalog! { #![crate] };
+        assert_eq!(HerbrandBaseIterator::new(&empty).next(), None);
+
+        // Check constants
+        let consts: Spec<&str, &str> = datalog! {
+            #![crate]
+            foo. bar. baz.
+        };
+        let mut iter = HerbrandBaseIterator::new(&consts);
+        assert_eq!(iter.next(), Some(make_atom("foo", None)));
+        assert_eq!(iter.next(), Some(make_atom("bar", None)));
+        assert_eq!(iter.next(), Some(make_atom("baz", None)));
+        assert_eq!(iter.next(), None);
+
+        // Check functions
+        let funcs: Spec<&str, &str> = datalog! {
+            #![crate]
+            foo(bar). bar(baz). baz(quz).
+        };
+        let mut iter = HerbrandBaseIterator::new(&funcs);
+        assert_eq!(iter.next(), Some(make_atom("bar", None)));
+        assert_eq!(iter.next(), Some(make_atom("baz", None)));
+        assert_eq!(iter.next(), Some(make_atom("quz", None)));
+        assert_eq!(iter.next(), Some(make_atom("foo", Some(vec!["bar"]))));
+        assert_eq!(iter.next(), Some(make_atom("foo", Some(vec!["baz"]))));
+        assert_eq!(iter.next(), Some(make_atom("foo", Some(vec!["quz"]))));
+        assert_eq!(iter.next(), Some(make_atom("bar", Some(vec!["bar"]))));
+        assert_eq!(iter.next(), Some(make_atom("bar", Some(vec!["baz"]))));
+        assert_eq!(iter.next(), Some(make_atom("bar", Some(vec!["quz"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["bar"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["baz"]))));
+        assert_eq!(iter.next(), Some(make_atom("quz", Some(vec!["quz"]))));
+        assert_eq!(iter.next(), None);
     }
 }
 
@@ -300,7 +366,7 @@ fn find_vars_in_rule<'r, 'f, 's>(rule: &'r Rule<&'f str, &'s str>) -> IndexSet<&
         }
     }
     // Add the antecedents
-    for ant in rule.tail.iter().map(|h| h.antecedants.values()).flatten() {
+    for ant in rule.tail.iter().map(|h| h.antecedents.values()).flatten() {
         match ant {
             Literal::Atom(atom) | Literal::NegAtom(NegAtom { atom, not_token: _ }) => {
                 for arg in atom.args.iter().map(|c| c.args.values()).flatten() {
@@ -348,9 +414,9 @@ fn replace_vars_in_rule<'i, 'r, 'f, 's>(
         }
     }
 
-    // Clone the antecedants
+    // Clone the antecedents
     let mut tail: Option<RuleAntecedents<&'f str, &'s str>> = rule.tail.clone();
-    for ante in tail.iter_mut().map(|t| t.antecedants.values_mut()).flatten() {
+    for ante in tail.iter_mut().map(|t| t.antecedents.values_mut()).flatten() {
         for arg in ante.atom_mut().args.iter_mut().map(|a| a.args.values_mut()).flatten() {
             let new_arg: Option<AtomArg<&'f str, &'s str>> = match arg {
                 AtomArg::Atom(_) => continue,
@@ -373,56 +439,31 @@ fn replace_vars_in_rule<'i, 'r, 'f, 's>(
 
 
 
-/// Finds the Herbert base of a given [program](Spec).
+/// Finds the largest possible unfounded set for the given specification.
 ///
-/// Specifically, a Herbert universe are all "concrete" atoms in a program. Since $Datalog^\neg$ does not support nested, it sufficies for us to simply collect all identifiers.
+/// An _unfounded set_ is a set of literals of which, for all rules that produce it, at least one of the following holds:
+/// 1. One of the rule's antecedents are false in the knowledge base; or
+/// 2. One of the rule's _positive_ antecedents occurs in the unfounded set.
+///
+/// An unfounded set therefore represents a set of facts that we _could_ try to assume we know something about, but which would yield us little additional deductions.
+///
+/// Luckily for us, unfounded sets are trivially composable by the union operator, so we can simply find sets of size 1 and join 'em all up.
 ///
 /// # Arguments
-/// - `spec`: A [`Spec`] that denotes the program to find a Herbert universe of.
+/// - `spec`: A [`Spec`] that denotes the program to find the largest unfounded set of.
+/// - `kb`: A knowledge base that we will use as partial interpretation to investigate rule 1 with.
 ///
 /// # Returns
-/// A [`Vec`] with all the found identifiers.
-fn find_herbert_universe<'f, 's>(spec: &'_ Spec<&'f str, &'s str>) -> Vec<Ident<&'f str, &'s str>> {
-    let mut idents: Vec<Ident<&'f str, &'s str>> = Vec::with_capacity(spec.rules.len());
-    for rule in &spec.rules {
-        // Fetch all identifiers from the rule's consequents
-        for con in rule.consequences.values() {
-            idents.push(con.ident);
-            for arg in con.args.iter().map(|a| a.args.values()).flatten() {
-                match arg {
-                    AtomArg::Atom(a) => idents.push(*a),
-                    AtomArg::Var(_) => continue,
-                }
-            }
-        }
+/// An [`IndexSet`] with the literals that are part of the largest unfounded set.
+fn find_largest_unfounded_set<'a, 'f, 's>(
+    spec: &'a Spec<&'f str, &'s str>,
+    kb: &'_ IndexMap<&'a Atom<&'f str, &'s str>, bool>,
+) -> IndexSet<&'a Atom<&'f str, &'s str>> {
+    let mut unfounded_set: IndexSet<&'a Literal<&'f str, &'s str>> = IndexSet::new();
+    // Iterate over all concrete rule instances
+    for rule in &spec.rules {}
 
-        // Fetch all identifiers from the rule's antecedents
-        for ant in rule.tail.iter().map(|t| t.antecedants.values()).flatten() {
-            match ant {
-                Literal::Atom(a) => {
-                    idents.push(a.ident);
-                    for arg in a.args.iter().map(|a| a.args.values()).flatten() {
-                        match arg {
-                            AtomArg::Atom(a) => idents.push(*a),
-                            AtomArg::Var(_) => continue,
-                        }
-                    }
-                },
-                Literal::NegAtom(a) => {
-                    idents.push(a.atom.ident);
-                    for arg in a.atom.args.iter().map(|a| a.args.values()).flatten() {
-                        match arg {
-                            AtomArg::Atom(a) => idents.push(*a),
-                            AtomArg::Var(_) => continue,
-                        }
-                    }
-                },
-            }
-        }
-    }
-
-    // OK cool
-    idents
+    todo!()
 }
 
 
@@ -430,6 +471,104 @@ fn find_herbert_universe<'f, 's>(spec: &'_ Spec<&'f str, &'s str>) -> Vec<Ident<
 
 
 /***** AUXILLARY *****/
+/// Given a [`Spec`], generates the full Herbrand Universe as we found it in it.
+///
+/// This means it essentially produces a list of all combinations of atoms in the spec that are suggested by it:
+/// - All constants (arity-0 functions) (e.g., `foo`, `bar`, ...)
+/// - All functions of found arity with all constants (e.g., `bar(foo)`, `bar(baz)`, `quz(foo, bar)`, ...)
+#[derive(Debug)]
+pub struct HerbrandBaseIterator<'p, 'f, 's> {
+    /// The list of atoms we found on construction and now just iterate over.
+    iter: std::vec::IntoIter<Cow<'p, Atom<&'f str, &'s str>>>,
+}
+impl<'p, 'f, 's> HerbrandBaseIterator<'p, 'f, 's> {
+    /// Constructor for the HerbrandBaseIterator that does all the work.
+    ///
+    /// # Arguments
+    /// - `spec`: The [`Spec`] to find the Herbrand Base of.
+    ///
+    /// # Returns
+    /// A new HerbrandBaseIterator that will generate the base.
+    pub fn new(spec: &'p Spec<&'f str, &'s str>) -> Self {
+        // Organise all atoms in the spec into constants and functions
+        let mut constants: Vec<Cow<'p, Atom<&'f str, &'s str>>> = Vec::new();
+        let mut functions: Vec<&'p Atom<&'f str, &'s str>> = Vec::new();
+        for rule in &spec.rules {
+            // Search the rule's consequences
+            for cons in rule.consequences.values() {
+                // If there are arguments, consider those too
+                if let Some(args) = &cons.args {
+                    for arg in args.args.values() {
+                        match arg {
+                            AtomArg::Atom(ident) => constants.push(Cow::Owned(Atom { ident: *ident, args: None })),
+                            AtomArg::Var(_) => continue,
+                        }
+                    }
+                    functions.push(cons);
+                } else {
+                    constants.push(Cow::Borrowed(cons));
+                }
+            }
+
+            // Next, search its antecedents
+            if let Some(tail) = &rule.tail {
+                for ante in tail.antecedents.values() {
+                    // If there are arguments, consider those too
+                    if let Some(args) = &ante.atom().args {
+                        for arg in args.args.values() {
+                            match arg {
+                                AtomArg::Atom(ident) => constants.push(Cow::Owned(Atom { ident: *ident, args: None })),
+                                AtomArg::Var(_) => continue,
+                            }
+                        }
+                        functions.push(ante.atom());
+                    } else {
+                        constants.push(Cow::Borrowed(ante.atom()));
+                    }
+                }
+            }
+        }
+
+        // Now re-generate the functions into all possible combinations of them + constants
+        let mut herbrand_base: Vec<Cow<'p, Atom<&'f str, &'s str>>> = constants.clone();
+        herbrand_base.reserve(functions.len() * constants.len());
+        for func in functions {
+            // Iterate over the function's arity
+            let arity: usize = func.args.as_ref().map(|a| a.args.len()).unwrap_or(0);
+            for args in constants.iter().combinations(arity) {
+                // Turn it into a punctuated list
+                let mut puncs: Punctuated<AtomArg<&'f str, &'s str>, Comma<&'f str, &'s str>> = Punctuated::new();
+                for (i, a) in args.into_iter().enumerate() {
+                    if i == 0 {
+                        puncs.push_first(AtomArg::Atom(a.ident));
+                    } else {
+                        // Compute a span that covers the value
+                        puncs.push(Comma { span: a.span() }, AtomArg::Atom(a.ident));
+                    }
+                }
+
+                // Build a new atom with it
+                herbrand_base.push(Cow::Owned(Atom {
+                    ident: func.ident,
+                    args:  Some(AtomArgs { paren_tokens: func.args.as_ref().unwrap().paren_tokens, args: puncs }),
+                }))
+            }
+        }
+
+        // Coolio, store that and ready for iteration!
+        Self { iter: herbrand_base.into_iter() }
+    }
+}
+impl<'p, 'f, 's> Iterator for HerbrandBaseIterator<'p, 'f, 's> {
+    type Item = Cow<'p, Atom<&'f str, &'s str>>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> { self.iter.next() }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) { self.iter.size_hint() }
+}
+
 /// Given a HashSet, generates only atoms that are flat (i.e., identifiers).
 ///
 /// Basically, changes
