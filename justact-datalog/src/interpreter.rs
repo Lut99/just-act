@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 17:54:05
 //  Last edited:
-//    19 Mar 2024, 17:48:14
+//    20 Mar 2024, 16:17:57
 //  Auto updated?
 //    Yes
 //
@@ -12,14 +12,16 @@
 //!   Evaluates a given $Datalog^\neg$ AST.
 //
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 
 use ast_toolkit_punctuated::Punctuated;
 use indexmap::IndexSet;
 use itertools::Itertools as _;
 
 use crate::ast::{Atom, AtomArg, AtomArgs, Comma, Ident, Literal, NegAtom, Not, Parens, Rule, Spec};
-use crate::refhash::RefHashMap;
+// use crate::refhash::RefHashMap;
 
 
 /***** TESTS *****/
@@ -31,9 +33,9 @@ mod tests {
     use crate::ast::{datalog, AtomArgs, Ident, Parens};
 
 
-    fn make_atom(name: &'static str, args: Option<Vec<&'static str>>) -> Atom<&'static str, &'static str> {
+    fn make_atom(name: &'static str, args: Option<Vec<&'static str>>) -> Atom {
         // Convert the arguments
-        let puncs: Option<Punctuated<AtomArg<&'static str, &'static str>, Comma<&'static str, &'static str>>> = args.map(|args| {
+        let puncs: Option<Punctuated<AtomArg, Comma>> = args.map(|args| {
             let mut puncs: Punctuated<_, _> = Punctuated::new();
             for (i, a) in args.into_iter().enumerate() {
                 if i == 0 {
@@ -62,18 +64,18 @@ mod tests {
     #[test]
     fn test_find_herbrand_base() {
         // Check some empty programs
-        let empty: Spec<&str, &str> = datalog! { #![crate] };
+        let empty: Spec = datalog! { #![crate] };
         assert_eq!(find_herbrand_base(&empty), vec![]);
 
         // Check constants
-        let consts: Spec<&str, &str> = datalog! {
+        let consts: Spec = datalog! {
             #![crate]
             foo. bar. baz.
         };
         assert_eq!(find_herbrand_base(&consts), vec![make_atom("bar", None), make_atom("baz", None), make_atom("foo", None)]);
 
         // Check functions
-        let funcs: Spec<&str, &str> = datalog! {
+        let funcs: Spec = datalog! {
             #![crate]
             foo(bar). bar(baz). baz(quz).
         };
@@ -93,7 +95,7 @@ mod tests {
         ]);
 
         // Multi-argument functions
-        let multi_funcs: Spec<&str, &str> = datalog! {
+        let multi_funcs: Spec = datalog! {
             #![crate]
             foo. bar. baz.
             quz(foo, bar, baz).
@@ -132,7 +134,7 @@ mod tests {
         ]);
 
         // Alright now some complex rules
-        let rules: Spec<&str, &str> = datalog! {
+        let rules: Spec = datalog! {
             #![crate]
             foo. bar(foo).
             baz(X) :- bar(X).
@@ -146,108 +148,187 @@ mod tests {
 
     #[test]
     fn test_find_largest_unfounded_set() {
-        fn make_literal(positive: bool, name: &'static str, args: Option<Vec<&'static str>>) -> Literal<&'static str, &'static str> {
+        fn make_literal(positive: bool, name: &'static str, args: Option<Vec<&'static str>>) -> Literal {
             if positive {
                 Literal::Atom(make_atom(name, args))
             } else {
                 Literal::NegAtom(NegAtom { not_token: Not { span: Span::new("make_literal::not", "not") }, atom: make_atom(name, args) })
             }
         }
+        fn print_unfounded_set_ordered(set: &HashSet<Literal>) -> String {
+            let mut set: Vec<String> = set
+                .iter()
+                .map(|v| {
+                    format!(
+                        "{}{}{}",
+                        if let Literal::NegAtom(_) = v { "not " } else { "" },
+                        v.atom().ident.value.value(),
+                        if let Some(args) = &v.atom().args {
+                            format!("({})", args.args.values().map(|i| i.ident().value.value()).collect::<Vec<&str>>().join(", "))
+                        } else {
+                            String::new()
+                        }
+                    )
+                })
+                .collect::<Vec<String>>();
+            set.sort();
+            set.join(", ")
+        }
 
 
         // Check some empty programs
-        let empty: Spec<&str, &str> = datalog! { #![crate] };
-        let kb: RefHashMap<Literal<&str, &str>, bool> = RefHashMap::new();
-        assert_eq!(find_largest_unfounded_set(&empty, &kb), RefHashMap::new());
+        let empty: Spec = datalog! { #![crate] };
+        let kb: HashMap<Cow<Literal>, bool> = HashMap::new();
+        assert_eq!(find_largest_unfounded_set(&empty, &kb), HashSet::new());
 
         // Check constants
-        let consts: Spec<&str, &str> = datalog! {
+        let consts: Spec = datalog! {
             #![crate]
             foo. bar. baz.
         };
-        let kb: RefHashMap<Literal<&str, &str>, bool> = RefHashMap::new();
+        let kb: HashMap<Cow<Literal>, bool> = HashMap::new();
         assert_eq!(
             find_largest_unfounded_set(&consts, &kb),
-            RefHashMap::from([
-                (make_literal(true, "bar", None), ()),
-                (make_literal(false, "bar", None), ()),
-                (make_literal(true, "baz", None), ()),
-                (make_literal(false, "baz", None), ()),
-                (make_literal(true, "foo", None), ()),
-                (make_literal(false, "foo", None), ())
-            ])
+            HashSet::from([make_literal(false, "bar", None), make_literal(false, "baz", None), make_literal(false, "foo", None)])
         );
 
         // Check functions
-        let funcs: Spec<&str, &str> = datalog! {
+        let funcs: Spec = datalog! {
             #![crate]
             foo(bar). bar(baz). baz(quz).
         };
-        assert_eq!(find_herbrand_base(&funcs), vec![
-            make_atom("bar", None),
-            make_atom("baz", None),
-            make_atom("quz", None),
-            make_atom("bar", Some(vec!["bar"])),
-            make_atom("bar", Some(vec!["baz"])),
-            make_atom("bar", Some(vec!["quz"])),
-            make_atom("baz", Some(vec!["bar"])),
-            make_atom("baz", Some(vec!["baz"])),
-            make_atom("baz", Some(vec!["quz"])),
-            make_atom("foo", Some(vec!["bar"])),
-            make_atom("foo", Some(vec!["baz"])),
-            make_atom("foo", Some(vec!["quz"]))
-        ]);
+        let kb: HashMap<Cow<Literal>, bool> = HashMap::new();
+        assert_eq!(
+            find_largest_unfounded_set(&funcs, &kb),
+            HashSet::from([
+                make_literal(true, "bar", None),
+                make_literal(false, "bar", None),
+                make_literal(true, "baz", None),
+                make_literal(false, "baz", None),
+                make_literal(true, "quz", None),
+                make_literal(false, "quz", None),
+                make_literal(false, "foo", Some(vec!["bar"])),
+                make_literal(true, "foo", Some(vec!["baz"])),
+                make_literal(false, "foo", Some(vec!["baz"])),
+                make_literal(true, "foo", Some(vec!["quz"])),
+                make_literal(false, "foo", Some(vec!["quz"])),
+                make_literal(true, "bar", Some(vec!["bar"])),
+                make_literal(false, "bar", Some(vec!["bar"])),
+                make_literal(false, "bar", Some(vec!["baz"])),
+                make_literal(true, "bar", Some(vec!["quz"])),
+                make_literal(false, "bar", Some(vec!["quz"])),
+                make_literal(true, "baz", Some(vec!["bar"])),
+                make_literal(false, "baz", Some(vec!["bar"])),
+                make_literal(true, "baz", Some(vec!["baz"])),
+                make_literal(false, "baz", Some(vec!["baz"])),
+                make_literal(false, "baz", Some(vec!["quz"])),
+            ])
+        );
 
         // Multi-argument functions
-        let multi_funcs: Spec<&str, &str> = datalog! {
+        let multi_funcs: Spec = datalog! {
             #![crate]
             foo. bar. baz.
             quz(foo, bar, baz).
         };
-        assert_eq!(find_herbrand_base(&multi_funcs), vec![
-            make_atom("bar", None),
-            make_atom("baz", None),
-            make_atom("foo", None),
-            make_atom("quz", Some(vec!["bar", "bar", "bar"])),
-            make_atom("quz", Some(vec!["bar", "bar", "baz"])),
-            make_atom("quz", Some(vec!["bar", "bar", "foo"])),
-            make_atom("quz", Some(vec!["bar", "baz", "bar"])),
-            make_atom("quz", Some(vec!["bar", "baz", "baz"])),
-            make_atom("quz", Some(vec!["bar", "baz", "foo"])),
-            make_atom("quz", Some(vec!["bar", "foo", "bar"])),
-            make_atom("quz", Some(vec!["bar", "foo", "baz"])),
-            make_atom("quz", Some(vec!["bar", "foo", "foo"])),
-            make_atom("quz", Some(vec!["baz", "bar", "bar"])),
-            make_atom("quz", Some(vec!["baz", "bar", "baz"])),
-            make_atom("quz", Some(vec!["baz", "bar", "foo"])),
-            make_atom("quz", Some(vec!["baz", "baz", "bar"])),
-            make_atom("quz", Some(vec!["baz", "baz", "baz"])),
-            make_atom("quz", Some(vec!["baz", "baz", "foo"])),
-            make_atom("quz", Some(vec!["baz", "foo", "bar"])),
-            make_atom("quz", Some(vec!["baz", "foo", "baz"])),
-            make_atom("quz", Some(vec!["baz", "foo", "foo"])),
-            make_atom("quz", Some(vec!["foo", "bar", "bar"])),
-            make_atom("quz", Some(vec!["foo", "bar", "baz"])),
-            make_atom("quz", Some(vec!["foo", "bar", "foo"])),
-            make_atom("quz", Some(vec!["foo", "baz", "bar"])),
-            make_atom("quz", Some(vec!["foo", "baz", "baz"])),
-            make_atom("quz", Some(vec!["foo", "baz", "foo"])),
-            make_atom("quz", Some(vec!["foo", "foo", "bar"])),
-            make_atom("quz", Some(vec!["foo", "foo", "baz"])),
-            make_atom("quz", Some(vec!["foo", "foo", "foo"]))
-        ]);
+        let kb: HashMap<Cow<Literal>, bool> = HashMap::new();
+        assert_eq!(
+            find_largest_unfounded_set(&multi_funcs, &kb),
+            HashSet::from([
+                make_literal(false, "bar", None),
+                make_literal(false, "baz", None),
+                make_literal(false, "foo", None),
+                make_literal(true, "quz", Some(vec!["bar", "bar", "bar"])),
+                make_literal(true, "quz", Some(vec!["bar", "bar", "baz"])),
+                make_literal(true, "quz", Some(vec!["bar", "bar", "foo"])),
+                make_literal(true, "quz", Some(vec!["bar", "baz", "bar"])),
+                make_literal(true, "quz", Some(vec!["bar", "baz", "baz"])),
+                make_literal(true, "quz", Some(vec!["bar", "baz", "foo"])),
+                make_literal(true, "quz", Some(vec!["bar", "foo", "bar"])),
+                make_literal(true, "quz", Some(vec!["bar", "foo", "baz"])),
+                make_literal(true, "quz", Some(vec!["bar", "foo", "foo"])),
+                make_literal(true, "quz", Some(vec!["baz", "bar", "bar"])),
+                make_literal(true, "quz", Some(vec!["baz", "bar", "baz"])),
+                make_literal(true, "quz", Some(vec!["baz", "bar", "foo"])),
+                make_literal(true, "quz", Some(vec!["baz", "baz", "bar"])),
+                make_literal(true, "quz", Some(vec!["baz", "baz", "baz"])),
+                make_literal(true, "quz", Some(vec!["baz", "baz", "foo"])),
+                make_literal(true, "quz", Some(vec!["baz", "foo", "bar"])),
+                make_literal(true, "quz", Some(vec!["baz", "foo", "baz"])),
+                make_literal(true, "quz", Some(vec!["baz", "foo", "foo"])),
+                make_literal(true, "quz", Some(vec!["foo", "bar", "bar"])),
+                make_literal(true, "quz", Some(vec!["foo", "bar", "foo"])),
+                make_literal(true, "quz", Some(vec!["foo", "baz", "bar"])),
+                make_literal(true, "quz", Some(vec!["foo", "baz", "baz"])),
+                make_literal(true, "quz", Some(vec!["foo", "baz", "foo"])),
+                make_literal(true, "quz", Some(vec!["foo", "foo", "bar"])),
+                make_literal(true, "quz", Some(vec!["foo", "foo", "baz"])),
+                make_literal(true, "quz", Some(vec!["foo", "foo", "foo"])),
+                make_literal(false, "quz", Some(vec!["bar", "bar", "bar"])),
+                make_literal(false, "quz", Some(vec!["bar", "bar", "baz"])),
+                make_literal(false, "quz", Some(vec!["bar", "bar", "foo"])),
+                make_literal(false, "quz", Some(vec!["bar", "baz", "bar"])),
+                make_literal(false, "quz", Some(vec!["bar", "baz", "baz"])),
+                make_literal(false, "quz", Some(vec!["bar", "baz", "foo"])),
+                make_literal(false, "quz", Some(vec!["bar", "foo", "bar"])),
+                make_literal(false, "quz", Some(vec!["bar", "foo", "baz"])),
+                make_literal(false, "quz", Some(vec!["bar", "foo", "foo"])),
+                make_literal(false, "quz", Some(vec!["baz", "bar", "bar"])),
+                make_literal(false, "quz", Some(vec!["baz", "bar", "baz"])),
+                make_literal(false, "quz", Some(vec!["baz", "bar", "foo"])),
+                make_literal(false, "quz", Some(vec!["baz", "baz", "bar"])),
+                make_literal(false, "quz", Some(vec!["baz", "baz", "baz"])),
+                make_literal(false, "quz", Some(vec!["baz", "baz", "foo"])),
+                make_literal(false, "quz", Some(vec!["baz", "foo", "bar"])),
+                make_literal(false, "quz", Some(vec!["baz", "foo", "baz"])),
+                make_literal(false, "quz", Some(vec!["baz", "foo", "foo"])),
+                make_literal(false, "quz", Some(vec!["foo", "bar", "bar"])),
+                make_literal(false, "quz", Some(vec!["foo", "bar", "baz"])),
+                make_literal(false, "quz", Some(vec!["foo", "bar", "foo"])),
+                make_literal(false, "quz", Some(vec!["foo", "baz", "bar"])),
+                make_literal(false, "quz", Some(vec!["foo", "baz", "baz"])),
+                make_literal(false, "quz", Some(vec!["foo", "baz", "foo"])),
+                make_literal(false, "quz", Some(vec!["foo", "foo", "bar"])),
+                make_literal(false, "quz", Some(vec!["foo", "foo", "baz"])),
+                make_literal(false, "quz", Some(vec!["foo", "foo", "foo"]))
+            ])
+        );
 
         // Alright now some complex rules
-        let rules: Spec<&str, &str> = datalog! {
+        let rules: Spec = datalog! {
             #![crate]
             foo. bar(foo).
             baz(X) :- bar(X).
         };
-        assert_eq!(find_herbrand_base(&rules), vec![
-            make_atom("foo", None),
-            make_atom("bar", Some(vec!["foo"])),
-            make_atom("baz", Some(vec!["foo"]))
-        ]);
+        let kb: HashMap<Cow<Literal>, bool> = HashMap::new();
+        assert_eq!(
+            find_largest_unfounded_set(&rules, &kb),
+            HashSet::from([
+                make_literal(false, "foo", None),
+                make_literal(false, "bar", Some(vec!["foo"])),
+                make_literal(false, "baz", Some(vec!["foo"]))
+            ])
+        );
+        let kb: HashMap<Cow<Literal>, bool> = HashMap::from([(Cow::Owned(make_literal(true, "bar", Some(vec!["foo"]))), true)]);
+        println!("LEFT {}", print_unfounded_set_ordered(&find_largest_unfounded_set(&rules, &kb)));
+        println!(
+            "RIGHT {}",
+            print_unfounded_set_ordered(&HashSet::from([
+                make_literal(false, "foo", None),
+                make_literal(false, "bar", Some(vec!["foo"])),
+                make_literal(true, "baz", Some(vec!["foo"])),
+                make_literal(false, "baz", Some(vec!["foo"]))
+            ]))
+        );
+        assert_eq!(
+            find_largest_unfounded_set(&rules, &kb),
+            HashSet::from([
+                make_literal(false, "foo", None),
+                make_literal(false, "bar", Some(vec!["foo"])),
+                make_literal(true, "baz", Some(vec!["foo"])),
+                make_literal(false, "baz", Some(vec!["foo"]))
+            ])
+        );
     }
 }
 
@@ -267,10 +348,10 @@ mod tests {
 ///
 /// # Returns
 /// A vector with the found base, givne as a list of [`Atom`]s. None of these have variables in them.
-fn find_herbrand_base<'f, 's>(spec: &Spec<&'f str, &'s str>) -> Vec<Atom<&'f str, &'s str>> {
+fn find_herbrand_base(spec: &Spec) -> Vec<Atom> {
     // Organise all atoms in the spec into constants and functions
-    let mut constants: Vec<&Ident<&'f str, &'s str>> = Vec::new();
-    let mut functions: Vec<(&Ident<&'f str, &'s str>, &Parens<&'f str, &'s str>, usize)> = Vec::new();
+    let mut constants: Vec<&Ident> = Vec::new();
+    let mut functions: Vec<(&Ident, &Parens, usize)> = Vec::new();
     for rule in &spec.rules {
         // Search the rule's consequences
         for cons in rule.consequences.values() {
@@ -310,18 +391,22 @@ fn find_herbrand_base<'f, 's>(spec: &Spec<&'f str, &'s str>) -> Vec<Atom<&'f str
     // De-duplicate both lists
     constants.sort_by(|lhs, rhs| -> Ordering { lhs.value.value().cmp(rhs.value.value()) });
     constants.dedup_by(|lhs, rhs| -> bool { lhs.value.value() == rhs.value.value() });
-    functions.sort_by(|(lhs, _, _), (rhs, _, _)| -> Ordering { lhs.value.value().cmp(rhs.value.value()) });
-    functions.dedup_by(|(lhs, _, _), (rhs, _, _)| -> bool { lhs.value.value() == rhs.value.value() });
+    functions
+        .sort_by(|(lhs, _, lhs_arity), (rhs, _, rhs_arity)| -> Ordering { lhs.value.value().cmp(rhs.value.value()).then(lhs_arity.cmp(rhs_arity)) });
+    functions.dedup_by(|(lhs, _, lhs_arity), (rhs, _, rhs_arity)| -> bool { lhs.value.value() == rhs.value.value() && lhs_arity == rhs_arity });
 
     // Now re-generate the functions into all possible combinations of them + constants
     // NOTE: The re-building of the atom below is quite cheap, because constants don't have argument vectors to clone
-    let mut herbrand_base: Vec<Atom<&'f str, &'s str>> = constants.iter().map(|i| Atom { ident: **i, args: None }).collect();
+    let mut herbrand_base: Vec<Atom> = constants.iter().map(|i| Atom { ident: **i, args: None }).collect();
     herbrand_base.reserve(functions.len() * constants.len());
     for (func, parens, arity) in functions {
+        #[cfg(debug_assertions)]
+        assert!(arity > 0);
+
         // Iterate over the function's arity
         for args in (0..arity).map(|_| constants.iter()).multi_cartesian_product() {
             // Turn it into a punctuated list
-            let mut puncs: Punctuated<AtomArg<&'f str, &'s str>, Comma<&'f str, &'s str>> = Punctuated::new();
+            let mut puncs: Punctuated<AtomArg, Comma> = Punctuated::new();
             for (i, ident) in args.into_iter().enumerate() {
                 if i == 0 {
                     puncs.push_first(AtomArg::Atom(**ident));
@@ -350,7 +435,7 @@ fn find_herbrand_base<'f, 's>(spec: &Spec<&'f str, &'s str>) -> Vec<Atom<&'f str
 ///
 /// # Returns
 /// True if this is the case, or false otherwise.
-fn rule_produces_atom<'f, 's>(rule: &Rule<&'f str, &'s str>, atom: &Atom<&'f str, &'s str>) -> bool {
+fn rule_produces_atom(rule: &Rule, atom: &Atom) -> bool {
     // Check if the atom appears in this rule's consequences
     // A bit of a complex search, but basically just ensures that the arity is correct AND the atoms match _or_ the consequence has a variable (i.e., variables are wildcards).
     for cons in rule.consequences.values() {
@@ -373,16 +458,18 @@ fn rule_produces_atom<'f, 's>(rule: &Rule<&'f str, &'s str>, atom: &Atom<&'f str
                                     return false;
                                 }
                             },
-                            (AtomArg::Atom(_), AtomArg::Var(_)) => {},
+                            (AtomArg::Atom(_), AtomArg::Var(_)) => continue,
                             (_, _) => unreachable!(),
                         }
                     }
                 },
                 // It's also OK if neither of them have arguments
-                (None, None) => {},
+                (None, None) => continue,
                 // But if one of them do and the other don't, that's sad
                 (_, _) => return false,
             }
+        } else {
+            return false;
         }
     }
     true
@@ -404,18 +491,15 @@ fn rule_produces_atom<'f, 's>(rule: &Rule<&'f str, &'s str>, atom: &Atom<&'f str
 ///
 /// # Returns
 /// An [`IndexSet`] with the literals that are part of the largest unfounded set.
-fn find_largest_unfounded_set<'p, 'f, 's>(
-    spec: &'p Spec<&'f str, &'s str>,
-    kb: &RefHashMap<'p, Literal<&'f str, &'s str>, bool>,
-) -> RefHashMap<'p, Literal<&'f str, &'s str>, ()> {
+fn find_largest_unfounded_set<'p, 'f, 's>(spec: &'p Spec, kb: &HashMap<Cow<'p, Literal>, bool>) -> HashSet<Literal> {
     // Iterate over the Herbrand Base to find candidates
     // This process is iterative, to ensure that we catch later atoms being added that make earlier atoms unfounded.
-    let mut unfounded_set: RefHashMap<'p, Literal<&'f str, &'s str>, ()> = RefHashMap::new();
+    let mut unfounded_set: HashSet<Literal> = HashSet::new();
     'toplevel: loop {
         // Start looping
-        let mut found_at_least_one_rule: bool = false;
         for atom in find_herbrand_base(spec) {
             // Find rules producing this atom
+            let mut found_at_least_one_rule: bool = false;
             for rule in &spec.rules {
                 if !rule_produces_atom(rule, &atom) {
                     continue;
@@ -431,14 +515,14 @@ fn find_largest_unfounded_set<'p, 'f, 's>(
                             // (1.) If it's a positive atom, we're searching for a negative presense
                             // let lit: Literal<String, String> = Literal::Atom(Atom {});
                             if let Some(false) = kb.get(ante) {
-                                if unfounded_set.insert(Literal::Atom(atom.clone()), ()).is_none() {
+                                if !unfounded_set.insert(Literal::Atom(atom.clone())) {
                                     continue 'toplevel;
                                 }
                             }
 
                             // (2.) See if the current unfounded set already has this beauty
-                            if unfounded_set.contains_key(ante) {
-                                if unfounded_set.insert(Literal::Atom(atom.clone()), ()).is_none() {
+                            if unfounded_set.contains(ante) {
+                                if !unfounded_set.insert(Literal::Atom(atom.clone())) {
                                     continue 'toplevel;
                                 }
                             }
@@ -446,7 +530,7 @@ fn find_largest_unfounded_set<'p, 'f, 's>(
                         Literal::NegAtom(_) => {
                             // (1.) If it's a negative atom, we're searching for a positive precense
                             if let Some(true) = kb.get(ante) {
-                                if unfounded_set.insert(Literal::Atom(atom.clone()), ()).is_none() {
+                                if !unfounded_set.insert(Literal::Atom(atom.clone())) {
                                     // This was a new literal, we gotta go at it again
                                     continue 'toplevel;
                                 }
@@ -460,9 +544,9 @@ fn find_largest_unfounded_set<'p, 'f, 's>(
 
             // Emulate reasoning in absentia; if we never found a rule, it's in the unfounded set too (this actually always includes negative literals by Datalog's design)
             if !found_at_least_one_rule {
-                unfounded_set.insert(Literal::Atom(atom.clone()), ());
+                unfounded_set.insert(Literal::Atom(atom.clone()));
             }
-            unfounded_set.insert(Literal::NegAtom(NegAtom { not_token: Not { span: atom.span() }, atom }), ());
+            unfounded_set.insert(Literal::NegAtom(NegAtom { not_token: Not { span: atom.span() }, atom }));
         }
 
         // If we never added anyone, we converged
@@ -482,15 +566,15 @@ fn find_largest_unfounded_set<'p, 'f, 's>(
 ///
 /// Contains a knowledge base internally. That means that different interpreter instances may give different answers.
 #[derive(Clone, Debug)]
-pub struct Interpreter<'f, 's> {
+pub struct Interpreter {
     /// The set of facts that we know exist.
-    pub knowledge_base: IndexSet<Atom<&'f str, &'s str>>,
+    pub knowledge_base: IndexSet<Atom>,
 }
-impl<'f, 's> Default for Interpreter<'f, 's> {
+impl Default for Interpreter {
     #[inline]
     fn default() -> Self { Self::new() }
 }
-impl<'f, 's> Interpreter<'f, 's> {
+impl Interpreter {
     /// Constructor for the Interpreter that initializes it with an empty knowledge base.
     ///
     /// # Returns
@@ -524,7 +608,7 @@ impl<'f, 's> Interpreter<'f, 's> {
     /// assert_eq!(int.knowledge_base, short);
     /// ```
     #[inline]
-    pub fn evaluate_once(spec: &Spec<&'f str, &'s str>) -> IndexSet<Atom<&'f str, &'s str>> {
+    pub fn evaluate_once(spec: &Spec) -> IndexSet<Atom> {
         let mut int: Self = Self::new();
         int.evaluate(spec);
         int.knowledge_base
@@ -551,13 +635,13 @@ impl<'f, 's> Interpreter<'f, 's> {
     /// int.evaluate(&datalog!(foo.));
     /// assert!(int.holds("foo"));
     /// ```
-    pub fn evaluate(&mut self, spec: &Spec<&'f str, &'s str>) {
+    pub fn evaluate(&mut self, spec: &Spec) {
         // //
 
         // // Go thru the rules
         // for rule in &spec.rules {
         //     // Consider all concrete instances based on variables
-        //     let mut new_instances: IndexSet<Atom<&'f str, &'s str>> = IndexSet::new();
+        //     let mut new_instances: IndexSet<Atom> = IndexSet::new();
         //     for concrete_rule in RuleConcretizer::new(rule, &self.knowledge_base) {}
         // }
     }

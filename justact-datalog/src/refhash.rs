@@ -4,7 +4,7 @@
 //  Created:
 //    19 Mar 2024, 17:05:37
 //  Last edited:
-//    19 Mar 2024, 17:43:44
+//    20 Mar 2024, 13:34:45
 //  Auto updated?
 //    Yes
 //
@@ -15,6 +15,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter, Result as FResult};
 use std::hash::{BuildHasher as _, Hash, Hasher, RandomState};
 
 use crate::ast::{Atom, AtomArg, Literal};
@@ -31,27 +32,30 @@ pub trait RefHash {
 }
 
 // Default impls
-impl<'k, T: Clone + RefHash> RefHash for Cow<'k, T> {
+
+// Builtin-types
+impl RefHash for () {
     #[inline]
-    fn hash<H: Hasher>(&self, state: &mut H) { <T as RefHash>::hash(self, state) }
+    fn hash<H: Hasher>(&self, _state: &mut H) {}
 }
-impl<'f, 's> RefHash for Literal<&'f str, &'s str> {
+// Datalog-specific
+impl RefHash for Literal {
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         // Hash manually :')
         match self {
             Self::Atom(a) => {
                 state.write_u8(0);
-                <Atom<&'f str, &'s str> as RefHash>::hash(a, state);
+                <Atom as RefHash>::hash(a, state);
             },
             Self::NegAtom(a) => {
                 state.write_u8(1);
-                <Atom<&'f str, &'s str> as RefHash>::hash(&a.atom, state);
+                <Atom as RefHash>::hash(&a.atom, state);
             },
         }
     }
 }
-impl<'f, 's> RefHash for Atom<&'f str, &'s str> {
+impl RefHash for Atom {
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         // Hash manually :')
@@ -70,6 +74,11 @@ impl<'f, 's> RefHash for Atom<&'f str, &'s str> {
         }
     }
 }
+// Transitive
+impl<'k, T: Clone + RefHash> RefHash for Cow<'k, T> {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) { <T as RefHash>::hash(self, state) }
+}
 
 
 
@@ -77,7 +86,7 @@ impl<'f, 's> RefHash for Atom<&'f str, &'s str> {
 
 /***** LIBRARY *****/
 /// Represents an Interpretation/Knowledge Base of the currently derived facts.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct RefHashMap<'k, K: Clone, V> {
     /// Defines a map of truth values.
     values: HashMap<u64, V>,
@@ -201,6 +210,35 @@ impl<'k, K: Clone + RefHash, V> RefHashMap<'k, K, V> {
 
         // Query the truth tablé
         self.values.get(&hash)
+    }
+
+    /// Iterates over all key/value mappings in self by reference.
+    ///
+    /// # Returns
+    /// An [`Iter`] that does the iteration for us.
+    #[inline]
+    pub fn iter<'s: 'k>(&'s self) -> impl 'k + Iterator<Item = (&'s K, &'s V)> {
+        self.defs.iter().map(|(id, key): (&'s u64, &'s Cow<'k, K>)| -> (&'s K, &'s V) { (key.as_ref(), self.values.get(id).unwrap()) })
+    }
+
+    // /// Iterates over all key/value mappings in self by reference.
+    // ///
+    // /// # Returns
+    // /// An [`Iter`] that does the iteration for us.
+    // #[inline]
+    // pub fn iter_mut<'s: 'k>(&'s mut self) -> impl 'k + Iterator<Item = (&'s K, &'s mut V)> {
+    //     self.defs.iter().map(|(id, key): (&'s u64, &'s Cow<'k, K>)| -> (&'s K, &'s mut V) { (key.as_ref(), self.values.get_mut(id).unwrap()) })
+    // }
+}
+
+impl<'k, K: Clone + Debug, V: Debug> Debug for RefHashMap<'k, K, V> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        let mut dbg = f.debug_map();
+        for (id, def) in &self.defs {
+            let value: &V = self.values.get(id).unwrap();
+            dbg.entry(def, value);
+        }
+        dbg.finish()
     }
 }
 
