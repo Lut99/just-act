@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 16:43:37
 //  Last edited:
-//    20 Mar 2024, 13:52:16
+//    22 Mar 2024, 11:53:37
 //  Auto updated?
 //    Yes
 //
@@ -12,6 +12,7 @@
 //!   Defines the datalog-with-negation AST.
 //
 
+use std::fmt::{Display, Formatter, Result as FResult};
 use std::hash::{Hash, Hasher};
 
 pub use ast_toolkit_punctuated::punct;
@@ -123,6 +124,15 @@ pub struct Spec {
     /// The list of rules in this program.
     pub rules: Vec<Rule>,
 }
+impl Display for Spec {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        for rule in &self.rules {
+            writeln!(f, "{rule}")?;
+        }
+        Ok(())
+    }
+}
 impl_map!(Spec, rules);
 
 
@@ -143,6 +153,17 @@ pub struct Rule {
     /// The closing dot after each rule.
     pub dot: Dot,
 }
+impl Display for Rule {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        write!(
+            f,
+            "{}{}.",
+            self.consequences.values().map(|c| c.to_string()).collect::<Vec<String>>().join(", "),
+            if let Some(tail) = &self.tail { tail.to_string() } else { String::new() }
+        )
+    }
+}
 impl_map!(Rule, consequences, tail, dot);
 
 /// Defines the second half of the rule, if any.
@@ -157,6 +178,12 @@ pub struct RuleAntecedents {
     pub arrow_token: Arrow,
     /// The list of antecedents.
     pub antecedents: Punctuated<Literal, Comma>,
+}
+impl Display for RuleAntecedents {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        write!(f, " :- {}", self.antecedents.values().map(|a| a.to_string()).collect::<Vec<String>>().join(", "))
+    }
 }
 impl_map!(RuleAntecedents, arrow_token, antecedents);
 
@@ -211,6 +238,15 @@ impl Literal {
         }
     }
 }
+impl Display for Literal {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        match self {
+            Self::Atom(a) => write!(f, "{a}"),
+            Self::NegAtom(na) => write!(f, "{na}"),
+        }
+    }
+}
 impl_enum_map!(Literal, Atom(atom), NegAtom(atom));
 
 /// Wraps around an [`Atom`] to express its non-existance.
@@ -226,6 +262,10 @@ pub struct NegAtom {
     pub not_token: Not,
     /// The atom that was negated.
     pub atom:      Atom,
+}
+impl Display for NegAtom {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult { write!(f, "not {}", self.atom) }
 }
 impl_map!(NegAtom, not_token, atom);
 
@@ -257,6 +297,12 @@ impl Atom {
         }
     }
 }
+impl Display for Atom {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        write!(f, "{}{}", self.ident, if let Some(args) = &self.args { args.to_string() } else { String::new() })
+    }
+}
 impl_map!(Atom, ident, args);
 
 /// Defines the (optional) arguments-part of the constructor application.
@@ -271,6 +317,12 @@ pub struct AtomArgs {
     pub paren_tokens: Parens,
     /// The arguments contained within.
     pub args: Punctuated<AtomArg, Comma>,
+}
+impl Display for AtomArgs {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        write!(f, "({})", self.args.values().map(|a| a.to_string()).collect::<Vec<String>>().join(","))
+    }
 }
 impl_map!(AtomArgs, paren_tokens, args);
 
@@ -324,6 +376,10 @@ impl AtomArg {
         }
     }
 }
+impl Display for AtomArg {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult { write!(f, "{}", self.ident()) }
+}
 impl_enum_map!(AtomArg, Atom(ident), Var(ident));
 
 /// Represents identifiers.
@@ -336,6 +392,10 @@ impl_enum_map!(AtomArg, Atom(ident), Var(ident));
 pub struct Ident {
     /// The value of the identifier itself.
     pub value: Span<&'static str, &'static str>,
+}
+impl Display for Ident {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult { write!(f, "{}", self.value.value()) }
 }
 impl_map!(Ident, value);
 
