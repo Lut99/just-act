@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 10:55:27
 //  Last edited:
-//    22 Mar 2024, 16:05:31
+//    22 Mar 2024, 18:00:06
 //  Auto updated?
 //    Yes
 //
@@ -12,6 +12,7 @@
 //!   Implements iterators for the Herbrand instantiation of a program.
 //
 
+use std::borrow::Cow;
 use std::iter::{Flatten, Repeat, Take};
 
 use indexmap::{IndexMap, IndexSet};
@@ -36,7 +37,7 @@ mod tests {
     fn test_refresh_iters() {
         // Test a single variable
         let hbase: IndexSet<Ident> = IndexSet::from([make_ident("foo"), make_ident("bar"), make_ident("baz")]);
-        let mut vars: IndexMap<Ident, RepeatIter<indexmap::set::Iter<Ident>>> = IndexMap::new();
+        let mut vars: IndexMap<Ident, RepeatIterator<indexmap::set::Iter<Ident>>> = IndexMap::new();
         refresh_iters(&hbase, &datalog! { #![crate] foo(X) :- bar(X). }.rules[0], &mut vars);
         assert_eq!(vars.len(), 1);
         assert_eq!(vec![vars[0].next()], vec![Some(&make_ident("foo"))]);
@@ -214,7 +215,7 @@ mod tests {
 
             foo. bar. bar. baz.
         };
-        let mut iter = HerbrandBaseIterator::new(&cons);
+        let mut iter = ConstantIterator::new(HerbrandBaseIterator::new(&cons));
         assert_eq!(iter.next(), Some(make_ident("foo")));
         assert_eq!(iter.next(), Some(make_ident("bar")));
         assert_eq!(iter.next(), Some(make_ident("bar")));
@@ -227,7 +228,7 @@ mod tests {
 
             foo(bar). bar(baz, quz). baz(quz).
         };
-        let mut iter = HerbrandBaseIterator::new(&funcs);
+        let mut iter = ConstantIterator::new(HerbrandBaseIterator::new(&funcs));
         assert_eq!(iter.next(), Some(make_ident("bar")));
         assert_eq!(iter.next(), Some(make_ident("baz")));
         assert_eq!(iter.next(), Some(make_ident("quz")));
@@ -241,7 +242,7 @@ mod tests {
             foo. bar.
             baz(X) :- quz.
         };
-        let mut iter = HerbrandBaseIterator::new(&rules);
+        let mut iter = ConstantIterator::new(HerbrandBaseIterator::new(&rules));
         assert_eq!(iter.next(), Some(make_ident("foo")));
         assert_eq!(iter.next(), Some(make_ident("bar")));
         assert_eq!(iter.next(), Some(make_ident("quz")));
@@ -277,8 +278,7 @@ mod tests {
 
         // Check empty specs
         let empty: Spec = datalog! { #![crate] };
-        let hbase: IndexSet<Ident> = HerbrandBaseIterator::new(&empty).collect();
-        let mut iter = HerbrandInstantiationIterator::new(&empty, &hbase);
+        let mut iter = HerbrandInstantiationIterator::new(&empty, &empty.herbrand_base().collect());
         rule_assert(iter.next(), None);
         rule_assert(iter.next(), None);
         rule_assert(iter.next(), None);
@@ -289,8 +289,7 @@ mod tests {
 
             foo. bar. bar. baz.
         };
-        let hbase: IndexSet<Ident> = HerbrandBaseIterator::new(&cons).collect();
-        let mut iter = HerbrandInstantiationIterator::new(&cons, &hbase);
+        let mut iter = HerbrandInstantiationIterator::new(&cons, &cons.herbrand_base().collect());
         rule_assert(iter.next(), Some(&datalog! { #![crate] foo. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] bar. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] bar. }.rules[0]));
@@ -303,8 +302,7 @@ mod tests {
 
             foo(bar). bar(baz, quz). baz(quz).
         };
-        let hbase: IndexSet<Ident> = HerbrandBaseIterator::new(&funcs).collect();
-        let mut iter = HerbrandInstantiationIterator::new(&funcs, &hbase);
+        let mut iter = HerbrandInstantiationIterator::new(&funcs, &funcs.herbrand_base().collect());
         rule_assert(iter.next(), Some(&datalog! { #![crate] foo(bar). }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] bar(baz, quz). }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] baz(quz). }.rules[0]));
@@ -317,13 +315,27 @@ mod tests {
             foo. bar.
             baz(X) :- quz.
         };
-        let hbase: IndexSet<Ident> = HerbrandBaseIterator::new(&rules).collect();
-        let mut iter = HerbrandInstantiationIterator::new(&rules, &hbase);
+        let mut iter = HerbrandInstantiationIterator::new(&rules, &rules.herbrand_base().collect());
         rule_assert(iter.next(), Some(&datalog! { #![crate] foo. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] bar. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] baz(foo) :- quz. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] baz(bar) :- quz. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] baz(quz) :- quz. }.rules[0]));
+        rule_assert(iter.next(), None);
+
+        // Check with rules, where we do grounded variables _after_ normal ones
+        let rules: Spec = datalog! {
+            #![crate]
+
+            baz(X) :- quz.
+            foo. bar.
+        };
+        let mut iter = HerbrandInstantiationIterator::new(&rules, &rules.herbrand_base().collect());
+        rule_assert(iter.next(), Some(&datalog! { #![crate] baz(quz) :- quz. }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] baz(foo) :- quz. }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] baz(bar) :- quz. }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] foo. }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] bar. }.rules[0]));
         rule_assert(iter.next(), None);
 
         // Longer rules
@@ -333,8 +345,7 @@ mod tests {
             foo. bar. baz(foo, bar).
             quz(X, Y) :- baz(X, Y).
         };
-        let hbase: IndexSet<Ident> = HerbrandBaseIterator::new(&multi_rules).collect();
-        let mut iter = HerbrandInstantiationIterator::new(&multi_rules, &hbase);
+        let mut iter = HerbrandInstantiationIterator::new(&multi_rules, &multi_rules.herbrand_base().collect());
         rule_assert(iter.next(), Some(&datalog! { #![crate] foo. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] bar. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] baz(foo, bar). }.rules[0]));
@@ -351,7 +362,7 @@ mod tests {
             foo. bar. baz(foo, bar).
             quz(X, Y, Z) :- baz(X), baz(bar), quz(Z).
         };
-        let hbase: IndexSet<Ident> = HerbrandBaseIterator::new(&multi_rules).collect();
+        let hbase: IndexSet<Ident> = HerbrandBaseIterator::new(&multi_rules).constants().collect();
         let mut iter = HerbrandInstantiationIterator::new(&multi_rules, &hbase);
         rule_assert(iter.next(), Some(&datalog! { #![crate] foo. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] bar. }.rules[0]));
@@ -373,7 +384,7 @@ mod tests {
             foo. bar. baz. baz(foo, bar).
             quz(X, Y) :- baz(X, Y).
         };
-        let hbase: IndexSet<Ident> = HerbrandBaseIterator::new(&multi_rules).collect();
+        let hbase: IndexSet<Cow<Atom>> = HerbrandBaseIterator::new(&multi_rules).constants().collect();
         let mut iter = HerbrandInstantiationIterator::new(&multi_rules, &hbase);
         rule_assert(iter.next(), Some(&datalog! { #![crate] foo. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] bar. }.rules[0]));
@@ -407,7 +418,7 @@ mod tests {
 fn refresh_iters<'h>(
     hbase: &'h IndexSet<Ident>,
     rule: &'_ Rule,
-    vars: &'_ mut IndexMap<Ident, RepeatIter<indexmap::set::Iter<'h, Ident>>>,
+    vars: &'_ mut IndexMap<Ident, RepeatIterator<indexmap::set::Iter<'h, Ident>>>,
 ) -> Option<Rule> {
     /// Generates a new iterator for the `i`th variable.
     ///
@@ -415,7 +426,7 @@ fn refresh_iters<'h>(
     /// - `hbase`: The Herbrand base that we eventually iterator over.
     /// - `n_vars`: The total number of variables we're quantifying over.
     /// - `i`: The i'the variable to generate.
-    fn create_repeat_iter<'h>(hbase: &'h IndexSet<Ident>, n_vars: usize, i: usize) -> RepeatIter<indexmap::set::Iter<'h, Ident>> {
+    fn create_repeat_iter<'h>(hbase: &'h IndexSet<Ident>, n_vars: usize, i: usize) -> RepeatIterator<indexmap::set::Iter<'h, Ident>> {
         // We scale from essentially doing `111111...333333`, to `111222...222333`, to `123123...123123`
         //
         // Some examples:
@@ -436,7 +447,7 @@ fn refresh_iters<'h>(
         // 1234123412341234                 (outer = 4, inner = 1)
         // ```
         // From this we can observe that the outer grows exponentially over the Herbrand base size, whereas the inner grows inverse exponentially.
-        RepeatIter::new(hbase.iter(), hbase.len().pow((n_vars - 1 - i) as u32), hbase.len().pow(i as u32))
+        RepeatIterator::new(hbase.iter(), hbase.len().pow((n_vars - 1 - i) as u32), hbase.len().pow(i as u32))
     }
 
 
@@ -446,7 +457,7 @@ fn refresh_iters<'h>(
         for arg in cons.args.iter().map(|a| a.args.values()).flatten() {
             if let AtomArg::Var(var) = arg {
                 // Spawn the variable, but do not initialize the iterator yet (we don't know the total number of variables)
-                vars.insert(*var, RepeatIter::empty(hbase.iter()));
+                vars.insert(*var, RepeatIterator::empty(hbase.iter()));
             }
         }
     }
@@ -454,7 +465,7 @@ fn refresh_iters<'h>(
         for arg in ante.atom().args.iter().map(|a| a.args.values()).flatten() {
             if let AtomArg::Var(var) = arg {
                 // Spawn the variable, but do not initialize the iterator yet (we don't know the total number of variables)
-                vars.insert(*var, RepeatIter::empty(hbase.iter()));
+                vars.insert(*var, RepeatIterator::empty(hbase.iter()));
             }
         }
     }
@@ -478,7 +489,7 @@ fn refresh_iters<'h>(
 /// - `vars`: Defines the names of variables. Given as an [`IndexSet`] for speedier search, while the order is important to match with the assignment.
 /// - `values`: The values mapping for the given `vars`.
 /// - `gen_rule`: The rule to repopulate.
-fn repopulate_rule(rule: &Rule, vars: &IndexMap<Ident, RepeatIter<indexmap::set::Iter<Ident>>>, values: &[Ident], gen_rule: &mut Rule) {
+fn repopulate_rule(rule: &Rule, vars: &IndexMap<Ident, RepeatIterator<indexmap::set::Iter<Ident>>>, values: &[Ident], gen_rule: &mut Rule) {
     for (c, cons) in rule.consequences.values().enumerate() {
         for (a, arg) in cons.args.iter().map(|a| a.args.values()).flatten().enumerate() {
             if matches!(arg, AtomArg::Var(_)) {
@@ -510,7 +521,7 @@ fn repopulate_rule(rule: &Rule, vars: &IndexMap<Ident, RepeatIter<indexmap::set:
 ///
 /// # Returns
 /// Whether we found a next mapping. If false, this means that we ran out of mappings to generate.
-fn get_next_mapping(iters: &mut IndexMap<Ident, RepeatIter<indexmap::set::Iter<Ident>>>, assign: &mut Vec<Ident>) -> bool {
+fn get_next_mapping(iters: &mut IndexMap<Ident, RepeatIterator<indexmap::set::Iter<Ident>>>, assign: &mut Vec<Ident>) -> bool {
     assign.clear();
     assign.reserve(iters.len());
     for iter in iters.values_mut() {
@@ -526,12 +537,81 @@ fn get_next_mapping(iters: &mut IndexMap<Ident, RepeatIter<indexmap::set::Iter<I
 
 
 
+/***** AUXILLARY *****/
+/// Allows the inline `.repeat_m_n()` to be used for the [`RepeatIterator`].
+pub trait RepeatMN: Clone + Iterator {
+    /// Returns the same iterator but repeated as a whole (outer, `M`) and with every element repeater (inner, `N`).
+    ///
+    /// # Arguments
+    /// - `m`: The number of times the outer iterator (including element repeats!) is repeated.
+    /// - `n`: The number of times the inner elements are repeated.
+    ///
+    /// # Returns
+    /// A [`RepeatIterator`] wrapping Self to filter out non-constant (i.e., arity > 0) atoms.
+    fn repeat_m_n(self, m: usize, n: usize) -> RepeatIterator<Self>;
+}
+impl<'s, T> RepeatMN for T
+where
+    T: Clone + Iterator,
+    T::Item: Clone,
+{
+    fn repeat_m_n(self, m: usize, n: usize) -> RepeatIterator<Self> { RepeatIterator::new(self, n, m) }
+}
+
+/// Allows the inline `.constants()` to be used for the [`ConstantIterator`].
+pub trait Constants {
+    /// Returns the same iterator, but with any constants filtered out.
+    ///
+    /// # Returns
+    /// A [`ConstantIterator`] wrapping Self to filter out non-constant (i.e., arity > 0) atoms.
+    fn constants(self) -> ConstantIterator<Self>;
+}
+impl<'s, T: Iterator<Item = Cow<'s, Atom>>> Constants for T {
+    #[inline]
+    fn constants(self) -> ConstantIterator<Self> { ConstantIterator::new(self) }
+}
+
+/// Allows the inline `.herbrand_base()` to be used for a [`Spec`].
+pub trait HerbrandBase {
+    /// Returns an iterator over the Herbrand base of the specification.
+    ///
+    /// # Returns
+    /// A [`HerbrandBaseIterator`] that does what it says on the tin.
+    fn herbrand_base(&self) -> HerbrandBaseIterator;
+}
+impl HerbrandBase for Spec {
+    #[inline]
+    fn herbrand_base(&self) -> HerbrandBaseIterator { HerbrandBaseIterator::new(self) }
+}
+
+/// Allows the inline `.herbrand_instantiation()` to be used for a [`Spec`].
+pub trait HerbrandInstantiation {
+    /// Returns an iterator over the Herbrand instantiation of the specification.
+    ///
+    /// # Arguments
+    /// - `hbase`: Some (already computed) Herbrand Base to iterate over.
+    ///
+    /// # Returns
+    /// A [`HerbrandInstantiationIterator`] that does what it says on the tin.
+    fn herbrand_instantiation<'s, 'h>(&'s self, hbase: &'h IndexSet<Ident>) -> HerbrandInstantiationIterator<'h, 's>;
+}
+impl HerbrandInstantiation for Spec {
+    #[inline]
+    fn herbrand_instantiation<'s, 'h>(&'s self, hbase: &'h IndexSet<Ident>) -> HerbrandInstantiationIterator<'h, 's> {
+        HerbrandInstantiationIterator::new(self, hbase)
+    }
+}
+
+
+
+
+
 /***** LIBRARY *****/
 /// Given an iterator, repeats elements in two directions:
 /// - In the "inner" direction, every element is repeated N times; and
 /// - In the "outer" direction, the whole iterator (including "inner"-repeats) is repeated M times.
 #[derive(Clone, Debug)]
-pub struct RepeatIter<I: Clone + Iterator> {
+pub struct RepeatIterator<I: Clone + Iterator> {
     /// The iterator itself.
     iter: Flatten<Take<Repeat<I>>>,
     /// The next individual element that we repeat.
@@ -541,7 +621,7 @@ pub struct RepeatIter<I: Clone + Iterator> {
     /// The number of times we've repeated the inner element.
     i:    usize,
 }
-impl<I: Clone + Iterator> RepeatIter<I> {
+impl<I: Clone + Iterator> RepeatIterator<I> {
     /// Constructor for the RepeatIter that creates it.
     ///
     /// # Arguments
@@ -570,7 +650,7 @@ impl<I: Clone + Iterator> RepeatIter<I> {
     #[inline]
     pub fn empty(iter: I) -> Self { Self { iter: std::iter::repeat(iter).take(0).flatten(), next: None, n: 0, i: 0 } }
 }
-impl<I: Clone + Iterator> Iterator for RepeatIter<I>
+impl<I: Clone + Iterator> Iterator for RepeatIterator<I>
 where
     I: Clone + Iterator,
     I::Item: Clone,
@@ -642,24 +722,24 @@ impl<'s> HerbrandBaseIterator<'s> {
     }
 }
 impl<'s> Iterator for HerbrandBaseIterator<'s> {
-    type Item = Ident;
+    type Item = Cow<'s, Atom>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Go through the iterators one-by-one
         self.args
             .next()
+            .map(|a| Cow::Owned(Atom { ident: a, args: None }))
             .or_else(|| {
                 // If we got here, that means there's no more arguments for the parent atom; get the next consequent
                 self.cons
                     .next()
                     .map(|c| {
+                        // Prep the arguments for continued iteration
                         if let Some(args) = &c.args {
-                            // Not gonna return this one, not a constant. Instead, try the args again
                             self.args = Box::new(args.args.values().filter_map(|a| if let AtomArg::Atom(a) = a { Some(*a) } else { None }));
-                            self.next()
-                        } else {
-                            Some(c.ident)
                         }
+                        // Return the consequent itself
+                        Some(Cow::Borrowed(c))
                     })
                     .flatten()
             })
@@ -668,13 +748,13 @@ impl<'s> Iterator for HerbrandBaseIterator<'s> {
                 self.ants
                     .next()
                     .map(|a| {
+                        // Prep the arguments for continued iteration
                         if let Some(args) = &a.atom().args {
                             // Not gonna return this one, not a constant. Instead, try the args again
                             self.args = Box::new(args.args.values().filter_map(|a| if let AtomArg::Atom(a) = a { Some(*a) } else { None }));
-                            self.next()
-                        } else {
-                            Some(a.atom().ident)
                         }
+                        // Return the antecedent itself
+                        Some(Cow::Borrowed(a.atom()))
                     })
                     .flatten()
             })
@@ -686,6 +766,45 @@ impl<'s> Iterator for HerbrandBaseIterator<'s> {
                 self.next()
             })
     }
+}
+
+/// Given an iterator over [`Atom`]s, only returns constants (i.e., atoms with arity 0) as [`Ident`]s.
+pub struct ConstantIterator<I: ?Sized> {
+    /// Some iterator over Atoms.
+    iter: I,
+}
+impl<I> ConstantIterator<I> {
+    /// Constructor for the ConstantIterator.
+    ///
+    /// # Arguments
+    /// - `iter`: Some iterator to filter all non-constants out of.
+    ///
+    /// # Returns
+    /// A new ConstantIterator.
+    #[inline]
+    pub fn new(iter: I) -> Self { Self { iter } }
+}
+impl<'s, I: Iterator<Item = Cow<'s, Atom>>> Iterator for ConstantIterator<I> {
+    type Item = Cow<'s, Atom>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(next) = self.iter.next() {
+            // Check if it's a constant
+            if next.args.is_some() {
+                continue;
+            }
+
+            // Return the identifier
+            return Some(next);
+        }
+
+        // Out of stuff
+        None
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) { (0, self.iter.size_hint().1) }
 }
 
 /// Defines an iterator over all the rules in the _concretized_ version of the given [`Spec`].
@@ -701,7 +820,7 @@ pub struct HerbrandInstantiationIterator<'h, 's> {
     /// The original rule we're currently considering and an optional clone to modify with concrete instances. Is [`None`] if the rule has no variables.
     rule:   Option<(&'s Rule, Option<Rule>)>,
     /// Defines a buffer for storing which variables occur in the `rule` above.
-    vars:   IndexMap<Ident, RepeatIter<indexmap::set::Iter<'h, Ident>>>,
+    vars:   IndexMap<Ident, RepeatIterator<indexmap::set::Iter<'h, Ident>>>,
     /// Defines a buffer for storing the current value assignment for the `vars` above.
     assign: Vec<Ident>,
 }
@@ -777,6 +896,8 @@ impl<'h, 's> HerbrandInstantiationIterator<'h, 's> {
 
                     // Find the (unique!) variables in the rule and decide if we're cloning or borrowing the rule
                     self.rule = Some((new_rule, refresh_iters(self.hbase, new_rule, &mut self.vars)));
+                    // NOTE: Without recursion, we will fall through to doing a repopulate case with a grounded rule in case the `new_rule` is grounded
+                    return self.next();
                 }
 
                 // Populate the rule with the given variable -> value assignment
