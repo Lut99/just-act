@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 10:55:27
 //  Last edited:
-//    22 Mar 2024, 12:11:16
+//    22 Mar 2024, 15:08:15
 //  Auto updated?
 //    Yes
 //
@@ -364,6 +364,30 @@ mod tests {
         rule_assert(iter.next(), Some(&datalog! { #![crate] quz(bar, foo, bar) :- baz(bar), baz(bar), quz(bar). }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] quz(bar, bar, foo) :- baz(bar), baz(bar), quz(foo). }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] quz(bar, bar, bar) :- baz(bar), baz(bar), quz(bar). }.rules[0]));
+        rule_assert(iter.next(), None);
+
+        // Longer rules
+        let multi_rules: Spec = datalog! {
+            #![crate]
+
+            foo. bar. baz. baz(foo, bar).
+            quz(X, Y) :- baz(X, Y).
+        };
+        let hbase: IndexSet<Ident> = HerbrandBaseIterator::new(&multi_rules).collect();
+        let mut iter = HerbrandInstantiationIterator::new(&multi_rules, &hbase);
+        rule_assert(iter.next(), Some(&datalog! { #![crate] foo. }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] bar. }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] baz. }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] baz(foo, bar). }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] quz(foo, foo) :- baz(foo, foo). }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] quz(foo, bar) :- baz(foo, bar). }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] quz(foo, baz) :- baz(foo, baz). }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] quz(bar, foo) :- baz(bar, foo). }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] quz(bar, bar) :- baz(bar, bar). }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] quz(bar, baz) :- baz(bar, baz). }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] quz(baz, foo) :- baz(baz, foo). }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] quz(baz, bar) :- baz(baz, bar). }.rules[0]));
+        rule_assert(iter.next(), Some(&datalog! { #![crate] quz(baz, baz) :- baz(baz, baz). }.rules[0]));
         rule_assert(iter.next(), None);
     }
 }
