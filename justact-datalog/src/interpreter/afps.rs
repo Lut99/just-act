@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 11:19:14
 //  Last edited:
-//    25 Mar 2024, 10:04:52
+//    25 Mar 2024, 11:29:04
 //  Auto updated?
 //    Yes
 //
@@ -15,7 +15,7 @@
 
 use indexmap::IndexSet;
 
-use super::herbrand::HerbrandInstantiationIterator;
+// use super::herbrand::HerbrandInstantiationIterator;
 use super::interpretation::Interpretation;
 use crate::ast::{Atom, Spec};
 use crate::log::{debug, trace};
@@ -28,7 +28,7 @@ mod tests {
     use ast_toolkit_span::Span;
     use justact_datalog_derive::datalog;
 
-    use super::super::herbrand::HerbrandBaseIterator;
+    // use super::super::herbrand::HerbrandBaseIterator;
     use super::*;
     use crate::ast::{Atom, AtomArg, AtomArgs, Comma, Ident, Parens};
 
@@ -83,82 +83,81 @@ mod tests {
         }
     }
 
+    // #[test]
+    // fn test_consequence_trans() {
+    //     #[cfg(feature = "log")]
+    //     setup_logger();
 
-    #[test]
-    fn test_consequence_trans() {
-        #[cfg(feature = "log")]
-        setup_logger();
+    //     // Every day, got nothing to do
+    //     let spec: Spec = datalog! { #![crate] };
+    //     let mut int: Interpretation = Interpretation::new();
+    //     consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
+    //     assert!(int.is_empty());
 
-        // Every day, got nothing to do
-        let spec: Spec = datalog! { #![crate] };
-        let mut int: Interpretation = Interpretation::new();
-        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
-        assert!(int.is_empty());
+    //     // Derive some constants
+    //     let spec: Spec = datalog! {
+    //         #![crate]
+    //         foo. bar. baz.
+    //     };
+    //     let mut int: Interpretation = Interpretation::new();
+    //     consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
+    //     assert_eq!(int.len(), 3);
+    //     assert_eq!(int.truth_of_atom(&make_atom("foo", [])), Some(true));
+    //     assert_eq!(int.truth_of_atom(&make_atom("bar", [])), Some(true));
+    //     assert_eq!(int.truth_of_atom(&make_atom("baz", [])), Some(true));
 
-        // Derive some constants
-        let spec: Spec = datalog! {
-            #![crate]
-            foo. bar. baz.
-        };
-        let mut int: Interpretation = Interpretation::new();
-        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
-        assert_eq!(int.len(), 3);
-        assert_eq!(int.truth_of_atom(&make_atom("foo", [])), Some(true));
-        assert_eq!(int.truth_of_atom(&make_atom("bar", [])), Some(true));
-        assert_eq!(int.truth_of_atom(&make_atom("baz", [])), Some(true));
+    //     // Do derivation from the spec itself
+    //     let spec: Spec = datalog! {
+    //         #![crate]
+    //         foo. bar :- foo.
+    //     };
+    //     let mut int: Interpretation = Interpretation::new();
+    //     consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
+    //     assert_eq!(int.len(), 2);
+    //     assert_eq!(int.truth_of_atom(&make_atom("foo", [])), Some(true));
+    //     assert_eq!(int.truth_of_atom(&make_atom("bar", [])), Some(true));
 
-        // Do derivation from the spec itself
-        let spec: Spec = datalog! {
-            #![crate]
-            foo. bar :- foo.
-        };
-        let mut int: Interpretation = Interpretation::new();
-        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
-        assert_eq!(int.len(), 2);
-        assert_eq!(int.truth_of_atom(&make_atom("foo", [])), Some(true));
-        assert_eq!(int.truth_of_atom(&make_atom("bar", [])), Some(true));
+    //     // Do derivation from the interpretation
+    //     let spec: Spec = datalog! {
+    //         #![crate]
+    //         bar :- foo.
+    //     };
+    //     let mut int: Interpretation = Interpretation::from([(make_atom("foo", []), true)]);
+    //     consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
+    //     assert_eq!(int.len(), 2);
+    //     assert_eq!(int.truth_of_atom(&make_atom("foo", [])), Some(true));
+    //     assert_eq!(int.truth_of_atom(&make_atom("bar", [])), Some(true));
 
-        // Do derivation from the interpretation
-        let spec: Spec = datalog! {
-            #![crate]
-            bar :- foo.
-        };
-        let mut int: Interpretation = Interpretation::from([(make_atom("foo", []), true)]);
-        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
-        assert_eq!(int.len(), 2);
-        assert_eq!(int.truth_of_atom(&make_atom("foo", [])), Some(true));
-        assert_eq!(int.truth_of_atom(&make_atom("bar", [])), Some(true));
+    //     // Do derivation with functions
+    //     let spec: Spec = datalog! {
+    //         #![crate]
+    //         foo. bar. baz(foo). quz(foo, bar).
+    //     };
+    //     let mut int: Interpretation = Interpretation::new();
+    //     consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
+    //     assert_eq!(int.len(), 4);
+    //     assert_eq!(int.truth_of_atom(&make_atom("foo", [])), Some(true));
+    //     assert_eq!(int.truth_of_atom(&make_atom("bar", [])), Some(true));
+    //     assert_eq!(int.truth_of_atom(&make_atom("baz", ["foo"])), Some(true));
+    //     assert_eq!(int.truth_of_atom(&make_atom("quz", ["foo", "bar"])), Some(true));
 
-        // Do derivation with functions
-        let spec: Spec = datalog! {
-            #![crate]
-            foo. bar. baz(foo). quz(foo, bar).
-        };
-        let mut int: Interpretation = Interpretation::new();
-        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
-        assert_eq!(int.len(), 4);
-        assert_eq!(int.truth_of_atom(&make_atom("foo", [])), Some(true));
-        assert_eq!(int.truth_of_atom(&make_atom("bar", [])), Some(true));
-        assert_eq!(int.truth_of_atom(&make_atom("baz", ["foo"])), Some(true));
-        assert_eq!(int.truth_of_atom(&make_atom("quz", ["foo", "bar"])), Some(true));
-
-        // Do derivation with variables!
-        let spec: Spec = datalog! {
-            #![crate]
-            foo. bar. baz(X). quz(X, Y) :- baz(X).
-        };
-        let mut int: Interpretation = Interpretation::new();
-        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
-        assert_eq!(int.len(), 8);
-        assert_eq!(int.truth_of_atom(&make_atom("foo", [])), Some(true));
-        assert_eq!(int.truth_of_atom(&make_atom("bar", [])), Some(true));
-        assert_eq!(int.truth_of_atom(&make_atom("baz", ["foo"])), Some(true));
-        assert_eq!(int.truth_of_atom(&make_atom("baz", ["bar"])), Some(true));
-        assert_eq!(int.truth_of_atom(&make_atom("quz", ["foo", "foo"])), Some(true));
-        assert_eq!(int.truth_of_atom(&make_atom("quz", ["foo", "bar"])), Some(true));
-        assert_eq!(int.truth_of_atom(&make_atom("quz", ["bar", "foo"])), Some(true));
-        assert_eq!(int.truth_of_atom(&make_atom("quz", ["bar", "bar"])), Some(true));
-    }
+    //     // Do derivation with variables!
+    //     let spec: Spec = datalog! {
+    //         #![crate]
+    //         foo. bar. baz(X). quz(X, Y) :- baz(X).
+    //     };
+    //     let mut int: Interpretation = Interpretation::new();
+    //     consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
+    //     assert_eq!(int.len(), 8);
+    //     assert_eq!(int.truth_of_atom(&make_atom("foo", [])), Some(true));
+    //     assert_eq!(int.truth_of_atom(&make_atom("bar", [])), Some(true));
+    //     assert_eq!(int.truth_of_atom(&make_atom("baz", ["foo"])), Some(true));
+    //     assert_eq!(int.truth_of_atom(&make_atom("baz", ["bar"])), Some(true));
+    //     assert_eq!(int.truth_of_atom(&make_atom("quz", ["foo", "foo"])), Some(true));
+    //     assert_eq!(int.truth_of_atom(&make_atom("quz", ["foo", "bar"])), Some(true));
+    //     assert_eq!(int.truth_of_atom(&make_atom("quz", ["bar", "foo"])), Some(true));
+    //     assert_eq!(int.truth_of_atom(&make_atom("quz", ["bar", "bar"])), Some(true));
+    // }
 }
 
 
@@ -166,51 +165,51 @@ mod tests {
 
 
 /***** TRANSFORMATIONS *****/
-/// Implements a simple positive-only derivation procedure for a given [`Spec`] and knowledge base, known as an _immediate consequence transformation_ (or _-operator_).
-///
-/// In addition, a particular set of negative literals can be given that are assumed to be true.
-///
-/// # Arguments
-/// - `rules`: A [`HerbrandInstantiationIterator`] that iterates of all the concrete rules in a [`Spec`].
-/// - `int`: Some interpretation that contains facts we assume to be true. We will derive new facts in this interpretation as well.
-pub fn consequence_trans(mut rules: HerbrandInstantiationIterator, int: &mut Interpretation) {
-    debug!("Running immediate consequent transformation");
+// /// Implements a simple positive-only derivation procedure for a given [`Spec`] and knowledge base, known as an _immediate consequence transformation_ (or _-operator_).
+// ///
+// /// In addition, a particular set of negative literals can be given that are assumed to be true.
+// ///
+// /// # Arguments
+// /// - `rules`: A [`HerbrandInstantiationIterator`] that iterates of all the concrete rules in a [`Spec`].
+// /// - `int`: Some interpretation that contains facts we assume to be true. We will derive new facts in this interpretation as well.
+// pub fn consequence_trans(mut rules: HerbrandInstantiationIterator, int: &mut Interpretation) {
+//     debug!("Running immediate consequent transformation");
 
-    // This transformation is saturating, so continue until no rules are triggered anymore.
-    // NOTE: Monotonic because we can never remove truths, inferring the same fact does not count as a change and we are iterating over a Herbrand instantiation so our search space is finite (for $Datalog^\neg$, at least).
-    let mut changed: bool = true;
-    let mut i: usize = 0;
-    while changed {
-        changed = false;
-        i += 1;
+//     // This transformation is saturating, so continue until no rules are triggered anymore.
+//     // NOTE: Monotonic because we can never remove truths, inferring the same fact does not count as a change and we are iterating over a Herbrand instantiation so our search space is finite (for $Datalog^\neg$, at least).
+//     let mut changed: bool = true;
+//     let mut i: usize = 0;
+//     while changed {
+//         changed = false;
+//         i += 1;
 
-        // Go thru da rules
-        // NOTE: HerbrandInstantiationIterator is not an official iterator because it doesn't GAT. So we do this manually.
-        'rule: while let Some(rule) = rules.next() {
-            trace!("[{i}] Running immediate consequent transformation for '{rule}'");
+//         // Go thru da rules
+//         // NOTE: HerbrandInstantiationIterator is not an official iterator because it doesn't GAT. So we do this manually.
+//         'rule: while let Some(rule) = rules.next() {
+//             trace!("[{i}] Running immediate consequent transformation for '{rule}'");
 
-            // See if we can find the antecedents in the interpretation. No antecedents? Rule trivially accepted!
-            for ante in rule.tail.iter().map(|t| t.antecedents.values()).flatten() {
-                if !matches!(int.truth_of_lit(ante), Some(true)) {
-                    // The antecedant is not true; cannot derive this fact
-                    trace!("[{i}] Antecedent '{ante}' not true in the interpretation; Rule '{rule}' does not hold");
-                    continue 'rule;
-                }
-            }
+//             // See if we can find the antecedents in the interpretation. No antecedents? Rule trivially accepted!
+//             for ante in rule.tail.iter().map(|t| t.antecedents.values()).flatten() {
+//                 if !matches!(int.truth_of_lit(ante), Some(true)) {
+//                     // The antecedant is not true; cannot derive this fact
+//                     trace!("[{i}] Antecedent '{ante}' not true in the interpretation; Rule '{rule}' does not hold");
+//                     continue 'rule;
+//                 }
+//             }
 
-            // If all antecedants were in the interpretation, then derive the consequents.
-            for cons in rule.consequences.values() {
-                trace!("[{i}] Deriving '{cons}' from '{rule}' (all antecedents explicitly hold)");
-                if !matches!(int.learn(cons.clone(), true), Some(true)) {
-                    changed = true;
-                }
-            }
-        }
-    }
+//             // If all antecedants were in the interpretation, then derive the consequents.
+//             for cons in rule.consequences.values() {
+//                 trace!("[{i}] Deriving '{cons}' from '{rule}' (all antecedents explicitly hold)");
+//                 if !matches!(int.learn(cons.clone(), true), Some(true)) {
+//                     changed = true;
+//                 }
+//             }
+//         }
+//     }
 
-    // Done!
-    trace!("Done saturating immediate consequent transformation (took {i} passes)");
-}
+//     // Done!
+//     trace!("Done saturating immediate consequent transformation (took {i} passes)");
+// }
 
 /// Implements a complement-negation of an interpretation for a Herbrand base, know as a _stability transformation_.
 ///
