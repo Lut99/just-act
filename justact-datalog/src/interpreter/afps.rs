@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 11:19:14
 //  Last edited:
-//    22 Mar 2024, 18:00:14
+//    25 Mar 2024, 10:04:52
 //  Auto updated?
 //    Yes
 //
@@ -17,7 +17,7 @@ use indexmap::IndexSet;
 
 use super::herbrand::HerbrandInstantiationIterator;
 use super::interpretation::Interpretation;
-use crate::ast::{Atom, Ident, Spec};
+use crate::ast::{Atom, Spec};
 use crate::log::{debug, trace};
 
 
@@ -28,7 +28,7 @@ mod tests {
     use ast_toolkit_span::Span;
     use justact_datalog_derive::datalog;
 
-    use super::super::herbrand::{Constants as _, HerbrandBaseIterator};
+    use super::super::herbrand::HerbrandBaseIterator;
     use super::*;
     use crate::ast::{Atom, AtomArg, AtomArgs, Comma, Ident, Parens};
 
@@ -92,7 +92,7 @@ mod tests {
         // Every day, got nothing to do
         let spec: Spec = datalog! { #![crate] };
         let mut int: Interpretation = Interpretation::new();
-        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).constants().collect()), &mut int);
+        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
         assert!(int.is_empty());
 
         // Derive some constants
@@ -101,7 +101,7 @@ mod tests {
             foo. bar. baz.
         };
         let mut int: Interpretation = Interpretation::new();
-        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).constants().collect()), &mut int);
+        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
         assert_eq!(int.len(), 3);
         assert_eq!(int.truth_of_atom(&make_atom("foo", [])), Some(true));
         assert_eq!(int.truth_of_atom(&make_atom("bar", [])), Some(true));
@@ -113,7 +113,7 @@ mod tests {
             foo. bar :- foo.
         };
         let mut int: Interpretation = Interpretation::new();
-        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).constants().collect()), &mut int);
+        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
         assert_eq!(int.len(), 2);
         assert_eq!(int.truth_of_atom(&make_atom("foo", [])), Some(true));
         assert_eq!(int.truth_of_atom(&make_atom("bar", [])), Some(true));
@@ -124,7 +124,7 @@ mod tests {
             bar :- foo.
         };
         let mut int: Interpretation = Interpretation::from([(make_atom("foo", []), true)]);
-        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).constants().collect()), &mut int);
+        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
         assert_eq!(int.len(), 2);
         assert_eq!(int.truth_of_atom(&make_atom("foo", [])), Some(true));
         assert_eq!(int.truth_of_atom(&make_atom("bar", [])), Some(true));
@@ -135,7 +135,7 @@ mod tests {
             foo. bar. baz(foo). quz(foo, bar).
         };
         let mut int: Interpretation = Interpretation::new();
-        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).constants().collect()), &mut int);
+        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
         assert_eq!(int.len(), 4);
         assert_eq!(int.truth_of_atom(&make_atom("foo", [])), Some(true));
         assert_eq!(int.truth_of_atom(&make_atom("bar", [])), Some(true));
@@ -148,7 +148,7 @@ mod tests {
             foo. bar. baz(X). quz(X, Y) :- baz(X).
         };
         let mut int: Interpretation = Interpretation::new();
-        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).constants().collect()), &mut int);
+        consequence_trans(HerbrandInstantiationIterator::new(&spec, &HerbrandBaseIterator::new(&spec).collect()), &mut int);
         assert_eq!(int.len(), 8);
         assert_eq!(int.truth_of_atom(&make_atom("foo", [])), Some(true));
         assert_eq!(int.truth_of_atom(&make_atom("bar", [])), Some(true));

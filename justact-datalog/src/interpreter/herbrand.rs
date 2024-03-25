@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 10:55:27
 //  Last edited:
-//    22 Mar 2024, 18:00:06
+//    25 Mar 2024, 10:16:25
 //  Auto updated?
 //    Yes
 //
@@ -18,6 +18,7 @@ use std::iter::{Flatten, Repeat, Take};
 use indexmap::{IndexMap, IndexSet};
 
 use crate::ast::{Atom, AtomArg, Ident, Literal, Rule, Spec};
+use crate::log::{debug, trace};
 
 
 /***** TESTS *****/
@@ -36,166 +37,170 @@ mod tests {
     #[test]
     fn test_refresh_iters() {
         // Test a single variable
-        let hbase: IndexSet<Ident> = IndexSet::from([make_ident("foo"), make_ident("bar"), make_ident("baz")]);
-        let mut vars: IndexMap<Ident, RepeatIterator<indexmap::set::Iter<Ident>>> = IndexMap::new();
+        let hbase: IndexSet<Cow<Atom>> = IndexSet::from([
+            Cow::Owned(Atom { ident: make_ident("foo"), args: None }),
+            Cow::Owned(Atom { ident: make_ident("bar"), args: None }),
+            Cow::Owned(Atom { ident: make_ident("baz"), args: None }),
+        ]);
+        let mut vars: IndexMap<Ident, RepeatIterator<ConstantIterator<indexmap::set::Iter<Cow<Atom>>>>> = IndexMap::new();
         refresh_iters(&hbase, &datalog! { #![crate] foo(X) :- bar(X). }.rules[0], &mut vars);
         assert_eq!(vars.len(), 1);
-        assert_eq!(vec![vars[0].next()], vec![Some(&make_ident("foo"))]);
-        assert_eq!(vec![vars[0].next()], vec![Some(&make_ident("bar"))]);
-        assert_eq!(vec![vars[0].next()], vec![Some(&make_ident("baz"))]);
+        assert_eq!(vec![vars[0].next()], vec![Some(make_ident("foo"))]);
+        assert_eq!(vec![vars[0].next()], vec![Some(make_ident("bar"))]);
+        assert_eq!(vec![vars[0].next()], vec![Some(make_ident("baz"))]);
         assert_eq!(vec![vars[0].next()], vec![None]);
 
         // Test two distinct variables
         refresh_iters(&hbase, &datalog! { #![crate] foo(X) :- bar(Y). }.rules[0], &mut vars);
         assert_eq!(vars.len(), 2);
-        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(&make_ident("foo")), Some(&make_ident("foo"))]);
-        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(&make_ident("foo")), Some(&make_ident("bar"))]);
-        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(&make_ident("foo")), Some(&make_ident("baz"))]);
-        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(&make_ident("bar")), Some(&make_ident("foo"))]);
-        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(&make_ident("bar")), Some(&make_ident("bar"))]);
-        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(&make_ident("bar")), Some(&make_ident("baz"))]);
-        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(&make_ident("baz")), Some(&make_ident("foo"))]);
-        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(&make_ident("baz")), Some(&make_ident("bar"))]);
-        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(&make_ident("baz")), Some(&make_ident("baz"))]);
+        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(make_ident("foo")), Some(make_ident("foo"))]);
+        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(make_ident("foo")), Some(make_ident("bar"))]);
+        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(make_ident("foo")), Some(make_ident("baz"))]);
+        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(make_ident("bar")), Some(make_ident("foo"))]);
+        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(make_ident("bar")), Some(make_ident("bar"))]);
+        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(make_ident("bar")), Some(make_ident("baz"))]);
+        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(make_ident("baz")), Some(make_ident("foo"))]);
+        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(make_ident("baz")), Some(make_ident("bar"))]);
+        assert_eq!(vec![vars[0].next(), vars[1].next()], vec![Some(make_ident("baz")), Some(make_ident("baz"))]);
         assert_eq!(vec![vars[0].next(), vars[1].next()], vec![None, None]);
 
         // Test mixed distinct and the same
         refresh_iters(&hbase, &datalog! { #![crate] foo(X, Y) :- bar(Y, Z). }.rules[0], &mut vars);
         assert_eq!(vars.len(), 3);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("foo")),
-            Some(&make_ident("foo")),
-            Some(&make_ident("foo"))
+            Some(make_ident("foo")),
+            Some(make_ident("foo")),
+            Some(make_ident("foo"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("foo")),
-            Some(&make_ident("foo")),
-            Some(&make_ident("bar"))
+            Some(make_ident("foo")),
+            Some(make_ident("foo")),
+            Some(make_ident("bar"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("foo")),
-            Some(&make_ident("foo")),
-            Some(&make_ident("baz"))
+            Some(make_ident("foo")),
+            Some(make_ident("foo")),
+            Some(make_ident("baz"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("foo")),
-            Some(&make_ident("bar")),
-            Some(&make_ident("foo"))
+            Some(make_ident("foo")),
+            Some(make_ident("bar")),
+            Some(make_ident("foo"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("foo")),
-            Some(&make_ident("bar")),
-            Some(&make_ident("bar"))
+            Some(make_ident("foo")),
+            Some(make_ident("bar")),
+            Some(make_ident("bar"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("foo")),
-            Some(&make_ident("bar")),
-            Some(&make_ident("baz"))
+            Some(make_ident("foo")),
+            Some(make_ident("bar")),
+            Some(make_ident("baz"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("foo")),
-            Some(&make_ident("baz")),
-            Some(&make_ident("foo"))
+            Some(make_ident("foo")),
+            Some(make_ident("baz")),
+            Some(make_ident("foo"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("foo")),
-            Some(&make_ident("baz")),
-            Some(&make_ident("bar"))
+            Some(make_ident("foo")),
+            Some(make_ident("baz")),
+            Some(make_ident("bar"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("foo")),
-            Some(&make_ident("baz")),
-            Some(&make_ident("baz"))
+            Some(make_ident("foo")),
+            Some(make_ident("baz")),
+            Some(make_ident("baz"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("bar")),
-            Some(&make_ident("foo")),
-            Some(&make_ident("foo"))
+            Some(make_ident("bar")),
+            Some(make_ident("foo")),
+            Some(make_ident("foo"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("bar")),
-            Some(&make_ident("foo")),
-            Some(&make_ident("bar"))
+            Some(make_ident("bar")),
+            Some(make_ident("foo")),
+            Some(make_ident("bar"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("bar")),
-            Some(&make_ident("foo")),
-            Some(&make_ident("baz"))
+            Some(make_ident("bar")),
+            Some(make_ident("foo")),
+            Some(make_ident("baz"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("bar")),
-            Some(&make_ident("bar")),
-            Some(&make_ident("foo"))
+            Some(make_ident("bar")),
+            Some(make_ident("bar")),
+            Some(make_ident("foo"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("bar")),
-            Some(&make_ident("bar")),
-            Some(&make_ident("bar"))
+            Some(make_ident("bar")),
+            Some(make_ident("bar")),
+            Some(make_ident("bar"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("bar")),
-            Some(&make_ident("bar")),
-            Some(&make_ident("baz"))
+            Some(make_ident("bar")),
+            Some(make_ident("bar")),
+            Some(make_ident("baz"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("bar")),
-            Some(&make_ident("baz")),
-            Some(&make_ident("foo"))
+            Some(make_ident("bar")),
+            Some(make_ident("baz")),
+            Some(make_ident("foo"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("bar")),
-            Some(&make_ident("baz")),
-            Some(&make_ident("bar"))
+            Some(make_ident("bar")),
+            Some(make_ident("baz")),
+            Some(make_ident("bar"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("bar")),
-            Some(&make_ident("baz")),
-            Some(&make_ident("baz"))
+            Some(make_ident("bar")),
+            Some(make_ident("baz")),
+            Some(make_ident("baz"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("baz")),
-            Some(&make_ident("foo")),
-            Some(&make_ident("foo"))
+            Some(make_ident("baz")),
+            Some(make_ident("foo")),
+            Some(make_ident("foo"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("baz")),
-            Some(&make_ident("foo")),
-            Some(&make_ident("bar"))
+            Some(make_ident("baz")),
+            Some(make_ident("foo")),
+            Some(make_ident("bar"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("baz")),
-            Some(&make_ident("foo")),
-            Some(&make_ident("baz"))
+            Some(make_ident("baz")),
+            Some(make_ident("foo")),
+            Some(make_ident("baz"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("baz")),
-            Some(&make_ident("bar")),
-            Some(&make_ident("foo"))
+            Some(make_ident("baz")),
+            Some(make_ident("bar")),
+            Some(make_ident("foo"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("baz")),
-            Some(&make_ident("bar")),
-            Some(&make_ident("bar"))
+            Some(make_ident("baz")),
+            Some(make_ident("bar")),
+            Some(make_ident("bar"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("baz")),
-            Some(&make_ident("bar")),
-            Some(&make_ident("baz"))
+            Some(make_ident("baz")),
+            Some(make_ident("bar")),
+            Some(make_ident("baz"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("baz")),
-            Some(&make_ident("baz")),
-            Some(&make_ident("foo"))
+            Some(make_ident("baz")),
+            Some(make_ident("baz")),
+            Some(make_ident("foo"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("baz")),
-            Some(&make_ident("baz")),
-            Some(&make_ident("bar"))
+            Some(make_ident("baz")),
+            Some(make_ident("baz")),
+            Some(make_ident("bar"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![
-            Some(&make_ident("baz")),
-            Some(&make_ident("baz")),
-            Some(&make_ident("baz"))
+            Some(make_ident("baz")),
+            Some(make_ident("baz")),
+            Some(make_ident("baz"))
         ]);
         assert_eq!(vec![vars[0].next(), vars[1].next(), vars[2].next()], vec![None, None, None]);
     }
@@ -278,7 +283,8 @@ mod tests {
 
         // Check empty specs
         let empty: Spec = datalog! { #![crate] };
-        let mut iter = HerbrandInstantiationIterator::new(&empty, &empty.herbrand_base().collect());
+        let hbase: IndexSet<Cow<Atom>> = empty.herbrand_base().collect();
+        let mut iter = HerbrandInstantiationIterator::new(&empty, &hbase);
         rule_assert(iter.next(), None);
         rule_assert(iter.next(), None);
         rule_assert(iter.next(), None);
@@ -289,7 +295,8 @@ mod tests {
 
             foo. bar. bar. baz.
         };
-        let mut iter = HerbrandInstantiationIterator::new(&cons, &cons.herbrand_base().collect());
+        let hbase: IndexSet<Cow<Atom>> = cons.herbrand_base().collect();
+        let mut iter = HerbrandInstantiationIterator::new(&cons, &hbase);
         rule_assert(iter.next(), Some(&datalog! { #![crate] foo. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] bar. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] bar. }.rules[0]));
@@ -302,7 +309,8 @@ mod tests {
 
             foo(bar). bar(baz, quz). baz(quz).
         };
-        let mut iter = HerbrandInstantiationIterator::new(&funcs, &funcs.herbrand_base().collect());
+        let hbase: IndexSet<Cow<Atom>> = funcs.herbrand_base().collect();
+        let mut iter = HerbrandInstantiationIterator::new(&funcs, &hbase);
         rule_assert(iter.next(), Some(&datalog! { #![crate] foo(bar). }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] bar(baz, quz). }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] baz(quz). }.rules[0]));
@@ -315,7 +323,8 @@ mod tests {
             foo. bar.
             baz(X) :- quz.
         };
-        let mut iter = HerbrandInstantiationIterator::new(&rules, &rules.herbrand_base().collect());
+        let hbase: IndexSet<Cow<Atom>> = rules.herbrand_base().collect();
+        let mut iter = HerbrandInstantiationIterator::new(&rules, &hbase);
         rule_assert(iter.next(), Some(&datalog! { #![crate] foo. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] bar. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] baz(foo) :- quz. }.rules[0]));
@@ -330,7 +339,8 @@ mod tests {
             baz(X) :- quz.
             foo. bar.
         };
-        let mut iter = HerbrandInstantiationIterator::new(&rules, &rules.herbrand_base().collect());
+        let hbase: IndexSet<Cow<Atom>> = rules.herbrand_base().collect();
+        let mut iter = HerbrandInstantiationIterator::new(&rules, &hbase);
         rule_assert(iter.next(), Some(&datalog! { #![crate] baz(quz) :- quz. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] baz(foo) :- quz. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] baz(bar) :- quz. }.rules[0]));
@@ -345,7 +355,8 @@ mod tests {
             foo. bar. baz(foo, bar).
             quz(X, Y) :- baz(X, Y).
         };
-        let mut iter = HerbrandInstantiationIterator::new(&multi_rules, &multi_rules.herbrand_base().collect());
+        let hbase: IndexSet<Cow<Atom>> = multi_rules.herbrand_base().collect();
+        let mut iter = HerbrandInstantiationIterator::new(&multi_rules, &hbase);
         rule_assert(iter.next(), Some(&datalog! { #![crate] foo. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] bar. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] baz(foo, bar). }.rules[0]));
@@ -362,7 +373,7 @@ mod tests {
             foo. bar. baz(foo, bar).
             quz(X, Y, Z) :- baz(X), baz(bar), quz(Z).
         };
-        let hbase: IndexSet<Ident> = HerbrandBaseIterator::new(&multi_rules).constants().collect();
+        let hbase: IndexSet<Cow<Atom>> = multi_rules.herbrand_base().collect();
         let mut iter = HerbrandInstantiationIterator::new(&multi_rules, &hbase);
         rule_assert(iter.next(), Some(&datalog! { #![crate] foo. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] bar. }.rules[0]));
@@ -384,7 +395,7 @@ mod tests {
             foo. bar. baz. baz(foo, bar).
             quz(X, Y) :- baz(X, Y).
         };
-        let hbase: IndexSet<Cow<Atom>> = HerbrandBaseIterator::new(&multi_rules).constants().collect();
+        let hbase: IndexSet<Cow<Atom>> = multi_rules.herbrand_base().collect();
         let mut iter = HerbrandInstantiationIterator::new(&multi_rules, &hbase);
         rule_assert(iter.next(), Some(&datalog! { #![crate] foo. }.rules[0]));
         rule_assert(iter.next(), Some(&datalog! { #![crate] bar. }.rules[0]));
@@ -415,10 +426,10 @@ mod tests {
 /// - `rule`: A [`Rule`] to search for variables and such.
 /// - `vars`: The variables that we will find in this rule.
 /// - `iters`: A new set of iterators to spawn.
-fn refresh_iters<'h>(
-    hbase: &'h IndexSet<Ident>,
+fn refresh_iters<'h, 's>(
+    hbase: &'h IndexSet<Cow<'s, Atom>>,
     rule: &'_ Rule,
-    vars: &'_ mut IndexMap<Ident, RepeatIterator<indexmap::set::Iter<'h, Ident>>>,
+    vars: &'_ mut IndexMap<Ident, RepeatIterator<ConstantIterator<indexmap::set::Iter<'h, Cow<'s, Atom>>>>>,
 ) -> Option<Rule> {
     /// Generates a new iterator for the `i`th variable.
     ///
@@ -426,7 +437,11 @@ fn refresh_iters<'h>(
     /// - `hbase`: The Herbrand base that we eventually iterator over.
     /// - `n_vars`: The total number of variables we're quantifying over.
     /// - `i`: The i'the variable to generate.
-    fn create_repeat_iter<'h>(hbase: &'h IndexSet<Ident>, n_vars: usize, i: usize) -> RepeatIterator<indexmap::set::Iter<'h, Ident>> {
+    fn create_repeat_iter<'h, 's>(
+        hbase: &'h IndexSet<Cow<'s, Atom>>,
+        n_vars: usize,
+        i: usize,
+    ) -> RepeatIterator<ConstantIterator<indexmap::set::Iter<'h, Cow<'s, Atom>>>> {
         // We scale from essentially doing `111111...333333`, to `111222...222333`, to `123123...123123`
         //
         // Some examples:
@@ -447,7 +462,7 @@ fn refresh_iters<'h>(
         // 1234123412341234                 (outer = 4, inner = 1)
         // ```
         // From this we can observe that the outer grows exponentially over the Herbrand base size, whereas the inner grows inverse exponentially.
-        RepeatIterator::new(hbase.iter(), hbase.len().pow((n_vars - 1 - i) as u32), hbase.len().pow(i as u32))
+        RepeatIterator::new(hbase.iter().constants(), hbase.len().pow((n_vars - 1 - i) as u32), hbase.len().pow(i as u32))
     }
 
 
@@ -457,7 +472,7 @@ fn refresh_iters<'h>(
         for arg in cons.args.iter().map(|a| a.args.values()).flatten() {
             if let AtomArg::Var(var) = arg {
                 // Spawn the variable, but do not initialize the iterator yet (we don't know the total number of variables)
-                vars.insert(*var, RepeatIterator::empty(hbase.iter()));
+                vars.insert(*var, RepeatIterator::empty(hbase.iter().constants()));
             }
         }
     }
@@ -465,7 +480,7 @@ fn refresh_iters<'h>(
         for arg in ante.atom().args.iter().map(|a| a.args.values()).flatten() {
             if let AtomArg::Var(var) = arg {
                 // Spawn the variable, but do not initialize the iterator yet (we don't know the total number of variables)
-                vars.insert(*var, RepeatIterator::empty(hbase.iter()));
+                vars.insert(*var, RepeatIterator::empty(hbase.iter().constants()));
             }
         }
     }
@@ -489,7 +504,12 @@ fn refresh_iters<'h>(
 /// - `vars`: Defines the names of variables. Given as an [`IndexSet`] for speedier search, while the order is important to match with the assignment.
 /// - `values`: The values mapping for the given `vars`.
 /// - `gen_rule`: The rule to repopulate.
-fn repopulate_rule(rule: &Rule, vars: &IndexMap<Ident, RepeatIterator<indexmap::set::Iter<Ident>>>, values: &[Ident], gen_rule: &mut Rule) {
+fn repopulate_rule(
+    rule: &Rule,
+    vars: &IndexMap<Ident, RepeatIterator<ConstantIterator<indexmap::set::Iter<Cow<Atom>>>>>,
+    values: &[Ident],
+    gen_rule: &mut Rule,
+) {
     for (c, cons) in rule.consequences.values().enumerate() {
         for (a, arg) in cons.args.iter().map(|a| a.args.values()).flatten().enumerate() {
             if matches!(arg, AtomArg::Var(_)) {
@@ -521,12 +541,12 @@ fn repopulate_rule(rule: &Rule, vars: &IndexMap<Ident, RepeatIterator<indexmap::
 ///
 /// # Returns
 /// Whether we found a next mapping. If false, this means that we ran out of mappings to generate.
-fn get_next_mapping(iters: &mut IndexMap<Ident, RepeatIterator<indexmap::set::Iter<Ident>>>, assign: &mut Vec<Ident>) -> bool {
+fn get_next_mapping(iters: &mut IndexMap<Ident, RepeatIterator<ConstantIterator<indexmap::set::Iter<Cow<Atom>>>>>, assign: &mut Vec<Ident>) -> bool {
     assign.clear();
     assign.reserve(iters.len());
     for iter in iters.values_mut() {
         match iter.next() {
-            Some(next) => assign.push(*next),
+            Some(next) => assign.push(next),
             None => return false,
         }
     }
@@ -566,7 +586,7 @@ pub trait Constants {
     /// A [`ConstantIterator`] wrapping Self to filter out non-constant (i.e., arity > 0) atoms.
     fn constants(self) -> ConstantIterator<Self>;
 }
-impl<'s, T: Iterator<Item = Cow<'s, Atom>>> Constants for T {
+impl<'s, T: Iterator<Item = A>, A: AsRef<Atom>> Constants for T {
     #[inline]
     fn constants(self) -> ConstantIterator<Self> { ConstantIterator::new(self) }
 }
@@ -593,11 +613,11 @@ pub trait HerbrandInstantiation {
     ///
     /// # Returns
     /// A [`HerbrandInstantiationIterator`] that does what it says on the tin.
-    fn herbrand_instantiation<'s, 'h>(&'s self, hbase: &'h IndexSet<Ident>) -> HerbrandInstantiationIterator<'h, 's>;
+    fn herbrand_instantiation<'s, 'h>(&'s self, hbase: &'h IndexSet<Cow<'s, Atom>>) -> HerbrandInstantiationIterator<'h, 's>;
 }
 impl HerbrandInstantiation for Spec {
     #[inline]
-    fn herbrand_instantiation<'s, 'h>(&'s self, hbase: &'h IndexSet<Ident>) -> HerbrandInstantiationIterator<'h, 's> {
+    fn herbrand_instantiation<'s, 'h>(&'s self, hbase: &'h IndexSet<Cow<'s, Atom>>) -> HerbrandInstantiationIterator<'h, 's> {
         HerbrandInstantiationIterator::new(self, hbase)
     }
 }
@@ -769,6 +789,7 @@ impl<'s> Iterator for HerbrandBaseIterator<'s> {
 }
 
 /// Given an iterator over [`Atom`]s, only returns constants (i.e., atoms with arity 0) as [`Ident`]s.
+#[derive(Clone, Debug)]
 pub struct ConstantIterator<I: ?Sized> {
     /// Some iterator over Atoms.
     iter: I,
@@ -784,19 +805,21 @@ impl<I> ConstantIterator<I> {
     #[inline]
     pub fn new(iter: I) -> Self { Self { iter } }
 }
-impl<'s, I: Iterator<Item = Cow<'s, Atom>>> Iterator for ConstantIterator<I> {
-    type Item = Cow<'s, Atom>;
+impl<'s, I: Iterator<Item = A>, A: AsRef<Atom>> Iterator for ConstantIterator<I> {
+    type Item = Ident;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(next) = self.iter.next() {
+            let next: &Atom = next.as_ref();
+
             // Check if it's a constant
             if next.args.is_some() {
                 continue;
             }
 
             // Return the identifier
-            return Some(next);
+            return Some(next.ident);
         }
 
         // Out of stuff
@@ -815,12 +838,12 @@ pub struct HerbrandInstantiationIterator<'h, 's> {
     /// An iterator producing rules from the [`Spec`].
     rules: std::slice::Iter<'s, Rule>,
     /// The Herbrand base given for the spec.
-    hbase: &'h IndexSet<Ident>,
+    hbase: &'h IndexSet<Cow<'s, Atom>>,
 
     /// The original rule we're currently considering and an optional clone to modify with concrete instances. Is [`None`] if the rule has no variables.
     rule:   Option<(&'s Rule, Option<Rule>)>,
     /// Defines a buffer for storing which variables occur in the `rule` above.
-    vars:   IndexMap<Ident, RepeatIterator<indexmap::set::Iter<'h, Ident>>>,
+    vars:   IndexMap<Ident, RepeatIterator<ConstantIterator<indexmap::set::Iter<'h, Cow<'s, Atom>>>>>,
     /// Defines a buffer for storing the current value assignment for the `vars` above.
     assign: Vec<Ident>,
 }
@@ -833,7 +856,17 @@ impl<'h, 's> HerbrandInstantiationIterator<'h, 's> {
     ///
     /// # Returns
     /// An HerbrandInstantiationIterator that will produce all concrete rules in the given `spec`.
-    pub fn new(spec: &'s Spec, hbase: &'h IndexSet<Ident>) -> Self {
+    pub fn new(spec: &'s Spec, hbase: &'h IndexSet<Cow<'s, Atom>>) -> Self {
+        debug!(
+            "Created new HerbrandInstantiationIterator\n\nIterated spec:\n{}\n{}\n{}\n\nHerbrand base:\n{}\n{}\n{}\n",
+            (0..80).map(|_| '-').collect::<String>(),
+            spec.rules.iter().map(|r| format!("   {r}")).collect::<Vec<String>>().join("\n"),
+            (0..80).map(|_| '-').collect::<String>(),
+            (0..80).map(|_| '-').collect::<String>(),
+            hbase.iter().map(|a| format!("   {a}")).collect::<Vec<String>>().join("\n"),
+            (0..80).map(|_| '-').collect::<String>(),
+        );
+
         // Nothing to do if the Herbrand Base is empty
         if hbase.is_empty() {
             return Self { rules: spec.rules.iter(), hbase, rule: None, vars: IndexMap::new(), assign: vec![] };
