@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 10:22:40
 //  Last edited:
-//    22 Mar 2024, 17:16:21
+//    26 Mar 2024, 22:18:03
 //  Auto updated?
 //    Yes
 //
@@ -13,24 +13,29 @@
 //
 
 use std::collections::HashMap;
+use std::hash::{BuildHasher, Hash as _, Hasher, RandomState};
 
-use crate::ast::{Atom, Literal};
+use crate::ast::{Atom, AtomArg, Ident, Literal};
 
 
 /***** LIBRARY *****/
 /// Defines a set of values in the logical sense.
 #[derive(Clone)]
-pub struct Interpretation {
+pub struct Interpretation<R = RandomState> {
     /// The elements in this set.
-    data: HashMap<Atom, bool>,
+    data:  HashMap<u64, bool>,
+    /// Explicit mapping of atoms necessary for iteration.
+    defs:  HashMap<u64, Atom>,
+    /// The random state used to compute hashes.
+    state: R,
 }
-impl Interpretation {
+impl<R: Default> Interpretation<R> {
     /// Constructor for the LogicalSet that initializes it as empty.
     ///
     /// # Returns
     /// An empty Interpretation.
     #[inline]
-    pub fn new() -> Self { Self { data: HashMap::new() } }
+    pub fn new() -> Self { Self { data: HashMap::new(), defs: HashMap::new(), state: R::default() } }
 
     /// Constructor for the Interpretation that initializes it with the given capacity.
     ///
@@ -40,7 +45,62 @@ impl Interpretation {
     /// # Returns
     /// An empty Interpretation with enough space for at least `capacity` elements.
     #[inline]
-    pub fn with_capacity(capacity: usize) -> Self { Self { data: HashMap::with_capacity(capacity) } }
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self { data: HashMap::with_capacity(capacity), defs: HashMap::with_capacity(capacity), state: R::default() }
+    }
+}
+impl<R> Interpretation<R> {
+    /// Constructor for the Interpretation that initializes it with the given hash state.
+    ///
+    /// # Arguments
+    /// - `state`: The random state used for hashing to initialize the Interpretation with.
+    ///
+    /// # Returns
+    /// An empty Interpretation with the given state for hashes.
+    #[inline]
+    pub fn with_state(state: R) -> Self { Self { data: HashMap::new(), defs: HashMap::new(), state } }
+}
+impl<R: BuildHasher> Interpretation<R> {
+    /// Computes the hash of the given atom.
+    ///
+    /// This is used internally but exposed for completeness.
+    ///
+    /// # Arguments
+    /// - `atom`: The [`Atom`] to compute the hash of.
+    ///
+    /// # Returns
+    /// Some [`u64`] encoding the `atom`'s hash.
+    #[inline]
+    pub fn hash_atom(&self, atom: &Atom) -> u64 {
+        let mut state: R::Hasher = self.state.build_hasher();
+        atom.hash(&mut state);
+        state.finish()
+    }
+
+    /// Computes the hash of the given atom that has an external assignment.
+    ///
+    /// This is exposed to be useful for [`Self::truth_of_lit_by_hash()`](Interpretation::truth_of_lit_by_hash()).
+    ///
+    /// # Arguments
+    /// - `ident`: The [`Ident`] of the literal to compute the hash of.
+    /// - `assign`: Some iterator yielding assigned values to hash. Each should represent one of the atom's arguments. The first [`None`] counts as end of the list (or the physical end of it if full).
+    ///
+    /// # Returns
+    /// Some [`u64`] encoding the atom's hash.
+    #[inline]
+    pub fn hash_atom_with_assign(&self, ident: &Ident, assign: impl Iterator<Item = Ident>) -> u64 {
+        let mut state: R::Hasher = self.state.build_hasher();
+
+        // Hash the identifier, then all arguments
+        ident.hash(&mut state);
+        for ass in assign {
+            // Hash it as an [`AtomArg`]
+            AtomArg::Atom(ass).hash(&mut state);
+        }
+
+        // Done
+        state.finish()
+    }
 
     /// Learns the truth value of a new atom.
     ///
@@ -51,7 +111,13 @@ impl Interpretation {
     /// # Returns
     /// The old truth value of the atom if we already knew about it, or else [`None`] if it's completely new.
     #[inline]
-    pub fn learn(&mut self, atom: Atom, truth: bool) -> Option<bool> { self.data.insert(atom, truth) }
+    pub fn learn(&mut self, atom: Atom, truth: bool) -> Option<bool> {
+        let hash: u64 = self.hash_atom(&atom);
+
+        // Insert the atom now in both maps
+        self.defs.insert(hash, atom);
+        self.data.insert(hash, truth)
+    }
 
     /// Gets the truth value of the given atom.
     ///
@@ -61,7 +127,24 @@ impl Interpretation {
     /// # Returns
     /// True if it was in the interpretation, false if we _know_ of its negative variant, or [`None`] if we don't have any evidence.
     #[inline]
-    pub fn truth_of_atom(&self, atom: &Atom) -> Option<bool> { self.data.get(&atom).map(|t| *t) }
+    pub fn truth_of_atom(&self, atom: &Atom) -> Option<bool> {
+        let hash: u64 = self.hash_atom(&atom);
+        self.truth_of_atom_by_hash(hash)
+    }
+
+    /// Gets the truth value of a given atom by hash.
+    ///
+    /// This essentially skips the hashy part of the hashmap, instead doing it manually. This is useful in case, say, the assignment is external to the atom.
+    ///
+    /// See [`Self::hash_atom_with_assign()`](Interpretation::hash_atom_with_assign()) to find a correct way of hashing the atom. Doing it manually does not work due to the internal hashmap's random state.
+    ///
+    /// # Arguments
+    /// - `hash`: The hash of the [`Atom`] to get the truth value of.
+    ///
+    /// # Returns
+    /// True if it was in the interpretation, false if we _know_ of its negative variant, or [`None`] if we don't have any evidence.
+    #[inline]
+    pub fn truth_of_atom_by_hash(&self, hash: u64) -> Option<bool> { self.data.get(&hash).map(|t| *t) }
 
     /// Gets the truth value of the given literal.
     ///

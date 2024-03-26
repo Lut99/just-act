@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 16:43:37
 //  Last edited:
-//    22 Mar 2024, 11:53:37
+//    26 Mar 2024, 22:10:07
 //  Auto updated?
 //    Yes
 //
@@ -164,7 +164,7 @@ impl Display for Rule {
         )
     }
 }
-impl_map!(Rule, consequences, tail, dot);
+impl_map!(Rule, consequences, tail);
 
 /// Defines the second half of the rule, if any.
 ///
@@ -185,7 +185,7 @@ impl Display for RuleAntecedents {
         write!(f, " :- {}", self.antecedents.values().map(|a| a.to_string()).collect::<Vec<String>>().join(", "))
     }
 }
-impl_map!(RuleAntecedents, arrow_token, antecedents);
+impl_map!(RuleAntecedents, antecedents);
 
 
 
@@ -267,7 +267,7 @@ impl Display for NegAtom {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult { write!(f, "not {}", self.atom) }
 }
-impl_map!(NegAtom, not_token, atom);
+impl_map!(NegAtom, atom);
 
 
 
@@ -324,7 +324,7 @@ impl Display for AtomArgs {
         write!(f, "({})", self.args.values().map(|a| a.to_string()).collect::<Vec<String>>().join(","))
     }
 }
-impl_map!(AtomArgs, paren_tokens, args);
+impl_map!(AtomArgs, args);
 
 /// Represents an argument to an Atom, which is either a variable or a nested atom.
 ///
