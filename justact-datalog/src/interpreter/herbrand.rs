@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 10:55:27
 //  Last edited:
-//    26 Mar 2024, 10:49:36
+//    26 Mar 2024, 18:12:26
 //  Auto updated?
 //    Yes
 //
@@ -12,9 +12,13 @@
 //!   Implements iterators for the Herbrand instantiation of a program.
 //
 
+use std::borrow::Cow;
+use std::iter::{Chain, FlatMap, Map, Repeat, Take};
+
+use ast_toolkit_punctuated::Punctuated;
 use indexmap::IndexSet;
 
-use crate::ast::{Atom, AtomArg, Ident, Spec};
+use crate::ast::{Atom, AtomArg, AtomArgs, Comma, Ident, Literal, Parens, Rule, RuleAntecedents, Span, Spec};
 
 
 /***** TESTS *****/
@@ -171,6 +175,69 @@ mod tests {
 
 
 
+/***** HELPER ITERATORS *****/
+/// Repeats a set in a scaling way.
+///
+/// In particular, repeats the inner elements M times, and the outer iterator (including repetitions) N times.
+struct RepeatIter<'s, I> {
+    /// The set to repeat.
+    set: &'s IndexSet<I>,
+    /// The current (i, inner, outer) indices.
+    idx: (usize, usize, usize),
+    /// The given (inner, outer) repetition amounts.
+    max: (usize, usize),
+}
+impl<'s, I> RepeatIter<'s, I> {
+    /// Constructor for the RepeatIter.
+    ///
+    /// # Arguments
+    /// - `set`: The [`IndexSet`] to repeat.
+    /// - `m`: The number of times every _element_ is repeated.
+    /// - `n`: The number of times the whole _iterator_ is repeated (including the `m` repetitions).
+    ///
+    /// # Returns
+    /// A new RepeatIter.
+    #[inline]
+    pub fn new(set: &'s IndexSet<I>, m: usize, n: usize) -> Self { Self { set, idx: (0, 0, 0), max: (m, n) } }
+}
+impl<'s, I> Iterator for RepeatIter<'s, I> {
+    type Item = &'s I;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let (m, i, n) = self.idx;
+        if m < self.max.0 && i < self.set.len() {
+            // Repeat this same element all the time
+            self.idx.0 += 1;
+            Some(&self.set[i])
+        } else if i < self.set.len() {
+            // Move to the next element
+            self.idx.0 = 0;
+            self.idx.1 += 1;
+            self.next()
+        } else if n < self.max.1 {
+            // Repeat the whole iterator
+            self.idx.0 = 0;
+            self.idx.1 = 0;
+            self.idx.2 += 1;
+            self.next()
+        } else {
+            // Out-of-repetitions
+            None
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len: usize = self.set.len() * self.max.0 * self.max.1;
+        (len, Some(len))
+    }
+}
+
+
+
+
+
 /***** ITERATORS *****/
 /// Given a [`Spec`], finds the 0-base of it.
 ///
@@ -190,7 +257,7 @@ impl<'s> Herbrand0BaseIter<'s> {
     /// # Returns
     /// A new Herbrand0BaseIter ready to rock.
     #[inline]
-    pub fn new(spec: &'s Spec) -> Self {
+    fn new(spec: &'s Spec) -> Self {
         Self {
             spec,
             // We iterate over all rules first...
@@ -269,6 +336,23 @@ impl<'s> Iterator for Herbrand0BaseIter<'s> {
     }
 }
 
+
+
+/// Type alias for the antecedent -> values map function.
+type TailToValues<'s> = fn(&'s RuleAntecedents) -> ast_toolkit_punctuated::normal::Values<'s, Literal, Comma>;
+
+/// Type alias for the literal -> atom map function.
+type LiteralToAtom<'s> = fn(&'s Literal) -> &'s Atom;
+
+/// Type alias for the atom iterator in the HerbrandXBaseIter.
+type AtomIter<'s> = Chain<
+    ast_toolkit_punctuated::normal::Values<'s, Atom, Comma>,
+    Map<
+        FlatMap<std::option::Iter<'s, RuleAntecedents>, ast_toolkit_punctuated::normal::Values<'s, Literal, Comma>, TailToValues<'s>>,
+        LiteralToAtom<'s>,
+    >,
+>;
+
 /// Given a [`Spec`], finds the X-base (i.e., full Herbrand base) of it.
 ///
 /// This is simply all constants (i.e., atoms with arity 0) in the [`Spec`] plus all atoms with arity > 0 with their arguments substituted for all possible combinations of constants.
@@ -277,8 +361,13 @@ pub struct HerbrandXBaseIter<'s, 'u> {
     spec:   &'s Spec,
     /// A reference to the set of constants from the spec that lives in the parent [`HerbrandUniverse`].
     consts: &'u IndexSet<Ident>,
-    /// The complex iterator doing the work.
-    iter:   Box<dyn 's + Iterator<Item = &'s Atom>>,
+
+    /// The iterator over the rules in the spec.
+    rules: std::slice::Iter<'s, Rule>,
+    /// The iterator over the atoms in the current rule.
+    atoms: Option<AtomIter<'s>>,
+    /// A buffer with iterators we use to quantify.
+    iters: Vec<RepeatIter<'u, Ident>>,
 }
 impl<'s, 'u> HerbrandXBaseIter<'s, 'u> {
     /// Constructor for the HerbrandXBaseIter.
@@ -289,7 +378,174 @@ impl<'s, 'u> HerbrandXBaseIter<'s, 'u> {
     ///
     /// # Returns
     /// A new HerbrandXBaseIter.
-    pub fn new(spec: &'s Spec, consts: &'u IndexSet<Ident>) -> Self { Self { spec, consts, iter: Box::new(None.into_iter()) } }
+    fn new(spec: &'s Spec, consts: &'u IndexSet<Ident>) -> Self { Self { spec, consts, rules: spec.rules.iter(), atoms: None, iters: vec![] } }
+
+    /// Replaces [`Iterator::next()`] such that an existing [`Atom`] is populated instead of allocating a new one.
+    ///
+    /// # Arguments
+    /// - `atom`: Some [`Atom`] to set with the next value, or else [`None`].
+    ///
+    /// # Returns
+    /// The given Atom for convenience.
+    ///
+    /// # Panics
+    /// This function can panic if the user did some weird stuff, like giving us a different buffer in-between runs.
+    #[inline]
+    #[track_caller]
+    pub fn next<'a>(&mut self, atom: &'a mut Option<Atom>) -> &'a mut Option<Atom> {
+        /// Stand-in for a closure such that we can name the type.
+        #[inline]
+        fn tail_to_values<'s>(tail: &'s RuleAntecedents) -> ast_toolkit_punctuated::normal::Values<'s, Literal, Comma> { tail.antecedents.values() }
+
+
+        // Get the next instantiation of the atom
+        if !self.iters.is_empty() {
+            // Ensure there is an atom allocated with enough space
+            let args: &mut Punctuated<AtomArg, Comma> = if let Some(Atom { args: Some(args), .. }) = atom {
+                &mut args.args
+            } else {
+                panic!("Got an Atom with non-instantiated arguments after creating iterators for it.");
+            };
+
+            // Populate new arguments for the atom
+            args.clear();
+            for (i, iter) in self.iters.iter_mut().enumerate() {
+                // Attempt to get the next element
+                if let Some(next) = iter.next() {
+                    if i == 0 {
+                        args.push_first(AtomArg::Atom(*next));
+                    } else {
+                        args.push(Comma { span: Span::new("<auto generated by HerbrandXBaseIter::next()>", ",") }, AtomArg::Atom(*next));
+                    }
+                }
+                // Otherwise, got None
+                break;
+            }
+
+            // OK done return
+            return atom;
+        }
+
+        // Get the next atom in the rule if there is any
+        if let Some(new_atom) = self.atoms.as_mut().map(|i| i.next()).flatten() {
+            // Find if this atom has any arguments
+            let n_args: usize = new_atom.args.as_ref().map(|a| a.args.len()).unwrap_or(0);
+
+            // If there are none, then simply return this instantiation
+            if n_args == 0 {
+                // Remove any arguments in the buffer
+                self.iters.clear();
+                if let Some(Atom { ident, args: Some(args) }) = atom {
+                    *ident = new_atom.ident;
+                    args.args.clear();
+                } else {
+                    *atom = Some(Atom { ident: new_atom.ident, args: None });
+                }
+                return atom;
+            }
+
+            // Otherwise, build enough iterators
+            self.iters.clear();
+            for i in 0..n_args {
+                // We scale from essentially doing `111111...333333`, to `111222...222333`, to `123123...123123`
+                //
+                // Some examples:
+                // ```plain
+                // 123, three variables:
+                // 111111111222222222333333333      (outer = 1, inner = 9)
+                // 111222333111222333111222333      (outer = 3, inner = 3)
+                // 123123123123123123123123123      (outer = 9, inner = 1)
+                //
+                // 12, four variables
+                // 1111111122222222                 (outer = 1, inner = 8)
+                // 1111222211112222                 (outer = 2, inner = 4)
+                // 1122112211221122                 (outer = 4, inner = 2)
+                // 1212121212121212                 (outer = 8, inner = 1)
+                //
+                // 1234, two variables
+                // 1111222233334444                 (outer = 1, inner = 4)
+                // 1234123412341234                 (outer = 4, inner = 1)
+                // ```
+                // From this we can observe that the outer grows exponentially over the Herbrand base size, whereas the inner grows inverse exponentially.
+                self.iters.push(RepeatIter::new(self.consts, self.consts.len().pow((n_args - 1 - i) as u32), self.consts.len().pow(i as u32)));
+            }
+
+            // Allocate enough space in the buffer
+            match atom {
+                Some(Atom { args: Some(args), .. }) => {
+                    args.args.reserve(self.iters.len());
+                },
+                Some(Atom { args, .. }) => {
+                    *args = Some(AtomArgs {
+                        // SAFETY: We can `unwrap()` because we early quit if `new_atom` has no elements. If it does have, then it _must_ have `Some` args.
+                        paren_tokens: new_atom.args.as_ref().unwrap().paren_tokens,
+                        args: Punctuated::with_capacity(self.iters.len()),
+                    });
+                },
+                None => {
+                    *atom = Some(Atom {
+                        ident: new_atom.ident,
+                        args:  Some(AtomArgs {
+                            // SAFETY: We can `unwrap()` because we early quit if `new_atom` has no elements. If it does have, then it _must_ have `Some` args.
+                            paren_tokens: new_atom.args.as_ref().unwrap().paren_tokens,
+                            args: Punctuated::with_capacity(self.iters.len()),
+                        }),
+                    })
+                },
+            }
+
+            // Try again to find the next iteration
+            return self.next(atom);
+        }
+
+        // Fall back to the next rule
+        let rule: &'s Rule = match self.rules.next() {
+            Some(rule) => rule,
+            None => {
+                // Nothing more; return None
+                *atom = None;
+                return atom;
+            },
+        };
+        self.atoms = Some(
+            rule.consequences.values().chain(rule.tail.iter().flat_map(tail_to_values as TailToValues<'s>).map(Literal::atom as LiteralToAtom<'s>)),
+        );
+        self.next(atom)
+    }
+
+    /// Returns the total number of elements we will find by iterating.
+    ///
+    /// Note that this searches the internal spec for atoms, so might be relatively expensive (order of O(n)).
+    ///
+    /// # Returns
+    /// The expected number of elements this iterator yields in total.
+    pub fn size_hint(&self) -> usize {
+        let mut len: usize = 0;
+        for rule in &self.spec.rules {
+            for cons in rule.consequences.values() {
+                len += cons
+                    .args
+                    .as_ref()
+                    .map(|a| {
+                        (0..a.args.len()).map(|i| self.consts.len().pow(i as u32)).sum::<usize>()
+                            * (0..a.args.len()).map(|i| self.consts.len().pow((a.args.len() - 1 - i) as u32)).sum::<usize>()
+                    })
+                    .unwrap_or(1);
+            }
+            for ante in rule.tail.iter().flat_map(|t| t.antecedents.values()) {
+                len += ante
+                    .atom()
+                    .args
+                    .as_ref()
+                    .map(|a| {
+                        (0..a.args.len()).map(|i| self.consts.len().pow(i as u32)).sum::<usize>()
+                            * (0..a.args.len()).map(|i| self.consts.len().pow((a.args.len() - 1 - i) as u32)).sum::<usize>()
+                    })
+                    .unwrap_or(1);
+            }
+        }
+        len
+    }
 }
 
 
@@ -307,12 +563,10 @@ impl<'s, 'u> HerbrandXBaseIter<'s, 'u> {
 /// - A _Herbrand instantiation_, which is the rules in the spec but with (variable-respecting) concretization of all rules such that no variables occur anymore.
 #[derive(Clone, Debug)]
 pub struct HerbrandUniverse<'s> {
-    // Data
     /// The Spec of which this HerbrandUniverse is a part.
     spec:   &'s Spec,
     /// Defines the Herbrand 0-base of the given Spec. We always compute this, since we need it for the other two bases.
     consts: IndexSet<Ident>,
-    // Buffers
 }
 impl<'s> HerbrandUniverse<'s> {
     /// Constructor for the HerbrandUniverse.
