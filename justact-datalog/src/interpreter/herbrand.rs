@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 10:55:27
 //  Last edited:
-//    26 Mar 2024, 10:39:25
+//    26 Mar 2024, 10:49:36
 //  Auto updated?
 //    Yes
 //
@@ -14,7 +14,7 @@
 
 use indexmap::IndexSet;
 
-use crate::ast::{AtomArg, Ident, Spec};
+use crate::ast::{Atom, AtomArg, Ident, Spec};
 
 
 /***** TESTS *****/
@@ -83,7 +83,8 @@ mod tests {
         let empty: Spec = datalog! {
             #![crate]
         };
-        let mut iter = HerbrandUniverse::find_0_base(&empty);
+        let universe = HerbrandUniverse::new(&empty);
+        let mut iter = universe.zero_base().iter();
         assert_eq!(iter.next(), None);
         assert_eq!(iter.next(), None);
         assert_eq!(iter.next(), None);
@@ -93,8 +94,9 @@ mod tests {
             #![crate]
             foo.
         };
-        let mut iter = HerbrandUniverse::find_0_base(&one);
-        assert_eq!(iter.next(), Some(make_ident("foo")));
+        let universe = HerbrandUniverse::new(&one);
+        let mut iter = universe.zero_base().iter();
+        assert_eq!(iter.next(), Some(&make_ident("foo")));
         assert_eq!(iter.next(), None);
 
         // Multiple constants
@@ -102,10 +104,24 @@ mod tests {
             #![crate]
             foo. bar. baz.
         };
-        let mut iter = HerbrandUniverse::find_0_base(&consts);
-        assert_eq!(iter.next(), Some(make_ident("foo")));
-        assert_eq!(iter.next(), Some(make_ident("bar")));
-        assert_eq!(iter.next(), Some(make_ident("baz")));
+        let universe = HerbrandUniverse::new(&consts);
+        let mut iter = universe.zero_base().iter();
+        assert_eq!(iter.next(), Some(&make_ident("foo")));
+        assert_eq!(iter.next(), Some(&make_ident("bar")));
+        assert_eq!(iter.next(), Some(&make_ident("baz")));
+        assert_eq!(iter.next(), None);
+
+        // Duplicate constants
+        let dups: Spec = datalog! {
+            #![crate]
+            foo. foo. bar.
+        };
+        let universe = HerbrandUniverse::new(&dups);
+        let mut iter = universe.zero_base().iter();
+        assert_eq!(iter.next(), Some(&make_ident("foo")));
+        // NOTE: Would be here if it weren't for the fact we're currently going thru an IndexSet
+        // assert_eq!(iter.next(), Some(&make_ident("foo")));
+        assert_eq!(iter.next(), Some(&make_ident("bar")));
         assert_eq!(iter.next(), None);
 
         // Spec with arity-1 atoms (functions)
@@ -113,10 +129,11 @@ mod tests {
             #![crate]
             foo(bar). bar(baz). baz(quz).
         };
-        let mut iter = HerbrandUniverse::find_0_base(&funcs);
-        assert_eq!(iter.next(), Some(make_ident("bar")));
-        assert_eq!(iter.next(), Some(make_ident("baz")));
-        assert_eq!(iter.next(), Some(make_ident("quz")));
+        let universe = HerbrandUniverse::new(&funcs);
+        let mut iter = universe.zero_base().iter();
+        assert_eq!(iter.next(), Some(&make_ident("bar")));
+        assert_eq!(iter.next(), Some(&make_ident("baz")));
+        assert_eq!(iter.next(), Some(&make_ident("quz")));
         assert_eq!(iter.next(), None);
 
         // Mixed arity
@@ -124,15 +141,16 @@ mod tests {
             #![crate]
             foo. bar(). baz(quz). quz(qux, quux). corge(grault, garply, waldo).
         };
-        let mut iter = HerbrandUniverse::find_0_base(&arity);
-        assert_eq!(iter.next(), Some(make_ident("foo")));
-        assert_eq!(iter.next(), Some(make_ident("bar")));
-        assert_eq!(iter.next(), Some(make_ident("quz")));
-        assert_eq!(iter.next(), Some(make_ident("qux")));
-        assert_eq!(iter.next(), Some(make_ident("quux")));
-        assert_eq!(iter.next(), Some(make_ident("grault")));
-        assert_eq!(iter.next(), Some(make_ident("garply")));
-        assert_eq!(iter.next(), Some(make_ident("waldo")));
+        let universe = HerbrandUniverse::new(&arity);
+        let mut iter = universe.zero_base().iter();
+        assert_eq!(iter.next(), Some(&make_ident("foo")));
+        assert_eq!(iter.next(), Some(&make_ident("bar")));
+        assert_eq!(iter.next(), Some(&make_ident("quz")));
+        assert_eq!(iter.next(), Some(&make_ident("qux")));
+        assert_eq!(iter.next(), Some(&make_ident("quux")));
+        assert_eq!(iter.next(), Some(&make_ident("grault")));
+        assert_eq!(iter.next(), Some(&make_ident("garply")));
+        assert_eq!(iter.next(), Some(&make_ident("waldo")));
         assert_eq!(iter.next(), None);
 
         // Full rules
@@ -140,10 +158,11 @@ mod tests {
             #![crate]
             foo. bar(baz). quz(X) :- bar(X), qux(quux).
         };
-        let mut iter = HerbrandUniverse::find_0_base(&rules);
-        assert_eq!(iter.next(), Some(make_ident("foo")));
-        assert_eq!(iter.next(), Some(make_ident("baz")));
-        assert_eq!(iter.next(), Some(make_ident("quux")));
+        let universe = HerbrandUniverse::new(&rules);
+        let mut iter = universe.zero_base().iter();
+        assert_eq!(iter.next(), Some(&make_ident("foo")));
+        assert_eq!(iter.next(), Some(&make_ident("baz")));
+        assert_eq!(iter.next(), Some(&make_ident("quux")));
         assert_eq!(iter.next(), None);
     }
 }
@@ -250,6 +269,29 @@ impl<'s> Iterator for Herbrand0BaseIter<'s> {
     }
 }
 
+/// Given a [`Spec`], finds the X-base (i.e., full Herbrand base) of it.
+///
+/// This is simply all constants (i.e., atoms with arity 0) in the [`Spec`] plus all atoms with arity > 0 with their arguments substituted for all possible combinations of constants.
+pub struct HerbrandXBaseIter<'s, 'u> {
+    /// A reference to the Spec such that we can compute the size if we want.
+    spec:   &'s Spec,
+    /// A reference to the set of constants from the spec that lives in the parent [`HerbrandUniverse`].
+    consts: &'u IndexSet<Ident>,
+    /// The complex iterator doing the work.
+    iter:   Box<dyn 's + Iterator<Item = &'s Atom>>,
+}
+impl<'s, 'u> HerbrandXBaseIter<'s, 'u> {
+    /// Constructor for the HerbrandXBaseIter.
+    ///
+    /// # Arguments
+    /// - `spec`: The [`Spec`] to iterate over.
+    /// - `consts`: A set of constants to use to quantify atoms with arity > 0.
+    ///
+    /// # Returns
+    /// A new HerbrandXBaseIter.
+    pub fn new(spec: &'s Spec, consts: &'u IndexSet<Ident>) -> Self { Self { spec, consts, iter: Box::new(None.into_iter()) } }
+}
+
 
 
 
@@ -281,7 +323,7 @@ impl<'s> HerbrandUniverse<'s> {
     /// # Returns
     /// A new HerbrandUniverse that can be used to find all three bases.
     #[inline]
-    pub fn new(spec: &'s Spec) -> Self { Self { spec, consts: Self::find_0_base(spec).collect() } }
+    pub fn new(spec: &'s Spec) -> Self { Self { spec, consts: Herbrand0BaseIter::new(spec).collect() } }
 
     /// Returns the inner [`Spec`].
     ///
@@ -289,17 +331,26 @@ impl<'s> HerbrandUniverse<'s> {
     /// A reference to the inner [`Spec`].
     #[inline]
     pub fn spec(&self) -> &'s Spec { self.spec }
+
+    /// Returns the inner computed 0-base.
+    ///
+    /// # Returns
+    /// A reference to an [`IndexSet`] that contains all constants (stored as [`Ident`]s) in the internal [`Spec`].
+    #[inline]
+    pub fn zero_base(&self) -> &IndexSet<Ident> { &self.consts }
 }
 impl<'s> HerbrandUniverse<'s> {
     /// Finds the 0-base of the given [`Spec`].
     ///
-    /// This is an associated function as we are not depending on the 0-base (...wow).
-    ///
-    /// # Arguments
-    /// - `spec`: The [`Spec`] to compute the 0-base of.
+    /// # Returns
+    /// A `Herbrand0BaseIter` that computes the zero-base of the internal [`Spec`] on-demand.
+    #[inline]
+    pub fn find_0_base(&self) -> Herbrand0BaseIter<'s> { Herbrand0BaseIter::new(self.spec) }
+
+    /// Finds the X-base of the internal [`Spec`].
     ///
     /// # Returns
-    /// A `Herbrand0BaseIter` that computes the zero-base without allocations.
+    /// A `Herbrand0BaseIter` that computes the full Herbrand base of the internal [`Spec`] on-demand.
     #[inline]
-    pub fn find_0_base(spec: &'s Spec) -> Herbrand0BaseIter<'s> { Herbrand0BaseIter::new(spec) }
+    pub fn find_x_base<'u>(&'u self) -> HerbrandXBaseIter<'s, 'u> { HerbrandXBaseIter::new(self.spec, &self.consts) }
 }
