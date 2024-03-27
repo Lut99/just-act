@@ -4,7 +4,7 @@
 //  Created:
 //    26 Mar 2024, 19:36:31
 //  Last edited:
-//    27 Mar 2024, 16:41:22
+//    27 Mar 2024, 16:50:52
 //  Auto updated?
 //    Yes
 //
@@ -227,7 +227,7 @@ mod tests {
         };
         let mut pre: Interpretation = Interpretation::new();
         let mut aft: Interpretation = Interpretation::new();
-        if let Err(err) = consts.immediate_consequence::<1>(&mut pre, &mut aft) {
+        if let Err(err) = consts.immediate_consequence::<16>(&mut pre, &mut aft) {
             panic!("{err}");
         }
         assert_eq!(aft.len(), 3);
@@ -242,7 +242,7 @@ mod tests {
         };
         let mut pre: Interpretation = Interpretation::new();
         let mut aft: Interpretation = Interpretation::new();
-        if let Err(err) = funcs.immediate_consequence::<1>(&mut pre, &mut aft) {
+        if let Err(err) = funcs.immediate_consequence::<16>(&mut pre, &mut aft) {
             panic!("{err}");
         }
         assert_eq!(aft.len(), 3);
@@ -257,9 +257,11 @@ mod tests {
         };
         let mut pre: Interpretation = Interpretation::new();
         let mut aft: Interpretation = Interpretation::new();
-        if let Err(err) = rules.immediate_consequence::<1>(&mut pre, &mut aft) {
+        if let Err(err) = rules.immediate_consequence::<16>(&mut pre, &mut aft) {
             panic!("{err}");
         }
+        println!("{pre}");
+        println!("{aft}");
         assert_eq!(aft.len(), 2);
         assert_eq!(aft.truth_of_atom(&make_atom("foo", None)), Some(true));
         assert_eq!(aft.truth_of_atom(&make_atom("bar", Some("foo"))), Some(true));
@@ -543,12 +545,13 @@ impl Spec {
             // Swap the instances to use the previous' run's result as input to this one
             if i > 0 {
                 std::mem::swap(int, res);
+                debug!("res after swap: {res}");
             }
 
             // Go thru da rules
             for rule in &self.rules {
                 // Run the rule's derivation
-                rule.immediate_consequence::<64>(&consts, int, res)?;
+                changed |= rule.immediate_consequence::<64>(&consts, int, res)?;
             }
         }
 
