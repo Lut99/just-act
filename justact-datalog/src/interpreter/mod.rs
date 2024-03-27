@@ -4,7 +4,7 @@
 //  Created:
 //    26 Mar 2024, 19:36:31
 //  Last edited:
-//    26 Mar 2024, 22:40:02
+//    27 Mar 2024, 16:41:22
 //  Auto updated?
 //    Yes
 //
@@ -33,6 +33,7 @@ use std::fmt::{Display, Formatter, Result as FResult};
 
 use ast_toolkit_span::Span;
 use indexmap::set::IndexSet;
+use stackvec::StackVec;
 
 use self::interpretation::Interpretation;
 use crate::ast::{Atom, AtomArg, Ident, Literal, Rule, Spec};
@@ -300,7 +301,7 @@ impl error::Error for Error {}
 ///
 /// # Returns
 /// A [`String`] representing the format.
-fn format_rule_assign<const LEN: usize>(rule: &Rule, assign: &[Option<Ident>; LEN]) -> String {
+fn format_rule_assign<const LEN: usize>(rule: &Rule, assign: &StackVec<LEN, Ident>) -> String {
     let mut buf: String = String::new();
 
     // Consequences
@@ -313,7 +314,7 @@ fn format_rule_assign<const LEN: usize>(rule: &Rule, assign: &[Option<Ident>; LE
                 .iter()
                 .flat_map(|a| a.args.values())
                 .map(|_| {
-                    let arg: String = assign[i].unwrap().to_string();
+                    let arg: String = assign[i].to_string();
                     i += 1;
                     arg
                 })
@@ -335,7 +336,7 @@ fn format_rule_assign<const LEN: usize>(rule: &Rule, assign: &[Option<Ident>; LE
                 .iter()
                 .flat_map(|a| a.args.values())
                 .map(|_| {
-                    let arg: String = assign[i].unwrap().to_string();
+                    let arg: String = assign[i].to_string();
                     i += 1;
                     arg
                 })
@@ -574,15 +575,14 @@ impl Rule {
     fn find_iters<'c, const LEN: usize>(
         &self,
         consts: &'c IndexSet<Ident>,
-        iters: &mut [Option<AntecedentQuantifier<'c>>; LEN],
+        iters: &mut StackVec<LEN, AntecedentQuantifier<'c>>,
         n_cons: &mut usize,
         n_vars: &mut usize,
     ) -> Result<(), Error> {
-        // A shadow buffer we use to keep track of the variables we've already seen. Like `iters`, the end of the buffer is the first `None`.
-        let mut vars: [Option<(Ident, usize)>; LEN] = [None; LEN];
+        // A shadow buffer we use to keep track of the variables we've already seen.
+        let mut vars: StackVec<LEN, (Ident, usize)> = StackVec::new();
 
         // Examine everything in one big happy heap
-        let mut iters_end: usize = 0;
         'arg: for arg in self
             .consequences
             .values()
@@ -591,7 +591,7 @@ impl Rule {
             .chain(self.tail.iter().flat_map(|t| t.antecedents.values().flat_map(|v| v.atom().args.iter().flat_map(|a| a.args.values()))))
         {
             // Catch out-of-bounds
-            if iters_end >= LEN {
+            if iters.len() >= iters.capacity() {
                 return Err(Error::QuantifyOverflow { rule: self.clone(), max: LEN });
             }
 
@@ -599,18 +599,16 @@ impl Rule {
             match arg {
                 AtomArg::Atom(a) => {
                     // Insert an atom iterator at the end of the current list
-                    iters[iters_end] = Some(AntecedentQuantifier::Atom(consts.len(), *a, 0));
-                    iters_end += 1;
+                    iters.push(AntecedentQuantifier::Atom(consts.len(), *a, 0));
                 },
                 AtomArg::Var(v) => {
                     // Check if we've seen this variable before somewhere
                     for i in 0..*n_vars {
                         // SAFETY: We promise ourselves that we only see [`None`]s after the list ended, i.e., i >= vars_end. But the range prevents this from happening.
-                        let (var, idx): &(Ident, usize) = vars[i].as_ref().unwrap();
-                        if v == var {
+                        let (var, idx): (Ident, usize) = vars[i];
+                        if v == &var {
                             // We have seen this before! So insert this variable's quantifier.
-                            iters[iters_end] = iters[*idx];
-                            iters_end += 1;
+                            iters.push(iters[idx]);
                             continue 'arg;
                         }
 
@@ -618,17 +616,11 @@ impl Rule {
                     }
 
                     // We haven't seen this variable before. Add a new quantifier.
-                    iters[iters_end] = Some(AntecedentQuantifier::Var(consts, (0, 0, 0), *n_vars));
-                    vars[*n_vars] = Some((*v, iters_end));
-                    iters_end += 1;
+                    vars.push((*v, iters.len()));
+                    iters.push(AntecedentQuantifier::Var(consts, (0, 0, 0), *n_vars));
                     *n_vars += 1;
                 },
             }
-        }
-
-        // On the way out, set the last element to `None` to properly mark the ending, regardless of what was there before
-        if iters_end < LEN {
-            iters[iters_end] = None;
         }
 
         // Alrighty done
@@ -668,12 +660,12 @@ impl Rule {
         // Create a set of iterators that quantify over any variables found in the rule
         let mut n_vars: usize = 0;
         let mut n_cons_args: usize = 0;
-        let mut iters: [Option<AntecedentQuantifier>; LEN] = [None; LEN];
+        let mut iters: StackVec<LEN, AntecedentQuantifier> = StackVec::new();
         self.find_iters(consts, &mut iters, &mut n_cons_args, &mut n_vars)?;
 
         // Inject a phony argument if none were found. This is important to still derive constants.
-        if iters[0].is_none() {
-            iters[0] = Some(AntecedentQuantifier::Atom(
+        if iters.is_empty() {
+            iters.push(AntecedentQuantifier::Atom(
                 1,
                 Ident { value: Span::new("<auto generated by Rule::immediate_consequence()>", "you should never see this :)") },
                 0,
@@ -683,21 +675,14 @@ impl Rule {
 
         // Now hit the road jack no more no more (or something along those lines)
         let mut changed: bool = false;
-        let mut assign: [Option<Ident>; LEN] = [None; LEN];
+        let mut assign: StackVec<LEN, Ident> = StackVec::new();
         'instance: loop {
             // Find the next assignment
-            for (i, iter) in iters.iter_mut().enumerate() {
-                match iter {
-                    // Store the next item
-                    Some(iter) => {
-                        assign[i] = Some(match iter.next(n_vars) {
-                            Some(next) => next,
-                            None => break 'instance,
-                        });
-                    },
-                    // End iteration (no need to mark, as we assume the size is perfecto)
-                    None => break,
-                }
+            for iter in &mut iters {
+                assign.push(match iter.next(n_vars) {
+                    Some(next) => next,
+                    None => break 'instance,
+                });
             }
             trace!("[Rule '{self}'] Considering instantiation '{}'", format_rule_assign(self, &assign));
 
@@ -710,7 +695,7 @@ impl Rule {
                 // Check if
                 if int.truth_of_atom_by_hash(int.hash_atom_with_assign(
                     &ante.atom().ident,
-                    (&mut ant_assign).take(ante.atom().args.as_ref().map(|a| a.args.len()).unwrap_or(0)).filter_map(|a| *a),
+                    (&mut ant_assign).take(ante.atom().args.as_ref().map(|a| a.args.len()).unwrap_or(0)).map(|a| *a),
                 )) != Some(polarity)
                 {
                     // The antecedant (as a literal, so negation taken into account) is not true; cannot derive this fact
@@ -729,7 +714,7 @@ impl Rule {
                 // Create the instantiation of the consequent
                 let mut cons: Atom = cons.clone();
                 for arg in cons.args.iter_mut().flat_map(|a| a.args.values_mut()) {
-                    *arg = AtomArg::Atom(con_assign.next().cloned().flatten().unwrap());
+                    *arg = AtomArg::Atom(con_assign.next().cloned().unwrap());
                 }
 
                 // Now derive it

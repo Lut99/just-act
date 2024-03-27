@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 10:22:40
 //  Last edited:
-//    26 Mar 2024, 22:18:03
+//    27 Mar 2024, 16:05:53
 //  Auto updated?
 //    Yes
 //
@@ -13,6 +13,7 @@
 //
 
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter, Result as FResult};
 use std::hash::{BuildHasher, Hash as _, Hasher, RandomState};
 
 use crate::ast::{Atom, AtomArg, Ident, Literal};
@@ -186,10 +187,29 @@ impl<R: BuildHasher> Interpretation<R> {
     #[inline]
     pub fn clear(&mut self) { self.data.clear() }
 }
-impl<T: IntoIterator<Item = (Atom, bool)>> From<T> for Interpretation {
-    #[inline]
-    fn from(value: T) -> Self { Self::from_iter(value.into_iter()) }
+
+// Format
+impl<R> Display for Interpretation<R> {
+    fn fmt(&self, f: &mut Formatter) -> FResult {
+        // Separate the atoms out
+        let mut pos: Vec<&Atom> = self.defs.iter().filter(|(hash, _)| *self.data.get(hash).unwrap()).map(|(_, def)| def).collect();
+        let mut neg: Vec<&Atom> = self.defs.iter().filter(|(hash, _)| !*self.data.get(hash).unwrap()).map(|(_, def)| def).collect();
+        pos.sort_by_key(|a| a.ident.value.value());
+        neg.sort_by_key(|a| a.ident.value.value());
+
+        // Print 'em
+        writeln!(f, "Interpretation {{")?;
+        writeln!(f, "    Positive: [")?;
+        writeln!(f, "{}", pos.into_iter().map(|a| format!("        {a}\n")).collect::<String>())?;
+        writeln!(f, "    ],")?;
+        writeln!(f, "    Negative: [")?;
+        writeln!(f, "{}", neg.into_iter().map(|a| format!("        {a}\n")).collect::<String>())?;
+        writeln!(f, "    ],")?;
+        writeln!(f, "}}")
+    }
 }
+
+// From
 impl FromIterator<(Atom, bool)> for Interpretation {
     #[inline]
     fn from_iter<T: IntoIterator<Item = (Atom, bool)>>(iter: T) -> Self {
@@ -201,4 +221,8 @@ impl FromIterator<(Atom, bool)> for Interpretation {
         }
         int
     }
+}
+impl<T: IntoIterator<Item = (Atom, bool)>> From<T> for Interpretation {
+    #[inline]
+    fn from(value: T) -> Self { Self::from_iter(value.into_iter()) }
 }
