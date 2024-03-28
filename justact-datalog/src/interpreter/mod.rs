@@ -4,7 +4,7 @@
 //  Created:
 //    26 Mar 2024, 19:36:31
 //  Last edited:
-//    28 Mar 2024, 10:22:57
+//    28 Mar 2024, 11:36:56
 //  Auto updated?
 //    Yes
 //
@@ -309,6 +309,111 @@ mod tests {
         assert_eq!(aft.truth_of_atom(&make_atom("quux", ["baz", "bar"])), Some(true));
         assert_eq!(aft.truth_of_atom(&make_atom("quux", ["baz", "baz"])), Some(true));
     }
+
+    #[test]
+    fn test_spec_stable_transformation() {
+        // Try some constants, no prior knowledge
+        let consts: Spec = datalog! {
+            #![crate]
+            foo. bar. baz.
+        };
+        let mut pre: Interpretation = Interpretation::new();
+        let mut aft: Interpretation = Interpretation::new();
+        if let Err(err) = consts.stable_transformation::<16>(&consts.find_0_base(), &mut pre, &mut aft) {
+            panic!("{err}");
+        }
+        assert_eq!(aft.len(), 3);
+        assert_eq!(aft.truth_of_atom(&make_atom("foo", None)), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("bar", None)), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("baz", None)), Some(false));
+
+        // Try some constants, prior knowledge
+        let consts2: Spec = datalog! {
+            #![crate]
+            foo. bar. baz.
+        };
+        let mut pre: Interpretation = Interpretation::from([(make_atom("foo", None), true)]);
+        let mut aft: Interpretation = Interpretation::new();
+        if let Err(err) = consts2.stable_transformation::<16>(&consts2.find_0_base(), &mut pre, &mut aft) {
+            panic!("{err}");
+        }
+        assert_eq!(aft.len(), 2);
+        assert_eq!(aft.truth_of_atom(&make_atom("bar", None)), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("baz", None)), Some(false));
+
+        // Try some functions, some prior knowledge
+        let funcs: Spec = datalog! {
+            #![crate]
+            foo(bar). bar(baz). baz(quz).
+        };
+        let mut pre: Interpretation = Interpretation::from([(make_atom("bar", None), true), (make_atom("foo", Some("bar")), true)]);
+        let mut aft: Interpretation = Interpretation::new();
+        if let Err(err) = funcs.stable_transformation::<16>(&funcs.find_0_base(), &mut pre, &mut aft) {
+            panic!("{err}");
+        }
+        assert_eq!(aft.len(), 4);
+        assert_eq!(aft.truth_of_atom(&make_atom("baz", None)), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("quz", None)), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("bar", Some("baz"))), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("baz", Some("quz"))), Some(false));
+
+        // Try some (grounded) rules, no prior knowledge
+        let rules: Spec = datalog! {
+            #![crate]
+            foo. bar(foo) :- foo. quz(bar) :- bar.
+        };
+        let mut pre: Interpretation = Interpretation::new();
+        let mut aft: Interpretation = Interpretation::new();
+        if let Err(err) = rules.stable_transformation::<16>(&rules.find_0_base(), &mut pre, &mut aft) {
+            panic!("{err}");
+        }
+        assert_eq!(aft.len(), 4);
+        assert_eq!(aft.truth_of_atom(&make_atom("foo", None)), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("bar", None)), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("bar", Some("foo"))), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("quz", Some("bar"))), Some(false));
+
+        // Try some (grounded) rules _with_ prior knowledge
+        let mut pre: Interpretation = Interpretation::from([(make_atom("bar", None), true), (make_atom("quz", Some("bar")), true)]);
+        let mut aft: Interpretation = Interpretation::new();
+        if let Err(err) = rules.stable_transformation::<16>(&rules.find_0_base(), &mut pre, &mut aft) {
+            panic!("{err}");
+        }
+        assert_eq!(aft.len(), 2);
+        assert_eq!(aft.truth_of_atom(&make_atom("foo", None)), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("bar", Some("foo"))), Some(false));
+
+        // Try some rules with variables
+        let vars: Spec = datalog! {
+            #![crate]
+            foo. bar. baz.
+            quz(foo). quz(bar). quz(baz).
+            qux(X) :- quz(X).
+            quux(X, Y) :- qux(X), quz(Y).
+        };
+        let mut pre: Interpretation = Interpretation::from([(make_atom("foo", []), true), (make_atom("quux", ["foo", "foo"]), true)]);
+        let mut aft: Interpretation = Interpretation::new();
+        if let Err(err) = vars.stable_transformation::<16>(&vars.find_0_base(), &mut pre, &mut aft) {
+            panic!("{err}");
+        }
+        assert_eq!(aft.len(), 16);
+        assert_eq!(aft.truth_of_atom(&make_atom("bar", [])), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("baz", [])), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("quz", ["foo"])), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("quz", ["bar"])), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("quz", ["baz"])), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("qux", ["foo"])), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("qux", ["bar"])), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("qux", ["baz"])), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["foo", "bar"])), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["foo", "baz"])), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["bar", "foo"])), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["bar", "bar"])), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["bar", "baz"])), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["baz", "foo"])), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["baz", "bar"])), Some(false));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["baz", "baz"])), Some(false));
+    }
 }
 
 
@@ -341,7 +446,7 @@ impl error::Error for Error {}
 /// Generates a string that represents an instantiated rule.
 ///
 /// # Arguments
-/// - `rule`: The actual rule to instantiate.
+/// - `rule`: The actual [`Rule`] to instantiate.
 /// - `assign`: Some assignment for the rule's variables.
 ///
 /// # Returns
@@ -393,6 +498,32 @@ fn format_rule_assign<const LEN: usize>(rule: &Rule, assign: &StackVec<LEN, Iden
     // Done
     buf.push('.');
     buf
+}
+
+/// Generates a string that represents an instantiated atom.
+///
+/// # Arguments
+/// - `atom`: The actual [`Atom`] to instantiate.
+/// - `assign`: Some assignment for the atom's variables.
+///
+/// # Returns
+/// A [`String`] representing the format.
+fn format_atom_assign<const LEN: usize>(atom: &Atom, assign: &StackVec<LEN, Ident>) -> String {
+    let mut i: usize = 0;
+    format!(
+        "{}({})",
+        atom.ident,
+        atom.args
+            .iter()
+            .flat_map(|a| a.args.values())
+            .map(|_| {
+                let arg: String = assign[i].to_string();
+                i += 1;
+                arg
+            })
+            .collect::<Vec<String>>()
+            .join(",")
+    )
 }
 
 
@@ -574,7 +705,7 @@ impl Spec {
     /// i.e., we must observe negative atoms explicitly instead of the absence of positives.
     ///
     /// # Generics
-    /// - `LEN`: Some buffer length to use internally. This determines the maximum total number of arguments among _all_ consequences and antecedents in the rule. **Must be > 0.**
+    /// - `LEN`: Some buffer length to use internally. This determines the maximum total number of arguments among _all_ consequences and antecedents in a rule. **Must be > 0.**
     ///
     /// # Arguments
     /// - `int`: Some [`Interpretation`] to derive from. Note that we alternate this one with `res`, so after derivation, this will hold the interpretation for the second-to-last saturation run.
@@ -584,7 +715,7 @@ impl Spec {
     /// Whether any new facts were derived or not.
     ///
     /// # Errors
-    /// This function can error if the total number of arguments in the function exceeds `LEN`,
+    /// This function can error if the total number of arguments in a rule exceeds `LEN`,
     pub fn immediate_consequence<const LEN: usize>(&self, int: &mut Interpretation, res: &mut Interpretation) -> Result<bool, Error> {
         debug!("Running immediate consequent transformation");
 
@@ -619,6 +750,134 @@ impl Spec {
         trace!("Done saturating immediate consequent transformation (took {i} passes)");
         Ok(changed)
     }
+
+    /// Performs the stable transformation for the given Interpretation.
+    ///
+    /// Concretely, this takes the complement of the Interpretation in this Spec's _full_ Herbrand-base (which includes atoms with arity > 0), and then negates all those atoms.
+    ///
+    /// This produces an interpretation with atoms "assumed to be false". The specific use is described in the paper.
+    ///
+    /// # Generics
+    /// - `LEN`: Some buffer length to use internally. This determines the maximum total number of arguments among _all_ consequences and antecedents in a rule. **Must be > 0.**
+    ///
+    /// # Arguments
+    /// - `consts`: An already computed zero-base to use.
+    /// - `int`: Some [`Interpretation`] to transform.
+    /// - `res`: Another [`Interpretation`] that we populate with the transformed version of `int`.
+    ///
+    /// # Errors
+    /// This function can error if the total number of arguments in a rule exceeds `LEN`.
+    pub fn stable_transformation<const LEN: usize>(
+        &self,
+        consts: &IndexSet<Ident>,
+        int: &mut Interpretation,
+        res: &mut Interpretation,
+    ) -> Result<(), Error> {
+        debug!("Running stable transformation for {int}");
+
+        // Go through the rules
+        res.clear();
+        let mut iters: StackVec<LEN, AntecedentQuantifier> = StackVec::new();
+        let (mut n_cons_args, mut n_vars): (usize, usize) = (0, 0);
+        let mut assign: StackVec<LEN, Ident> = StackVec::new();
+        let mut atom_assign: StackVec<LEN, Ident> = StackVec::new();
+        for rule in &self.rules {
+            trace!("Considering rule '{rule}'");
+
+            // Go through the assignments
+            rule.find_iters(consts, &mut iters, &mut n_cons_args, &mut n_vars)?;
+            'assign: loop {
+                assign.clear();
+                for iter in &mut iters {
+                    assign.push(match iter.next(n_vars) {
+                        Some(next) => next,
+                        None => break 'assign,
+                    });
+                }
+                trace!("[Rule '{rule}'] Considering instantiation '{}'", format_rule_assign(rule, &assign));
+
+                // Go through the consequences first to find all applicable atoms
+                let mut assign_iter = assign.iter();
+                for cons in rule.consequences.values() {
+                    // Collect a specific assignment for this atom only
+                    atom_assign.clear();
+                    atom_assign.extend((&mut assign_iter).take(cons.args.as_ref().map(|a| a.args.len()).unwrap_or(0)).cloned());
+
+                    // See if this atom exists in the interpretation
+                    if !matches!(int.truth_of_atom_by_hash(int.hash_atom_with_assign(&cons.ident, atom_assign.iter().cloned())), Some(true)) {
+                        trace!(
+                            "[Rule '{rule}' // '{}'] Consequent '{}' does not appear in interpretation, creating negation in consequent",
+                            format_rule_assign(rule, &assign),
+                            format_atom_assign(cons, &atom_assign),
+                        );
+
+                        // It doesn't; so write its negation to the interpretation
+                        let mut cons: Atom = cons.clone();
+                        for (i, arg) in cons.args.iter_mut().flat_map(|a| a.args.values_mut()).enumerate() {
+                            *arg = AtomArg::Atom(atom_assign[i]);
+                        }
+                        // Don't forget to write it negated
+                        res.learn(cons, false);
+                    }
+
+                    // Then also consider the atom's arguments (which are all constants, much easier!)
+                    for arg in &atom_assign {
+                        // If it's in the interpretation, then we _don't_ complement it
+                        let arg: Atom = Atom { ident: *arg, args: None };
+                        if !matches!(int.truth_of_atom(&arg), Some(true)) {
+                            trace!(
+                                "[Rule '{rule}' // '{}'] Argument '{arg}' does not appear in interpretation, creating negation in consequent",
+                                format_rule_assign(rule, &assign)
+                            );
+                            // Don't forget to write it negated
+                            res.learn(arg, false);
+                        }
+                    }
+                }
+
+                // Then do all antecedents
+                for ante in rule.tail.iter().flat_map(|t| t.antecedents.values()) {
+                    // Collect a specific assignment for this atom only
+                    atom_assign.clear();
+                    atom_assign.extend((&mut assign_iter).take(ante.atom().args.as_ref().map(|a| a.args.len()).unwrap_or(0)).cloned());
+
+                    // See if this atom exists in the interpretation
+                    if !matches!(int.truth_of_atom_by_hash(int.hash_atom_with_assign(&ante.atom().ident, atom_assign.iter().cloned())), Some(true)) {
+                        trace!(
+                            "[Rule '{rule}' // '{}'] Antecedent '{}' does not appear in interpretation, creating negation in consequent",
+                            format_rule_assign(rule, &assign),
+                            format_atom_assign(ante.atom(), &atom_assign),
+                        );
+
+                        // It doesn't; so write its negation to the interpretation
+                        let mut ante: Atom = ante.atom().clone();
+                        for (i, arg) in ante.args.iter_mut().flat_map(|a| a.args.values_mut()).enumerate() {
+                            *arg = AtomArg::Atom(atom_assign[i]);
+                        }
+                        // Don't forget to write it negated
+                        res.learn(ante, false);
+                    }
+
+                    // Then also consider the atom's arguments (which are all constants, much easier!)
+                    for arg in &atom_assign {
+                        // If it's in the interpretation, then we _don't_ complement it
+                        let arg: Atom = Atom { ident: *arg, args: None };
+                        if !matches!(int.truth_of_atom(&arg), Some(true)) {
+                            trace!(
+                                "[Rule '{rule}' // '{}'] Argument '{arg}' does not appear in interpretation, creating negation in consequent",
+                                format_rule_assign(rule, &assign)
+                            );
+                            // Don't forget to write it negated
+                            res.learn(arg, false);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Done, complement computed
+        Ok(())
+    }
 }
 
 
@@ -643,6 +902,9 @@ impl Rule {
         n_vars: &mut usize,
     ) -> Result<(), Error> {
         // A shadow buffer we use to keep track of the variables we've already seen.
+        iters.clear();
+        *n_cons = 0;
+        *n_vars = 0;
         let mut vars: StackVec<LEN, (Ident, usize)> = StackVec::new();
 
         // Examine everything in one big happy heap
@@ -686,6 +948,16 @@ impl Rule {
             }
         }
 
+        // Inject a phony argument if none were found. This is important to still derive constants.
+        if iters.is_empty() {
+            iters.push(AntecedentQuantifier::Atom(
+                1,
+                Ident { value: Span::new("<auto generated by Rule::find_iters()>", "you should never see this :)") },
+                0,
+            ));
+            *n_cons += 1;
+        }
+
         // Alrighty done
         Ok(())
     }
@@ -725,16 +997,6 @@ impl Rule {
         let mut n_cons_args: usize = 0;
         let mut iters: StackVec<LEN, AntecedentQuantifier> = StackVec::new();
         self.find_iters(consts, &mut iters, &mut n_cons_args, &mut n_vars)?;
-
-        // Inject a phony argument if none were found. This is important to still derive constants.
-        if iters.is_empty() {
-            iters.push(AntecedentQuantifier::Atom(
-                1,
-                Ident { value: Span::new("<auto generated by Rule::immediate_consequence()>", "you should never see this :)") },
-                0,
-            ));
-            n_cons_args += 1;
-        }
 
         // Now hit the road jack no more no more (or something along those lines)
         let mut changed: bool = false;
