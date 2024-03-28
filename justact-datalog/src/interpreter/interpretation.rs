@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 10:22:40
 //  Last edited:
-//    27 Mar 2024, 16:05:53
+//    28 Mar 2024, 10:09:24
 //  Auto updated?
 //    Yes
 //
@@ -17,6 +17,7 @@ use std::fmt::{Display, Formatter, Result as FResult};
 use std::hash::{BuildHasher, Hash as _, Hasher, RandomState};
 
 use crate::ast::{Atom, AtomArg, Ident, Literal};
+use crate::log::warn;
 
 
 /***** LIBRARY *****/
@@ -74,7 +75,20 @@ impl<R: BuildHasher> Interpretation<R> {
     #[inline]
     pub fn hash_atom(&self, atom: &Atom) -> u64 {
         let mut state: R::Hasher = self.state.build_hasher();
-        atom.hash(&mut state);
+
+        // Hash the identifier, then all arguments
+        atom.ident.hash(&mut state);
+        for arg in atom.args.iter().flat_map(|a| a.args.values()) {
+            // Warn if it's a var
+            if matches!(arg, AtomArg::Var(_)) {
+                warn!("Hashing an `AtomArg::Var` (this is probably unintended)");
+            }
+
+            // Hash the AtomArg
+            arg.hash(&mut state);
+        }
+
+        // Done
         state.finish()
     }
 
@@ -186,6 +200,27 @@ impl<R: BuildHasher> Interpretation<R> {
     /// Note that this does not change the capacity of the interpretation.
     #[inline]
     pub fn clear(&mut self) { self.data.clear() }
+}
+
+// Compare
+impl<R> Eq for Interpretation<R> {}
+impl<R> PartialEq for Interpretation<R> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        if self.data.len() != other.data.len() {
+            return false;
+        }
+        for (hash, lhs) in &self.data {
+            if let Some(rhs) = other.data.get(&hash) {
+                if *lhs != *rhs {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 // Format

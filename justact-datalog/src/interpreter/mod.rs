@@ -4,7 +4,7 @@
 //  Created:
 //    26 Mar 2024, 19:36:31
 //  Last edited:
-//    27 Mar 2024, 16:50:52
+//    28 Mar 2024, 10:22:57
 //  Auto updated?
 //    Yes
 //
@@ -260,11 +260,54 @@ mod tests {
         if let Err(err) = rules.immediate_consequence::<16>(&mut pre, &mut aft) {
             panic!("{err}");
         }
-        println!("{pre}");
-        println!("{aft}");
         assert_eq!(aft.len(), 2);
         assert_eq!(aft.truth_of_atom(&make_atom("foo", None)), Some(true));
         assert_eq!(aft.truth_of_atom(&make_atom("bar", Some("foo"))), Some(true));
+
+        // Try some (grounded) rules _with_ prior knowledge
+        let mut pre: Interpretation = Interpretation::from([(make_atom("bar", None), true)]);
+        let mut aft: Interpretation = Interpretation::new();
+        if let Err(err) = rules.immediate_consequence::<16>(&mut pre, &mut aft) {
+            panic!("{err}");
+        }
+        assert_eq!(aft.len(), 4);
+        assert_eq!(aft.truth_of_atom(&make_atom("foo", None)), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("bar", None)), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("bar", Some("foo"))), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("quz", Some("bar"))), Some(true));
+
+        // Try some rules with variables
+        let vars: Spec = datalog! {
+            #![crate]
+            foo. bar. baz.
+            quz(foo). quz(bar). quz(baz).
+            qux(X) :- quz(X).
+            quux(X, Y) :- qux(X), quz(Y).
+        };
+        let mut pre: Interpretation = Interpretation::new();
+        let mut aft: Interpretation = Interpretation::new();
+        if let Err(err) = vars.immediate_consequence::<16>(&mut pre, &mut aft) {
+            panic!("{err}");
+        }
+        assert_eq!(aft.len(), 18);
+        assert_eq!(aft.truth_of_atom(&make_atom("foo", [])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("bar", [])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("baz", [])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("quz", ["foo"])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("quz", ["bar"])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("quz", ["baz"])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("qux", ["foo"])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("qux", ["bar"])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("qux", ["baz"])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["foo", "foo"])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["foo", "bar"])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["foo", "baz"])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["bar", "foo"])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["bar", "bar"])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["bar", "baz"])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["baz", "foo"])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["baz", "bar"])), Some(true));
+        assert_eq!(aft.truth_of_atom(&make_atom("quux", ["baz", "baz"])), Some(true));
     }
 }
 
@@ -360,7 +403,7 @@ fn format_rule_assign<const LEN: usize>(rule: &Rule, assign: &StackVec<LEN, Iden
 /// Iterates over either a specific identifier (in the case of an atom), or a quantification of all constants (in case of a variable).
 #[derive(Clone, Copy, Debug)]
 pub enum AntecedentQuantifier<'c> {
-    /// It's a specific identifier we keep on yielding. Also keeps the current count of yielding into account.
+    /// It's a specific identifier we keep on yielding. The first `usize` is the length of the `consts`-array (i.e., Herbrand 0-base), and the second is the current number of yielded elements.
     Atom(usize, Ident, usize),
     /// It's a full set of constants to quantify, with possible element-wise repetitions and full iterator repetition (respectively).
     /// Finally, stores the "index" of this variable, which determines the sequence of constants used to generate it.
@@ -419,25 +462,40 @@ impl<'c> AntecedentQuantifier<'c> {
                 let n_outer_repeats: usize = consts.len().pow(*i as u32);
 
                 // Consider whether to return the current element or advance any of the counters
-                if *inner_idx < n_inner_repeats && *idx < consts_len {
-                    // We're in the inner-repeat loop
-                    *inner_idx += 1;
-                    Some(consts[*idx])
-                } else if *idx < consts_len {
-                    // We're advancing to the next element
-                    *inner_idx = 0;
-                    *idx += 1;
-                    self.next(n_vars)
-                } else if *outer_idx < n_outer_repeats {
-                    // We're advancing to the next iterator repetition
-                    *inner_idx = 0;
-                    *idx = 0;
-                    *outer_idx += 1;
-                    self.next(n_vars)
-                } else {
-                    // Nothing to return anymore
-                    None
+                loop {
+                    if *inner_idx < n_inner_repeats && *idx < consts_len {
+                        // We're in the inner-repeat loop
+                        *inner_idx += 1;
+                        break Some(consts[*idx]);
+                    } else if *idx < consts_len {
+                        // We're advancing to the next element
+                        *inner_idx = 0;
+                        *idx += 1;
+                        continue;
+                    } else if *outer_idx < n_outer_repeats {
+                        // We're advancing to the next iterator repetition
+                        *inner_idx = 0;
+                        *idx = 0;
+                        *outer_idx += 1;
+                        continue;
+                    } else {
+                        // Nothing to return anymore
+                        break None;
+                    }
                 }
+            },
+        }
+    }
+
+    /// Resets the iterator to nothing yielded.
+    #[inline]
+    pub fn reset(&mut self) {
+        match self {
+            Self::Atom(_, _, i) => *i = 0,
+            Self::Var(_, (inner_idx, idx, outer_idx), _) => {
+                *inner_idx = 0;
+                *idx = 0;
+                *outer_idx = 0;
             },
         }
     }
@@ -533,11 +591,14 @@ impl Spec {
         // Compute the Herbrand 0-base
         let consts: IndexSet<Ident> = self.find_0_base();
 
-        // This transformation is saturating, so continue until no rules are triggered anymore.
+        // Sync the interpretations to carry over existing knowledge
+        *res = int.clone();
+
+        // This transformation is saturating, so continue until the database did not change anymore.
         // NOTE: Monotonic because we can never remove truths, inferring the same fact does not count as a change and we are iterating over a Herbrand instantiation so our search space is finite (for $Datalog^\neg$, at least).
         let mut changed: bool = true;
         let mut i: usize = 0;
-        while changed {
+        while i == 0 || int != res {
             changed = false;
             i += 1;
             trace!("Derivation run {i} starting");
@@ -545,7 +606,6 @@ impl Spec {
             // Swap the instances to use the previous' run's result as input to this one
             if i > 0 {
                 std::mem::swap(int, res);
-                debug!("res after swap: {res}");
             }
 
             // Go thru da rules
@@ -681,6 +741,7 @@ impl Rule {
         let mut assign: StackVec<LEN, Ident> = StackVec::new();
         'instance: loop {
             // Find the next assignment
+            assign.clear();
             for iter in &mut iters {
                 assign.push(match iter.next(n_vars) {
                     Some(next) => next,
