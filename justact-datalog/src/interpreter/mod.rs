@@ -4,7 +4,7 @@
 //  Created:
 //    26 Mar 2024, 19:36:31
 //  Last edited:
-//    28 Mar 2024, 11:36:56
+//    28 Mar 2024, 13:39:07
 //  Auto updated?
 //    Yes
 //
@@ -191,6 +191,9 @@ mod tests {
 
     #[test]
     fn test_rule_immediate_consequence() {
+        #[cfg(feature = "log")]
+        setup_logger();
+
         // Try some constants, no prior knowledge
         let consts: Spec = datalog! {
             #![crate]
@@ -220,6 +223,9 @@ mod tests {
 
     #[test]
     fn test_spec_immediate_consequence() {
+        #[cfg(feature = "log")]
+        setup_logger();
+
         // Try some constants, no prior knowledge
         let consts: Spec = datalog! {
             #![crate]
@@ -227,7 +233,7 @@ mod tests {
         };
         let mut pre: Interpretation = Interpretation::new();
         let mut aft: Interpretation = Interpretation::new();
-        if let Err(err) = consts.immediate_consequence::<16>(&mut pre, &mut aft) {
+        if let Err(err) = consts.immediate_consequence::<16>(&consts.find_0_base(), &mut pre, &mut aft) {
             panic!("{err}");
         }
         assert_eq!(aft.len(), 3);
@@ -242,7 +248,7 @@ mod tests {
         };
         let mut pre: Interpretation = Interpretation::new();
         let mut aft: Interpretation = Interpretation::new();
-        if let Err(err) = funcs.immediate_consequence::<16>(&mut pre, &mut aft) {
+        if let Err(err) = funcs.immediate_consequence::<16>(&funcs.find_0_base(), &mut pre, &mut aft) {
             panic!("{err}");
         }
         assert_eq!(aft.len(), 3);
@@ -257,7 +263,7 @@ mod tests {
         };
         let mut pre: Interpretation = Interpretation::new();
         let mut aft: Interpretation = Interpretation::new();
-        if let Err(err) = rules.immediate_consequence::<16>(&mut pre, &mut aft) {
+        if let Err(err) = rules.immediate_consequence::<16>(&rules.find_0_base(), &mut pre, &mut aft) {
             panic!("{err}");
         }
         assert_eq!(aft.len(), 2);
@@ -267,7 +273,7 @@ mod tests {
         // Try some (grounded) rules _with_ prior knowledge
         let mut pre: Interpretation = Interpretation::from([(make_atom("bar", None), true)]);
         let mut aft: Interpretation = Interpretation::new();
-        if let Err(err) = rules.immediate_consequence::<16>(&mut pre, &mut aft) {
+        if let Err(err) = rules.immediate_consequence::<16>(&rules.find_0_base(), &mut pre, &mut aft) {
             panic!("{err}");
         }
         assert_eq!(aft.len(), 4);
@@ -286,7 +292,7 @@ mod tests {
         };
         let mut pre: Interpretation = Interpretation::new();
         let mut aft: Interpretation = Interpretation::new();
-        if let Err(err) = vars.immediate_consequence::<16>(&mut pre, &mut aft) {
+        if let Err(err) = vars.immediate_consequence::<16>(&vars.find_0_base(), &mut pre, &mut aft) {
             panic!("{err}");
         }
         assert_eq!(aft.len(), 18);
@@ -312,6 +318,9 @@ mod tests {
 
     #[test]
     fn test_spec_stable_transformation() {
+        #[cfg(feature = "log")]
+        setup_logger();
+
         // Try some constants, no prior knowledge
         let consts: Spec = datalog! {
             #![crate]
@@ -413,6 +422,113 @@ mod tests {
         assert_eq!(aft.truth_of_atom(&make_atom("quux", ["baz", "foo"])), Some(false));
         assert_eq!(aft.truth_of_atom(&make_atom("quux", ["baz", "bar"])), Some(false));
         assert_eq!(aft.truth_of_atom(&make_atom("quux", ["baz", "baz"])), Some(false));
+    }
+
+    #[test]
+    fn test_spec_alternating_fixpoint() {
+        #[cfg(feature = "log")]
+        setup_logger();
+
+        // Try some constants
+        let consts: Spec = datalog! {
+            #![crate]
+            foo. bar. baz.
+        };
+        let mut res: Interpretation = Interpretation::new();
+        if let Err(err) = consts.alternating_fixpoint::<16>(&mut res) {
+            panic!("{err}");
+        }
+        assert_eq!(res.len(), 3);
+        assert_eq!(res.truth_of_atom(&make_atom("foo", None)), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("bar", None)), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("baz", None)), Some(true));
+
+        // Try some functions
+        let funcs: Spec = datalog! {
+            #![crate]
+            foo(bar). bar(baz). baz(quz).
+        };
+        let mut res: Interpretation = Interpretation::new();
+        if let Err(err) = funcs.alternating_fixpoint::<16>(&mut res) {
+            panic!("{err}");
+        }
+        assert_eq!(res.len(), 6);
+        assert_eq!(res.truth_of_atom(&make_atom("bar", None)), Some(false));
+        assert_eq!(res.truth_of_atom(&make_atom("baz", None)), Some(false));
+        assert_eq!(res.truth_of_atom(&make_atom("quz", None)), Some(false));
+        assert_eq!(res.truth_of_atom(&make_atom("foo", Some("bar"))), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("bar", Some("baz"))), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("baz", Some("quz"))), Some(true));
+
+        // Try some rules
+        let rules: Spec = datalog! {
+            #![crate]
+            foo. bar(foo) :- foo.
+        };
+        let mut res: Interpretation = Interpretation::new();
+        if let Err(err) = rules.alternating_fixpoint::<16>(&mut res) {
+            panic!("{err}");
+        }
+        assert_eq!(res.len(), 2);
+        assert_eq!(res.truth_of_atom(&make_atom("foo", None)), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("bar", Some("foo"))), Some(true));
+
+        // Try some rules with negation!
+        let rules: Spec = datalog! {
+            #![crate]
+            foo. bar(foo) :- foo. bar(bar) :- not bar.
+        };
+        let mut res: Interpretation = Interpretation::new();
+        if let Err(err) = rules.alternating_fixpoint::<16>(&mut res) {
+            panic!("{err}");
+        }
+        assert_eq!(res.len(), 4);
+        assert_eq!(res.truth_of_atom(&make_atom("foo", None)), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("bar", None)), Some(false));
+        assert_eq!(res.truth_of_atom(&make_atom("bar", Some("foo"))), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("bar", Some("bar"))), Some(true));
+
+        // Now some cool rules with variables
+        let rules: Spec = datalog! {
+            #![crate]
+            foo. bar. baz(foo). quz(X) :- baz(X). qux(X) :- not baz(X).
+        };
+        let mut res: Interpretation = Interpretation::new();
+        if let Err(err) = rules.alternating_fixpoint::<16>(&mut res) {
+            panic!("{err}");
+        }
+        assert_eq!(res.len(), 8);
+        assert_eq!(res.truth_of_atom(&make_atom("foo", None)), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("bar", None)), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("baz", Some("foo"))), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("baz", Some("bar"))), Some(false));
+        assert_eq!(res.truth_of_atom(&make_atom("quz", Some("foo"))), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("quz", Some("bar"))), Some(false));
+        assert_eq!(res.truth_of_atom(&make_atom("qux", Some("foo"))), Some(false));
+        assert_eq!(res.truth_of_atom(&make_atom("qux", Some("bar"))), Some(true));
+
+        // Arity > 1
+        let rules: Spec = datalog! {
+            #![crate]
+            foo. bar. baz(foo). quz(X, foo) :- baz(X), foo. qux(X, Y) :- not quz(X, Y).
+        };
+        let mut res: Interpretation = Interpretation::new();
+        if let Err(err) = rules.alternating_fixpoint::<16>(&mut res) {
+            panic!("{err}");
+        }
+        assert_eq!(res.len(), 12);
+        assert_eq!(res.truth_of_atom(&make_atom("foo", [])), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("bar", [])), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("baz", ["foo"])), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("baz", ["bar"])), Some(false));
+        assert_eq!(res.truth_of_atom(&make_atom("quz", ["foo", "foo"])), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("quz", ["foo", "bar"])), Some(false));
+        assert_eq!(res.truth_of_atom(&make_atom("quz", ["bar", "foo"])), Some(false));
+        assert_eq!(res.truth_of_atom(&make_atom("quz", ["bar", "bar"])), Some(false));
+        assert_eq!(res.truth_of_atom(&make_atom("qux", ["foo", "foo"])), Some(false));
+        assert_eq!(res.truth_of_atom(&make_atom("qux", ["foo", "bar"])), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("qux", ["bar", "foo"])), Some(true));
+        assert_eq!(res.truth_of_atom(&make_atom("qux", ["bar", "bar"])), Some(true));
     }
 }
 
@@ -647,7 +763,7 @@ impl Spec {
     ///
     /// # Returns
     /// An ordered [`IndexSet`] with the consequents as we encountered them. Not necessary, but does make testing quite some easier.
-    fn find_0_base(&self) -> IndexSet<Ident> {
+    pub fn find_0_base(&self) -> IndexSet<Ident> {
         let mut base: IndexSet<Ident> = IndexSet::new();
         for rule in &self.rules {
             // Note down atomic consequents _or_ its arguments (these are always constants)
@@ -708,6 +824,7 @@ impl Spec {
     /// - `LEN`: Some buffer length to use internally. This determines the maximum total number of arguments among _all_ consequences and antecedents in a rule. **Must be > 0.**
     ///
     /// # Arguments
+    /// - `consts`: An already computed zero-base to use.
     /// - `int`: Some [`Interpretation`] to derive from. Note that we alternate this one with `res`, so after derivation, this will hold the interpretation for the second-to-last saturation run.
     /// - `res`: Another [`Interpretation`] that we populate with derived facts.
     ///
@@ -716,11 +833,13 @@ impl Spec {
     ///
     /// # Errors
     /// This function can error if the total number of arguments in a rule exceeds `LEN`,
-    pub fn immediate_consequence<const LEN: usize>(&self, int: &mut Interpretation, res: &mut Interpretation) -> Result<bool, Error> {
+    pub fn immediate_consequence<const LEN: usize>(
+        &self,
+        consts: &IndexSet<Ident>,
+        int: &mut Interpretation,
+        res: &mut Interpretation,
+    ) -> Result<bool, Error> {
         debug!("Running immediate consequent transformation");
-
-        // Compute the Herbrand 0-base
-        let consts: IndexSet<Ident> = self.find_0_base();
 
         // Sync the interpretations to carry over existing knowledge
         *res = int.clone();
@@ -770,7 +889,7 @@ impl Spec {
     pub fn stable_transformation<const LEN: usize>(
         &self,
         consts: &IndexSet<Ident>,
-        int: &mut Interpretation,
+        int: &Interpretation,
         res: &mut Interpretation,
     ) -> Result<(), Error> {
         debug!("Running stable transformation for {int}");
@@ -877,6 +996,68 @@ impl Spec {
 
         // Done, complement computed
         Ok(())
+    }
+
+    /// Performs a proper derivation using the full well-founded semantics.
+    ///
+    /// In the paper, this is given as:
+    /// - Apply the [immediate consequence operator](Spec::immediate_consequence());
+    /// - Apply the [stable transformation](Spec::stable_transformation()); and
+    /// - Repeat the last two steps until you reach some state you've seen before (it sufficies to just check the last state).
+    ///
+    /// Then the interpretation you're left with is a well-founded model for the spec.
+    ///
+    /// # Generics
+    /// - `LEN`: Some buffer length to use internally. This determines the maximum total number of arguments among _all_ consequences and antecedents in a rule. **Must be > 0.**
+    ///
+    /// # Arguments
+    /// - `res`: Some [`Interpretation`] that we populate with the derivation of self.
+    ///
+    /// # Returns
+    /// This function can error if the total number of arguments in a rule exceeds `LEN`.
+    pub fn alternating_fixpoint<const LEN: usize>(&self, res: &mut Interpretation) -> Result<(), Error> {
+        debug!(
+            "Running alternating-fixpoint transformation\n\nSpec:\n{}\n{}{}\n",
+            (0..80).map(|_| '-').collect::<String>(),
+            self.rules.iter().map(|r| format!("   {r}\n")).collect::<String>(),
+            (0..80).map(|_| '-').collect::<String>()
+        );
+        res.clear();
+
+        // Compute the Herbrand 0-base
+        let consts: IndexSet<Ident> = self.find_0_base();
+
+        // Allocate some buffers
+        let mut buf: Interpretation = res.clone();
+        // Contains the hash of the last three interpretations, to recognize when we found a stable model.
+        let mut prev: [u64; 3] = [0; 3];
+
+        // We alternate
+        let mut i: usize = 0;
+        loop {
+            i += 1;
+            debug!("Starting alternating-fixpoint run {i}");
+
+            // Do the first step, the forward derivation
+            self.immediate_consequence::<LEN>(&consts, &mut buf, res)?;
+
+            // Compute the stable transformation of the found interpretation
+            self.stable_transformation::<LEN>(&consts, res, &mut buf)?;
+
+            // See if we reached a stable point
+            let hash: u64 = buf.hash();
+            if prev[0] == prev[2] && prev[1] == hash {
+                // Stable! Merge the stable transformation and the result and we're done
+                res.extend(buf.into_iter());
+                debug!("Completed alternating-fixpoint transformation (took {i} runs)");
+                return Ok(());
+            }
+
+            // We didn't stabalize; move the slots one back
+            prev[0] = prev[1];
+            prev[1] = prev[2];
+            prev[2] = hash;
+        }
     }
 }
 

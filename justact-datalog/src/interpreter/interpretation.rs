@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 10:22:40
 //  Last edited:
-//    28 Mar 2024, 11:00:25
+//    28 Mar 2024, 12:07:48
 //  Auto updated?
 //    Yes
 //
@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Result as FResult};
-use std::hash::{BuildHasher, Hash as _, Hasher, RandomState};
+use std::hash::{BuildHasher, DefaultHasher, Hash as _, Hasher, RandomState};
 
 use crate::ast::{Atom, AtomArg, Ident, Literal};
 use crate::log::warn;
@@ -61,6 +61,67 @@ impl<R> Interpretation<R> {
     /// An empty Interpretation with the given state for hashes.
     #[inline]
     pub fn with_state(state: R) -> Self { Self { data: HashMap::new(), defs: HashMap::new(), state } }
+
+    /// Gets the truth value of a given atom by hash.
+    ///
+    /// This essentially skips the hashy part of the hashmap, instead doing it manually. This is useful in case, say, the assignment is external to the atom.
+    ///
+    /// See [`Self::hash_atom_with_assign()`](Interpretation::hash_atom_with_assign()) to find a correct way of hashing the atom. Doing it manually does not work due to the internal hashmap's random state.
+    ///
+    /// # Arguments
+    /// - `hash`: The hash of the [`Atom`] to get the truth value of.
+    ///
+    /// # Returns
+    /// True if it was in the interpretation, false if we _know_ of its negative variant, or [`None`] if we don't have any evidence.
+    #[inline]
+    pub fn truth_of_atom_by_hash(&self, hash: u64) -> Option<bool> { self.data.get(&hash).map(|t| *t) }
+
+    /// Removes all knowledge in the interpretation. Sad :'(.
+    ///
+    /// Note that this does not change the capacity of the interpretation.
+    #[inline]
+    pub fn clear(&mut self) {
+        self.defs.clear();
+        self.data.clear();
+    }
+
+    /// Returns whether we have ANY knowledge.
+    ///
+    /// # Returns
+    /// True if we know the truth of EXACTLY NONE atom, or false otherwise.
+    #[inline]
+    pub fn is_empty(&self) -> bool { self.data.is_empty() }
+
+    /// Returns the number of facts of which we know the truth value.
+    ///
+    /// # Returns
+    /// The number of atom of which we explicitly know they are true or false.
+    #[inline]
+    pub fn len(&self) -> usize { self.data.len() }
+
+    /// Computes some hash of this interpretation.
+    ///
+    /// This is computed using some general [`Hasher`] that commutes over specific instances. Thus, can be used to check if two instances are the same.
+    ///
+    /// # Returns
+    /// A [`u64`] representing a hash of this interpretation.
+    #[inline]
+    pub fn hash(&self) -> u64 {
+        let mut state: DefaultHasher = DefaultHasher::new();
+
+        // Get a predictable order on the keys
+        let mut keys: Vec<u64> = self.data.keys().cloned().collect();
+        keys.sort();
+
+        // Hash 'em
+        for key in keys {
+            state.write_u64(key);
+            self.data.get(&key).unwrap().hash(&mut state);
+        }
+
+        // Done
+        state.finish()
+    }
 }
 impl<R: BuildHasher> Interpretation<R> {
     /// Computes the hash of the given atom.
@@ -134,6 +195,35 @@ impl<R: BuildHasher> Interpretation<R> {
         self.data.insert(hash, truth)
     }
 
+    /// Extends this Interpretation with multiple new atoms.
+    ///
+    /// # Arguments
+    /// - `iter`: Some [iterable](IntoIterator) type that yields the things to extend ourselves with.
+    #[inline]
+    pub fn extend(&mut self, iter: impl IntoIterator<Item = (Atom, bool)>) {
+        let iter = iter.into_iter();
+
+        // Attempt to extend our buffers
+        let size_hint: (usize, Option<usize>) = iter.size_hint();
+        let additional: usize = size_hint.1.unwrap_or(size_hint.0);
+        self.defs.reserve(additional);
+        self.data.reserve(additional);
+
+        // Now add all the items
+        for (atom, truth) in iter {
+            self.learn(atom, truth);
+        }
+    }
+
+    /// Turns in this Interpretation into an iterator over its atoms.
+    ///
+    /// # Returns
+    /// Some [`Iterator`] that does the work.
+    #[inline]
+    pub fn into_iter(self) -> impl Iterator<Item = (Atom, bool)> {
+        self.defs.into_iter().map(move |(hash, def)| (def, *self.data.get(&hash).unwrap()))
+    }
+
     /// Gets the truth value of the given atom.
     ///
     /// # Arguments
@@ -146,20 +236,6 @@ impl<R: BuildHasher> Interpretation<R> {
         let hash: u64 = self.hash_atom(&atom);
         self.truth_of_atom_by_hash(hash)
     }
-
-    /// Gets the truth value of a given atom by hash.
-    ///
-    /// This essentially skips the hashy part of the hashmap, instead doing it manually. This is useful in case, say, the assignment is external to the atom.
-    ///
-    /// See [`Self::hash_atom_with_assign()`](Interpretation::hash_atom_with_assign()) to find a correct way of hashing the atom. Doing it manually does not work due to the internal hashmap's random state.
-    ///
-    /// # Arguments
-    /// - `hash`: The hash of the [`Atom`] to get the truth value of.
-    ///
-    /// # Returns
-    /// True if it was in the interpretation, false if we _know_ of its negative variant, or [`None`] if we don't have any evidence.
-    #[inline]
-    pub fn truth_of_atom_by_hash(&self, hash: u64) -> Option<bool> { self.data.get(&hash).map(|t| *t) }
 
     /// Gets the truth value of the given literal.
     ///
@@ -180,26 +256,6 @@ impl<R: BuildHasher> Interpretation<R> {
             Literal::NegAtom(na) => self.truth_of_atom(&na.atom).map(|t| !t),
         }
     }
-
-    /// Returns whether we have ANY knowledge.
-    ///
-    /// # Returns
-    /// True if we know the truth of EXACTLY NONE atom, or false otherwise.
-    #[inline]
-    pub fn is_empty(&self) -> bool { self.data.is_empty() }
-
-    /// Returns the number of facts of which we know the truth value.
-    ///
-    /// # Returns
-    /// The number of atom of which we explicitly know they are true or false.
-    #[inline]
-    pub fn len(&self) -> usize { self.data.len() }
-
-    /// Removes all knowledge in the interpretation. Sad :'(.
-    ///
-    /// Note that this does not change the capacity of the interpretation.
-    #[inline]
-    pub fn clear(&mut self) { self.data.clear() }
 }
 
 // Compare
