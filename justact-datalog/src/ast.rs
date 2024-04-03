@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 16:43:37
 //  Last edited:
-//    26 Mar 2024, 22:10:07
+//    03 Apr 2024, 16:27:51
 //  Auto updated?
 //    Yes
 //
@@ -216,6 +216,19 @@ pub enum Literal {
     NegAtom(NegAtom),
 }
 impl Literal {
+    /// Returns if there are any variables in the antecedents.
+    ///
+    /// # Returns
+    /// True if there is at least one [`AtomArg::Var`], or false otherwise.
+    #[inline]
+    pub fn has_vars(&self) -> bool { self.atom().has_vars() }
+
+    /// Returns the polarity of the literal.
+    ///
+    /// # Returns
+    /// True if this is a positive literal ([`Literal::Atom`]), or false if it's a negative literal ([`Literal::NegAtom`]).
+    pub fn polarity(&self) -> bool { matches!(self, Self::Atom(_)) }
+
     /// Returns the atom that appears in all variants of the literal.
     ///
     /// # Returns
@@ -286,6 +299,13 @@ pub struct Atom {
     pub args:  Option<AtomArgs>,
 }
 impl Atom {
+    /// Returns if there are any variables in the antecedents.
+    ///
+    /// # Returns
+    /// True if there is at least one [`AtomArg::Var`], or false otherwise.
+    #[inline]
+    pub fn has_vars(&self) -> bool { self.args.iter().flat_map(|a| a.args.values()).find(|a| matches!(a, AtomArg::Var(_))).is_some() }
+
     /// Creates a new [`Span`] that covers the entire Atom.
     ///
     /// # Returns
