@@ -16,6 +16,7 @@ indexmap = "2.2"
 itertools = "0.12"
 log = { version = "0.4", optional = true }
 paste = "1.0"
+stackvec = { git = "https://github.com/Lut99/stackvec-rs" }
 
 # justact-core = { path = "../justact-core" }
 justact-datalog-derive = { path = "../derive/justact-datalog-derive", optional = true }

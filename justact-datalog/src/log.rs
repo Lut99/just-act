@@ -4,7 +4,7 @@
 //  Created:
 //    22 Mar 2024, 16:09:22
 //  Last edited:
-//    22 Mar 2024, 16:22:27
+//    28 Mar 2024, 10:01:36
 //  Auto updated?
 //    Yes
 //
@@ -15,6 +15,24 @@
 
 
 /***** LIBRARY *****/
+/// Mirrors the `warn!()`-macro from the [`log`](https://github.com/rust-lang/log)-crate.
+///
+/// With the `log`-feature enabled, this macro has exactly the same behaviour.
+#[cfg(feature = "log")]
+macro_rules! warning {
+    ($($t:tt)*) => {
+        ::log::warn!($($t)*)
+    };
+}
+/// Mirrors the `warn!()`-macro from the [`log`](https://github.com/rust-lang/log)-crate.
+///
+/// With the `log`-feature disabled, this macro does nothing.
+#[cfg(not(feature = "log"))]
+macro_rules! warning {
+    ($($t:tt)*) => {};
+}
+pub(crate) use warning as warn;
+
 /// Mirrors the `debug!()`-macro from the [`log`](https://github.com/rust-lang/log)-crate.
 ///
 /// With the `log`-feature enabled, this macro has exactly the same behaviour.

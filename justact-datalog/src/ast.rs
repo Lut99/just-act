@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 16:43:37
 //  Last edited:
-//    22 Mar 2024, 11:53:37
+//    03 Apr 2024, 16:27:51
 //  Auto updated?
 //    Yes
 //
@@ -164,7 +164,7 @@ impl Display for Rule {
         )
     }
 }
-impl_map!(Rule, consequences, tail, dot);
+impl_map!(Rule, consequences, tail);
 
 /// Defines the second half of the rule, if any.
 ///
@@ -185,7 +185,7 @@ impl Display for RuleAntecedents {
         write!(f, " :- {}", self.antecedents.values().map(|a| a.to_string()).collect::<Vec<String>>().join(", "))
     }
 }
-impl_map!(RuleAntecedents, arrow_token, antecedents);
+impl_map!(RuleAntecedents, antecedents);
 
 
 
@@ -216,6 +216,19 @@ pub enum Literal {
     NegAtom(NegAtom),
 }
 impl Literal {
+    /// Returns if there are any variables in the antecedents.
+    ///
+    /// # Returns
+    /// True if there is at least one [`AtomArg::Var`], or false otherwise.
+    #[inline]
+    pub fn has_vars(&self) -> bool { self.atom().has_vars() }
+
+    /// Returns the polarity of the literal.
+    ///
+    /// # Returns
+    /// True if this is a positive literal ([`Literal::Atom`]), or false if it's a negative literal ([`Literal::NegAtom`]).
+    pub fn polarity(&self) -> bool { matches!(self, Self::Atom(_)) }
+
     /// Returns the atom that appears in all variants of the literal.
     ///
     /// # Returns
@@ -267,7 +280,7 @@ impl Display for NegAtom {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult { write!(f, "not {}", self.atom) }
 }
-impl_map!(NegAtom, not_token, atom);
+impl_map!(NegAtom, atom);
 
 
 
@@ -286,6 +299,13 @@ pub struct Atom {
     pub args:  Option<AtomArgs>,
 }
 impl Atom {
+    /// Returns if there are any variables in the antecedents.
+    ///
+    /// # Returns
+    /// True if there is at least one [`AtomArg::Var`], or false otherwise.
+    #[inline]
+    pub fn has_vars(&self) -> bool { self.args.iter().flat_map(|a| a.args.values()).find(|a| matches!(a, AtomArg::Var(_))).is_some() }
+
     /// Creates a new [`Span`] that covers the entire Atom.
     ///
     /// # Returns
@@ -324,7 +344,7 @@ impl Display for AtomArgs {
         write!(f, "({})", self.args.values().map(|a| a.to_string()).collect::<Vec<String>>().join(","))
     }
 }
-impl_map!(AtomArgs, paren_tokens, args);
+impl_map!(AtomArgs, args);
 
 /// Represents an argument to an Atom, which is either a variable or a nested atom.
 ///

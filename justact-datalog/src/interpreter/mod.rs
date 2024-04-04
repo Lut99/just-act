@@ -2,9 +2,9 @@
 //    by Lut99
 //
 //  Created:
-//    21 Mar 2024, 10:27:36
+//    26 Mar 2024, 19:36:31
 //  Last edited:
-//    22 Mar 2024, 16:11:18
+//    04 Apr 2024, 16:13:11
 //  Auto updated?
 //    Yes
 //
@@ -23,96 +23,844 @@
 //!       symposium on Principles of database systems (PODS '89). Association
 //!       for Computing Machinery, New York, NY, USA, 1–10.
 //!       <https://doi.org/10.1145/73721.73722>
-//
 
-// Declare nested modules
-pub mod afps;
-pub mod herbrand;
+// Nested modules
 pub mod interpretation;
 
+use std::collections::HashMap;
+// Imports
+use std::error;
+use std::fmt::{Display, Formatter, Result as FResult};
 
-// /***** LIBRARY *****/
-// /// Evaluates a given $Datalog^\neg$ AST.
-// ///
-// /// Contains a knowledge base internally. That means that different interpreter instances may give different answers.
-// #[derive(Clone, Debug)]
-// pub struct Interpreter {
-//     /// The set of facts that we know exist.
-//     pub knowledge_base: IndexSet<Atom>,
-// }
-// impl Default for Interpreter {
-//     #[inline]
-//     fn default() -> Self { Self::new() }
-// }
-// impl Interpreter {
-//     /// Constructor for the Interpreter that initializes it with an empty knowledge base.
-//     ///
-//     /// # Returns
-//     /// A new Interpreter instance with nothing derived yet.
-//     #[inline]
-//     pub fn new() -> Self { Self { knowledge_base: IndexSet::new() } }
+use indexmap::set::IndexSet;
 
-//     /// Performs "one-time" evaluation on the given specification.
-//     ///
-//     /// This is equivalent to creating a new interpreter and interpreting with that.
+use self::interpretation::{Interpretation, VarQuantifier};
+use crate::ast::{Atom, AtomArg, Ident, Literal, Rule, Spec};
+use crate::log::{debug, trace};
+
+
+/***** TESTS *****/
+#[cfg(all(test, feature = "derive"))]
+mod tests {
+    use ast_toolkit_punctuated::Punctuated;
+    use ast_toolkit_span::Span;
+    use justact_datalog_derive::datalog;
+
+    use super::*;
+    use crate::ast::{Atom, AtomArgs, Comma, Parens};
+
+
+    /// Sets up a logger if wanted.
+    #[cfg(feature = "log")]
+    fn setup_logger() {
+        use humanlog::{DebugMode, HumanLogger};
+
+        // Check if the envs tell us to
+        if let Ok(logger) = std::env::var("LOGGER") {
+            if logger == "1" || logger == "true" {
+                // Create the logger
+                if let Err(err) = HumanLogger::terminal(DebugMode::Full).init() {
+                    eprintln!("WARNING: Failed to setup logger: {err} (no logging for this session)");
+                }
+            }
+        }
+    }
+
+    /// Makes an [`Atom`] conveniently.
+    fn make_atom(name: &'static str, args: impl IntoIterator<Item = &'static str>) -> Atom {
+        // Make the punctuation
+        let mut punct: Punctuated<AtomArg, Comma> = Punctuated::new();
+        for (i, arg) in args.into_iter().enumerate() {
+            if i == 0 {
+                punct.push_first(AtomArg::Atom(Ident { value: Span::new("make_atom::arg", arg) }));
+            } else {
+                punct.push(Comma { span: Span::new("make_atom::arg::comma", ",") }, AtomArg::Atom(Ident { value: Span::new("make_atom::arg", arg) }));
+            }
+        }
+
+        // Make the atom
+        Atom {
+            ident: Ident { value: Span::new("make_atom::name", name) },
+            args:  if !punct.is_empty() {
+                Some(AtomArgs {
+                    paren_tokens: Parens { open: Span::new("make_atom::parens::open", "("), close: Span::new("make_atom::parens::close", ")") },
+                    args: punct,
+                })
+            } else {
+                None
+            },
+        }
+    }
+
+
+    #[test]
+    fn test_spec_alternating_fixpoint() {
+        #[cfg(feature = "log")]
+        setup_logger();
+
+        // Try some constants
+        let consts: Spec = datalog! {
+            #![crate]
+            foo. bar. baz.
+        };
+        let res: Interpretation = match consts.alternating_fixpoint() {
+            Ok(res) => res,
+            Err(err) => panic!("{err}"),
+        };
+        assert_eq!(res.len(), 3);
+        assert_eq!(res.closed_world_truth(&make_atom("foo", None)), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("bar", None)), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("baz", None)), Some(true));
+
+        // Try some functions
+        let funcs: Spec = datalog! {
+            #![crate]
+            foo(bar). bar(baz). baz(quz).
+        };
+        let res: Interpretation = match funcs.alternating_fixpoint() {
+            Ok(res) => res,
+            Err(err) => panic!("{err}"),
+        };
+        assert_eq!(res.len(), 3);
+        assert_eq!(res.closed_world_truth(&make_atom("foo", Some("bar"))), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("bar", Some("baz"))), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("baz", Some("quz"))), Some(true));
+
+        // Try some rules
+        let rules: Spec = datalog! {
+            #![crate]
+            foo. bar(foo) :- foo.
+        };
+        let res: Interpretation = match rules.alternating_fixpoint() {
+            Ok(res) => res,
+            Err(err) => panic!("{err}"),
+        };
+        assert_eq!(res.len(), 2);
+        assert_eq!(res.closed_world_truth(&make_atom("foo", None)), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("bar", Some("foo"))), Some(true));
+
+        // Try some rules with negation!
+        let neg_rules: Spec = datalog! {
+            #![crate]
+            foo. bar(foo) :- foo. bar(bar) :- not bar.
+        };
+        let res: Interpretation = match neg_rules.alternating_fixpoint() {
+            Ok(res) => res,
+            Err(err) => panic!("{err}"),
+        };
+        assert_eq!(res.len(), 4);
+        assert_eq!(res.closed_world_truth(&make_atom("foo", None)), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("bar", None)), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("bar", Some("foo"))), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("bar", Some("bar"))), Some(true));
+
+        // Now some cool rules with variables
+        let var_rules: Spec = datalog! {
+            #![crate]
+            foo. bar. baz(foo). quz(X) :- baz(X). qux(X) :- not baz(X).
+        };
+        let res: Interpretation = match var_rules.alternating_fixpoint() {
+            Ok(res) => res,
+            Err(err) => panic!("{err}"),
+        };
+        assert_eq!(res.len(), 8);
+        assert_eq!(res.closed_world_truth(&make_atom("foo", None)), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("bar", None)), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("baz", Some("foo"))), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("baz", Some("bar"))), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("quz", Some("foo"))), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("quz", Some("bar"))), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("qux", Some("foo"))), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("qux", Some("bar"))), Some(true));
+
+        // Arity > 1
+        let big_rules: Spec = datalog! {
+            #![crate]
+            foo. bar. baz(foo). quz(X, foo) :- baz(X), foo. qux(X, Y) :- not quz(X, Y).
+        };
+        let res: Interpretation = match big_rules.alternating_fixpoint() {
+            Ok(res) => res,
+            Err(err) => panic!("{err}"),
+        };
+        assert_eq!(res.len(), 12);
+        assert_eq!(res.closed_world_truth(&make_atom("foo", [])), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("bar", [])), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("baz", ["foo"])), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("baz", ["bar"])), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("quz", ["foo", "foo"])), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("quz", ["foo", "bar"])), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("quz", ["bar", "foo"])), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("quz", ["bar", "bar"])), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("qux", ["foo", "foo"])), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("qux", ["foo", "bar"])), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("qux", ["bar", "foo"])), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("qux", ["bar", "bar"])), Some(true));
+
+        // Impossible rules
+        let con_rules: Spec = datalog! {
+            #![crate]
+            foo :- not foo.
+        };
+        let res: Interpretation = match con_rules.alternating_fixpoint() {
+            Ok(res) => res,
+            Err(err) => panic!("{err}"),
+        };
+        assert_eq!(res.len(), 1);
+        assert_eq!(res.closed_world_truth(&make_atom("foo", [])), None);
+        assert_eq!(res.closed_world_truth(&make_atom("bingo", ["boingo"])), Some(false));
+    }
+
+    #[test]
+    fn test_spec_alternating_fixpoint_paper() {
+        #[cfg(feature = "log")]
+        setup_logger();
+
+
+        // Example 5.1
+        let five_one: Spec = datalog! {
+            #![crate]
+            a :- c, not b.
+            b :- not a.
+            c.
+
+            p :- q, not r.
+            p :- r, not s.
+            p :- t.
+            q :- p.
+            r :- q.
+            r :- not c.
+        };
+        let res: Interpretation = match five_one.alternating_fixpoint() {
+            Ok(res) => res,
+            Err(err) => panic!("{err}"),
+        };
+        assert_eq!(res.len(), 8);
+        assert_eq!(res.closed_world_truth(&make_atom("a", None)), None);
+        assert_eq!(res.closed_world_truth(&make_atom("b", None)), None);
+        assert_eq!(res.closed_world_truth(&make_atom("c", None)), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("p", None)), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("q", None)), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("r", None)), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("s", None)), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("t", None)), Some(false));
+
+
+        // Example 5.2 (a)
+        // NOTE: Example uses `mov` instead of `move`, cuz `move` is a Rust keyword :)
+        let five_two_a: Spec = datalog! {
+            #![crate]
+            wins(X) :- mov(X, Y), not wins(Y).
+
+            a. b. c. d. e. f. g. h. i.
+
+            mov(a, b). mov(a, e).
+            mov(b, c). mov(b, d). mov(e, f). mov(e, g).
+            mov(g, h). mov(g, i).
+        };
+        let res: Interpretation = match five_two_a.alternating_fixpoint() {
+            Ok(res) => res,
+            Err(err) => panic!("{err}"),
+        };
+        assert_eq!(res.len(), 99);
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["a"])), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["b"])), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["c"])), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["d"])), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["e"])), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["f"])), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["g"])), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["h"])), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["i"])), Some(false));
+
+        // Example 5.2 (b)
+        // NOTE: Example uses `mov` instead of `move`, cuz `move` is a Rust keyword :)
+        let five_two_b: Spec = datalog! {
+            #![crate]
+            wins(X) :- mov(X, Y), not wins(Y).
+
+            a. b. c. d.
+
+            mov(a, b).
+            mov(b, a).
+            mov(b, c).
+            mov(c, d).
+        };
+        let res: Interpretation = match five_two_b.alternating_fixpoint() {
+            Ok(res) => res,
+            Err(err) => panic!("{err}"),
+        };
+        assert_eq!(res.len(), 24);
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["a"])), None);
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["b"])), None);
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["c"])), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["d"])), Some(false));
+
+
+        // Example 5.2 (b)
+        // NOTE: Example uses `mov` instead of `move`, cuz `move` is a Rust keyword :)
+        let five_two_c: Spec = datalog! {
+            #![crate]
+            wins(X) :- mov(X, Y), not wins(Y).
+
+            a. b. c.
+
+            mov(a, b).
+            mov(b, a).
+            mov(b, c).
+        };
+        let res: Interpretation = match five_two_c.alternating_fixpoint() {
+            Ok(res) => res,
+            Err(err) => panic!("{err}"),
+        };
+        assert_eq!(res.len(), 15);
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["a"])), Some(false));
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["b"])), Some(true));
+        assert_eq!(res.closed_world_truth(&make_atom("wins", ["c"])), Some(false));
+    }
+}
+
+
+
+
+
+/***** ERRORS *****/
+/// Defines logic errors over the quantification in rules.
+#[derive(Debug)]
+pub enum Error {
+    QuantifyOverflow { rule: Rule, max: usize },
+}
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        use Error::*;
+        match self {
+            QuantifyOverflow { rule, max } => {
+                write!(f, "Rule '{rule}' has more than {max} arguments in its atoms; cannot quantify over its variables")
+            },
+        }
+    }
+}
+impl error::Error for Error {}
+
+
+
+
+
+/***** HELPER FUNCTIONS *****/
+/// Generates a string that represents an instantiated rule.
+///
+/// # Arguments
+/// - `rule`: The actual [`Rule`] to instantiate.
+/// - `assign`: Some assignment for the rule's variables.
+///
+/// # Returns
+/// A [`String`] representing the format.
+fn format_rule_assign(rule: &Rule, assign: &HashMap<Ident, Ident>) -> String {
+    let mut buf: String = String::new();
+
+    // Consequences
+    for cons in rule.consequences.values() {
+        buf.push_str(&format!(
+            "{}({})",
+            cons.ident,
+            cons.args
+                .iter()
+                .flat_map(|a| a.args.values())
+                .map(|a| match a {
+                    AtomArg::Atom(a) => a.to_string(),
+                    AtomArg::Var(v) => assign.get(v).unwrap().to_string(),
+                })
+                .collect::<Vec<String>>()
+                .join(",")
+        ));
+    }
+
+    // Write the arrow
+    buf.push_str(" :- ");
+
+    // Antecedents
+    for ante in rule.tail.iter().flat_map(|t| t.antecedents.values()) {
+        buf.push_str(&format!(
+            "{}{}({})",
+            if ante.polarity() { "" } else { "not " },
+            ante.atom().ident,
+            ante.atom()
+                .args
+                .iter()
+                .flat_map(|a| a.args.values())
+                .map(|a| match a {
+                    AtomArg::Atom(a) => a.to_string(),
+                    AtomArg::Var(v) => assign.get(v).unwrap().to_string(),
+                })
+                .collect::<Vec<String>>()
+                .join(",")
+        ));
+    }
+
+    // Done
+    buf.push('.');
+    buf
+}
+
+/// Generates a string that represents an instantiated literal.
+///
+/// # Arguments
+/// - `lit`: The actual [`Literal`] to instantiate.
+/// - `assign`: Some assignment for the literal's variables.
+///
+/// # Returns
+/// A [`String`] representing the format.
+fn format_lit_assign(lit: &Literal, assign: &HashMap<Ident, Ident>) -> String {
+    format!(
+        "{}{}({})",
+        if lit.polarity() { "" } else { "not " },
+        lit.atom().ident,
+        lit.atom()
+            .args
+            .iter()
+            .flat_map(|a| a.args.values())
+            .map(|a| match a {
+                AtomArg::Atom(a) => a.to_string(),
+                AtomArg::Var(v) => assign.get(v).unwrap().to_string(),
+            })
+            .collect::<Vec<String>>()
+            .join(",")
+    )
+}
+
+/// Generates a string that represents an instantiated atom.
+///
+/// # Arguments
+/// - `atom`: The actual [`Atom`] to instantiate.
+/// - `assign`: Some assignment for the atom's variables.
+///
+/// # Returns
+/// A [`String`] representing the format.
+fn format_atom_assign(atom: &Atom, assign: &HashMap<Ident, Ident>) -> String {
+    format!(
+        "{}({})",
+        atom.ident,
+        atom.args
+            .iter()
+            .flat_map(|a| a.args.values())
+            .map(|a| match a {
+                AtomArg::Atom(a) => a.to_string(),
+                AtomArg::Var(v) => assign.get(v).unwrap().to_string(),
+            })
+            .collect::<Vec<String>>()
+            .join(",")
+    )
+}
+
+
+
+
+
+/***** LIBRARY *****/
+// Interpreter extensions for the [`Spec`].
+impl Spec {
+    /// Performs forward derivation of the Spec.
+    ///
+    /// In the paper, this is called the _immediate consequence operator_. It is simply defined as
+    /// the "forward derivation" of all rules, where we note the rule's consequences as derived if we
+    /// observe all of its antecedents to be in the given interpretation.
+    ///
+    /// Note that the paper makes a point to consider all negative antecedents to be "new" atoms,
+    /// i.e., we must observe negative atoms explicitly instead of the absence of positives.
+    ///
+    /// # Arguments
+    /// - `int`: Some [`Interpretation`] to derive in. Specifically, will move atoms from unknown to known if they can be derived.
+    ///
+    /// # Returns
+    /// Whether any new facts were derived or not.
+    ///
+    /// # Errors
+    /// This function can error if the total number of arguments in a rule exceeds `LEN`,
+    pub fn immediate_consequence(&self, int: &mut Interpretation) -> Result<bool, Error> {
+        debug!("Running immediate consequent transformation");
+
+        // Some buffer referring to all the constants in the interpretation.
+        let consts: IndexSet<Ident> = int.find_existing_consts();
+        // Some buffer for holding variable quantifiers
+        let mut vars: HashMap<Ident, VarQuantifier> = HashMap::new();
+        // Some buffer for holding variable assignments
+        let mut assign: HashMap<Ident, Ident> = HashMap::new();
+
+        // This transformation is saturating, so continue until the database did not change anymore.
+        // NOTE: Monotonic because we can never remove truths, inferring the same fact does not count as a change and we are iterating over a Herbrand instantiation so our search space is finite (for $Datalog^\neg$, at least).
+        let mut changed: bool = true;
+        let mut i: usize = 0;
+        while changed {
+            changed = false;
+            i += 1;
+            trace!("Derivation run {i} starting");
+
+            // Go thru da rules
+            'rule: for rule in &self.rules {
+                // First, build quantifiers for this rule's variables
+                vars.clear();
+                for arg in rule
+                    .consequences
+                    .values()
+                    .flat_map(|c| c.args.iter().flat_map(|a| a.args.values()))
+                    .chain(rule.tail.iter().flat_map(|t| t.antecedents.values().flat_map(|a| a.atom().args.iter().flat_map(|a| a.args.values()))))
+                {
+                    if let AtomArg::Var(v) = arg {
+                        let vars_len: usize = vars.len();
+                        if !vars.contains_key(v) {
+                            vars.insert(*v, VarQuantifier::new(&consts, vars_len));
+                        }
+                    }
+                }
+                let n_vars: usize = vars.len();
+
+                // Now switch on whether there are any or not
+                if n_vars > 0 {
+                    'assign: loop {
+                        // Get the next assignment
+                        assign.clear();
+                        for (v, i) in vars.iter_mut() {
+                            match i.next(n_vars) {
+                                Some(a) => {
+                                    assign.insert(*v, a);
+                                },
+                                None => break 'assign,
+                            }
+                        }
+                        trace!("--> Rule '{}'", format_rule_assign(rule, &assign));
+
+                        // Do the antecedents for this assignment
+                        for ant in rule.tail.iter().flat_map(|t| t.antecedents.values()) {
+                            if !int.knows_about_atom_with_assign(ant.atom(), &assign, ant.polarity()) {
+                                // Not present; cannot derive
+                                trace!("-----> Antecedent '{}' not present in interpretation, rule does not apply", format_lit_assign(ant, &assign));
+                                continue 'assign;
+                            }
+                        }
+
+                        // If here, then derive consequents
+                        for con in rule.consequences.values() {
+                            trace!("-----> Deriving consequent '{}'", format_atom_assign(con, &assign));
+                            if int.learn_with_assign(con, &assign, true) != Some(true) {
+                                changed = true;
+                            }
+                        }
+                    }
+                } else {
+                    trace!("--> Rule '{rule}'");
+
+                    // It's easier; no need to do assignments
+                    for ant in rule.tail.iter().flat_map(|t| t.antecedents.values()) {
+                        if !int.knows_about_atom(ant.atom(), ant.polarity()) {
+                            // Not present; cannot derive
+                            trace!("-----> Antecedent '{ant}' not present in interpretation, rule does not apply");
+                            continue 'rule;
+                        }
+                    }
+
+                    // If here, then derive consequents
+                    for con in rule.consequences.values() {
+                        trace!("-----> Deriving consequent '{con}'");
+                        if int.learn(con, true) != Some(true) {
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Done!
+        trace!("Done saturating immediate consequent transformation (took {i} passes)");
+        Ok(changed)
+    }
+
+    /// Performs a proper derivation using the full well-founded semantics.
+    ///
+    /// In the paper, this is given as:
+    /// - Apply the immediate consequence operator;
+    /// - Apply the [stable transformation](Interpretation::apply_stable_transformation()); and
+    /// - Repeat the last two steps until you reach some state you've seen before (it sufficies to just check the last three states).
+    ///
+    /// Then the interpretation you're left with is a well-founded model for the spec.
+    ///
+    /// # Returns
+    /// A new [`Interpretation`] that contains the things we derived about the facts in the [`Spec`].
+    ///
+    /// # Errors
+    /// This function can error if the total number of arguments in a rule exceeds `LEN`.
+    pub fn alternating_fixpoint(&self) -> Result<Interpretation, Error> {
+        let mut int: Interpretation = Interpretation::new();
+        self.alternating_fixpoint_mut(&mut int)?;
+        Ok(int)
+    }
+
+    /// Performs a proper derivation using the full well-founded semantics.
+    ///
+    /// In the paper, this is given as:
+    /// - Apply the [immediate consequence operator](Self::immediate_consequence());
+    /// - Apply the [stable transformation](Interpretation::apply_stable_transformation()); and
+    /// - Repeat the last two steps until you reach some state you've seen before (it sufficies to just check the last three states).
+    ///
+    /// Then the interpretation you're left with is a well-founded model for the spec.
+    ///
+    /// # Arguments
+    /// - `int`: Some existing [`Interpretation`] to [`clear()`](Interpretation::clear()) and then populate again. Might be more efficient than allocating a new one if you already have one lying around.
+    ///
+    /// # Errors
+    /// This function can error if the total number of arguments in a rule exceeds `LEN`.
+    pub fn alternating_fixpoint_mut(&self, int: &mut Interpretation) -> Result<(), Error> {
+        debug!(
+            "Running alternating-fixpoint transformation\n\nSpec:\n{}\n{}{}\n",
+            (0..80).map(|_| '-').collect::<String>(),
+            self.rules.iter().map(|r| format!("   {r}\n")).collect::<String>(),
+            (0..80).map(|_| '-').collect::<String>()
+        );
+        int.clear();
+
+        // Create the universe of atoms
+        int.extend_universe(self);
+
+        // Contains the hash of the last three interpretations, to recognize when we found a stable model.
+        let mut prev_hashes: [u64; 3] = [0; 3];
+
+        // We alternate
+        let mut i: usize = 0;
+        loop {
+            i += 1;
+            debug!("Starting alternating-fixpoint run {i}");
+
+            // Do the trick; first the immediate consequence, then the stable transformation
+            self.immediate_consequence(int)?;
+            debug!("Post-operator interpretation\n\n{int}\n");
+
+            // See if we reached a stable point
+            let hash: u64 = int.hash();
+            if i % 2 == 1 && prev_hashes[0] == prev_hashes[2] && prev_hashes[1] == hash {
+                // Stable! Merge the stable transformation and the result and we're done
+                debug!("Completed alternating-fixpoint transformation (took {i} runs)");
+                return Ok(());
+            }
+
+            // We didn't stabelize; run the stable transformation
+            int.apply_stable_transformation();
+            debug!("Post-transformation interpretation\n\n{int}\n");
+
+            // Move the slots one back
+            prev_hashes[0] = prev_hashes[1];
+            prev_hashes[1] = prev_hashes[2];
+            prev_hashes[2] = hash;
+        }
+    }
+}
+
+
+
+// // Interpreter extensions for the [`Rule`].
+// impl Rule {
+//     /// Finds a set of [`AntecedentQuantifier`] that can be used to do quantification over a rule.
 //     ///
 //     /// # Arguments
-//     /// - `spec`: The $Datalog^\neg$ [`Spec`]ification to evaluate.
+//     /// - `consts`: A set of _constants_ (atoms with arity 0) we found in the parent [`Spec`].
+//     /// - `iters`: A buffer to store the iterators in. It is guaranteed that, when done, the first [`None`] indicates the current end of the buffer.
+//     /// - `n_cons`: Keeps track of the number of arguments in the consequences. Because why not, if we're iterating anyway.
+//     /// - `n_vars`: Keeps track of how many iterators actually quantify variables.
 //     ///
-//     /// # Returns
-//     /// A derived set of facts, as a [`HashSet<String>`].
-//     ///
-//     /// # Example
-//     /// ```rust
-//     /// use justact_ast::{datalog, Spec};
-//     /// use justact_datalog::Interpeter;
-//     ///
-//     /// let spec: Spec = datalog!(foo.);
-//     ///
-//     /// // The verbose way
-//     /// let mut int = Interpreter::new();
-//     /// int.evaluate(&spec);
-//     ///
-//     /// // The short way
-//     /// let short = Interpeter::evaluate_once(&spec);
-//     /// assert_eq!(int.knowledge_base, short);
-//     /// ```
-//     #[inline]
-//     pub fn evaluate_once(spec: &Spec) -> IndexSet<Atom> {
-//         let mut int: Self = Self::new();
-//         int.evaluate(spec);
-//         int.knowledge_base
+//     /// # Errors
+//     /// This function can error if the total number of arguments in the function exceeds `LEN`,
+//     fn find_iters<'c, const LEN: usize>(
+//         &self,
+//         consts: &'c IndexSet<Ident>,
+//         iters: &mut StackVec<LEN, AntecedentQuantifier<'c>>,
+//         n_cons: &mut usize,
+//         n_vars: &mut usize,
+//     ) -> Result<(), Error> {
+//         // A shadow buffer we use to keep track of the variables we've already seen.
+//         iters.clear();
+//         *n_cons = 0;
+//         *n_vars = 0;
+//         let mut vars: StackVec<LEN, (Ident, usize)> = StackVec::new();
+
+//         // Examine everything in one big happy heap
+//         'arg: for arg in self
+//             .consequences
+//             .values()
+//             .flat_map(|v| v.args.iter().flat_map(|a| a.args.values()))
+//             .inspect(|_| *n_cons += 1)
+//             .chain(self.tail.iter().flat_map(|t| t.antecedents.values().flat_map(|v| v.atom().args.iter().flat_map(|a| a.args.values()))))
+//         {
+//             // Catch out-of-bounds
+//             if iters.len() >= iters.capacity() {
+//                 return Err(Error::QuantifyOverflow { rule: self.clone(), max: LEN });
+//             }
+
+//             // See if we're dealing with an atom or a VARIABLE
+//             match arg {
+//                 AtomArg::Atom(a) => {
+//                     // Insert an atom iterator at the end of the current list
+//                     iters.push(AntecedentQuantifier::Atom(consts.len(), *a, 0));
+//                 },
+//                 AtomArg::Var(v) => {
+//                     // Check if we've seen this variable before somewhere
+//                     for i in 0..*n_vars {
+//                         // SAFETY: We promise ourselves that we only see [`None`]s after the list ended, i.e., i >= vars_end. But the range prevents this from happening.
+//                         let (var, idx): (Ident, usize) = vars[i];
+//                         if v == &var {
+//                             // We have seen this before! So insert this variable's quantifier.
+//                             iters.push(iters[idx]);
+//                             continue 'arg;
+//                         }
+
+//                         // Else, keep on searching
+//                     }
+
+//                     // We haven't seen this variable before. Add a new quantifier.
+//                     vars.push((*v, iters.len()));
+//                     iters.push(AntecedentQuantifier::Var(consts, (0, 0, 0), *n_vars));
+//                     *n_vars += 1;
+//                 },
+//             }
+//         }
+
+//         // Inject a phony argument if none were found. This is important to still derive constants.
+//         if iters.is_empty() {
+//             iters.push(AntecedentQuantifier::Atom(
+//                 1,
+//                 Ident { value: Span::new("<auto generated by Rule::find_iters()>", "you should never see this :)") },
+//                 0,
+//             ));
+//             *n_cons += 1;
+//         }
+
+//         // Alrighty done
+//         Ok(())
 //     }
 
-//     /// Preforms evaluation on the given specification.
+//     /// Performs forward derivation of the Rule.
 //     ///
-//     /// This updates the internal `knowledge_base`. You can manually inspect this.
+//     /// In the paper, this is called the _immediate consequence operator_. It is simply defined as
+//     /// the "forward derivation" of a rule, where we note the rule's consequences as derived if we
+//     /// observe all of its antecedents to be in the given interpretation.
 //     ///
-//     /// # Algorithm
-//     /// The interpreter relies on the _well-founded semantics_ to do derivation in a way that deals more intuitively with negate antecedents.
+//     /// Note that the paper makes a point to consider all negative antecedents to be "new" atoms,
+//     /// i.e., we must observe negative atoms explicitly instead of the absence of positives.
 //     ///
-//     /// Concretely, the well-founded semantics works
+//     /// # Generics
+//     /// - `LEN`: Some buffer length to use internally. This determines the maximum total number of arguments among _all_ consequences and antecedents in the rule. **Must be > 0.**
 //     ///
 //     /// # Arguments
-//     /// - `spec`: The $Datalog^\neg$ [`Spec`]ification to evaluate.
+//     /// - `cons`: A set of _constants_ (atoms with arity 0) we found in the parent [`Spec`].
+//     /// - `int`: Some [`Interpretation`] to derive from.
+//     /// - `res`: Another [`Interpretation`] that we populate with derived facts.
 //     ///
-//     /// # Example
-//     /// ```rust
-//     /// use justact_ast::{datalog, Spec};
-//     /// use justact_datalog::Interpeter;
+//     /// # Returns
+//     /// Whether any new facts were derived or not.
 //     ///
-//     /// let mut int = Interpreter::new();
-//     /// int.evaluate(&datalog!(foo.));
-//     /// assert!(int.holds("foo"));
-//     /// ```
-//     pub fn evaluate(&mut self, spec: &Spec) {
-//         // //
+//     /// # Errors
+//     /// This function can error if the total number of arguments in the function exceeds `LEN`,
+//     pub fn immediate_consequence<const LEN: usize>(
+//         &self,
+//         consts: &IndexSet<Ident>,
+//         int: &Interpretation,
+//         res: &mut Interpretation,
+//     ) -> Result<bool, Error> {
+//         debug!("Running immediate consequent operator for rule '{self}'");
 
-//         // // Go thru the rules
-//         // for rule in &spec.rules {
-//         //     // Consider all concrete instances based on variables
-//         //     let mut new_instances: IndexSet<Atom> = IndexSet::new();
-//         //     for concrete_rule in RuleConcretizer::new(rule, &self.knowledge_base) {}
+//         // Create a set of iterators that quantify over any variables found in the rule
+//         let mut n_vars: usize = 0;
+//         let mut n_cons_args: usize = 0;
+//         let mut iters: StackVec<LEN, AntecedentQuantifier> = StackVec::new();
+//         self.find_iters(consts, &mut iters, &mut n_cons_args, &mut n_vars)?;
+
+//         // Now hit the road jack no more no more (or something along those lines)
+//         let mut changed: bool = false;
+//         let mut assign: StackVec<LEN, Ident> = StackVec::new();
+//         'instance: loop {
+//             // Find the next assignment
+//             assign.clear();
+//             for iter in &mut iters {
+//                 assign.push(match iter.next(n_vars) {
+//                     Some(next) => next,
+//                     None => break 'instance,
+//                 });
+//             }
+//             trace!("[Rule '{self}'] Considering instantiation '{}'", format_rule_assign(self, &assign));
+
+//             // See if we can find the concrete antecedents in the interpretation. No antecedents? Rule trivially accepted!
+//             let mut ant_assign = assign.iter().skip(n_cons_args);
+//             for ante in self.tail.iter().flat_map(|t| t.antecedents.values()) {
+//                 // Get the polarity of the literal
+//                 let polarity: bool = matches!(ante, Literal::Atom(_));
+
+//                 // Check if
+//                 if int.truth_of_atom_by_hash(int.hash_atom_with_assign(
+//                     &ante.atom().ident,
+//                     (&mut ant_assign).take(ante.atom().args.as_ref().map(|a| a.args.len()).unwrap_or(0)).map(|a| *a),
+//                 )) != Some(polarity)
+//                 {
+//                     // The antecedant (as a literal, so negation taken into account) is not true; cannot derive this fact
+//                     trace!(
+//                         "[Rule '{self}' // '{}'] Antecedent '{ante}' not true in the interpretation; rule does not hold",
+//                         format_rule_assign(self, &assign)
+//                     );
+//                     continue 'instance;
+//                 }
+//             }
+//             trace!("[Rule '{self}' // '{}'] All antecedents hold", format_rule_assign(self, &assign));
+
+//             // If all antecedants were in the interpretation, then derive the consequents.
+//             let mut con_assign = assign.iter();
+//             for cons in self.consequences.values() {
+//                 // Create the instantiation of the consequent
+//                 let mut cons: Atom = cons.clone();
+//                 for arg in cons.args.iter_mut().flat_map(|a| a.args.values_mut()) {
+//                     *arg = AtomArg::Atom(con_assign.next().cloned().unwrap());
+//                 }
+
+//                 // Now derive it
+//                 trace!("[Rule '{self}' // '{}'] Deriving '{cons}'", format_rule_assign(self, &assign));
+//                 if !matches!(res.learn(cons, true), Some(true)) {
+//                     changed = true;
+//                 }
+//             }
+//         }
+
+//         // Done, return whether this had any effect
+//         Ok(changed)
+
+//         // debug!("Running immediate consequent transformation");
+
+//         // // This transformation is saturating, so continue until no rules are triggered anymore.
+//         // // NOTE: Monotonic because we can never remove truths, inferring the same fact does not count as a change and we are iterating over a Herbrand instantiation so our search space is finite (for $Datalog^\neg$, at least).
+//         // let mut changed: bool = true;
+//         // let mut i: usize = 0;
+//         // while changed {
+//         //     changed = false;
+//         //     i += 1;
+
+//         //     // Go thru da rules
+//         //     // NOTE: HerbrandInstantiationIterator is not an official iterator because it doesn't GAT. So we do this manually.
+//         //     'rule: while let Some(rule) = rules.next() {
+//         //         trace!("[{i}] Running immediate consequent transformation for '{rule}'");
+
+//         //         // See if we can find the antecedents in the interpretation. No antecedents? Rule trivially accepted!
+//         //         for ante in rule.tail.iter().map(|t| t.antecedents.values()).flatten() {
+//         //             if !matches!(int.truth_of_lit(ante), Some(true)) {
+//         //                 // The antecedant is not true; cannot derive this fact
+//         //                 trace!("[{i}] Antecedent '{ante}' not true in the interpretation; Rule '{rule}' does not hold");
+//         //                 continue 'rule;
+//         //             }
+//         //         }
+
+//         //         // If all antecedants were in the interpretation, then derive the consequents.
+//         //         for cons in rule.consequences.values() {
+//         //             trace!("[{i}] Deriving '{cons}' from '{rule}' (all antecedents explicitly hold)");
+//         //             if !matches!(int.learn(cons.clone(), true), Some(true)) {
+//         //                 changed = true;
+//         //             }
+//         //         }
+//         //     }
 //         // }
+
+//         // // Done!
+//         // trace!("Done saturating immediate consequent transformation (took {i} passes)");
 //     }
 // }
