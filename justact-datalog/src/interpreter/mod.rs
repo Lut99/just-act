@@ -4,7 +4,7 @@
 //  Created:
 //    26 Mar 2024, 19:36:31
 //  Last edited:
-//    03 Apr 2024, 18:17:06
+//    04 Apr 2024, 16:13:11
 //  Auto updated?
 //    Yes
 //
@@ -205,8 +205,7 @@ mod tests {
             Ok(res) => res,
             Err(err) => panic!("{err}"),
         };
-        println!("{res}");
-        assert_eq!(res.len(), 2);
+        assert_eq!(res.len(), 1);
         assert_eq!(res.closed_world_truth(&make_atom("foo", [])), None);
         assert_eq!(res.closed_world_truth(&make_atom("bingo", ["boingo"])), Some(false));
     }
@@ -273,7 +272,6 @@ mod tests {
         assert_eq!(res.closed_world_truth(&make_atom("wins", ["h"])), Some(false));
         assert_eq!(res.closed_world_truth(&make_atom("wins", ["i"])), Some(false));
 
-
         // Example 5.2 (b)
         // NOTE: Example uses `mov` instead of `move`, cuz `move` is a Rust keyword :)
         let five_two_b: Spec = datalog! {
@@ -291,7 +289,7 @@ mod tests {
             Ok(res) => res,
             Err(err) => panic!("{err}"),
         };
-        assert_eq!(res.len(), 26);
+        assert_eq!(res.len(), 24);
         assert_eq!(res.closed_world_truth(&make_atom("wins", ["a"])), None);
         assert_eq!(res.closed_world_truth(&make_atom("wins", ["b"])), None);
         assert_eq!(res.closed_world_truth(&make_atom("wins", ["c"])), Some(true));
@@ -636,7 +634,7 @@ impl Spec {
 
             // See if we reached a stable point
             let hash: u64 = int.hash();
-            if prev_hashes[0] == prev_hashes[2] && prev_hashes[1] == hash {
+            if i % 2 == 1 && prev_hashes[0] == prev_hashes[2] && prev_hashes[1] == hash {
                 // Stable! Merge the stable transformation and the result and we're done
                 debug!("Completed alternating-fixpoint transformation (took {i} runs)");
                 return Ok(());
