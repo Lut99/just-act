@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 10:22:40
 //  Last edited:
-//    03 Apr 2024, 18:04:39
+//    04 Apr 2024, 16:23:14
 //  Auto updated?
 //    Yes
 //
@@ -12,7 +12,7 @@
 //!   Defines how an interpretation $I$ looks like as given in [1].
 //
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter, Result as FResult};
 use std::hash::{BuildHasher, DefaultHasher, Hash as _, Hasher, RandomState};
 
@@ -306,11 +306,13 @@ impl<'c> VarQuantifier<'c> {
 #[derive(Clone)]
 pub struct Interpretation<R = RandomState> {
     /// The atoms stored in this set that we know (or assume!) to be _true_.
-    tknown:  HashMap<u64, Atom>,
+    tknown:  HashSet<u64>,
     /// The atoms stored in this set that we know (or assume!) to be _false_.
-    fknown:  HashMap<u64, Atom>,
+    fknown:  HashSet<u64>,
     /// The elements in this set for which the truth value is ambigious or contradictory.
-    unknown: HashMap<u64, Atom>,
+    unknown: HashSet<u64>,
+    /// All definitions in the Interpretation.
+    defs:    HashMap<u64, Atom>,
     /// The random state used to compute hashes.
     state:   R,
 }
@@ -320,7 +322,9 @@ impl<R: Default> Interpretation<R> {
     /// # Returns
     /// An empty Interpretation.
     #[inline]
-    pub fn new() -> Self { Self { tknown: HashMap::new(), fknown: HashMap::new(), unknown: HashMap::new(), state: R::default() } }
+    pub fn new() -> Self {
+        Self { tknown: HashSet::new(), fknown: HashSet::new(), unknown: HashSet::new(), defs: HashMap::new(), state: R::default() }
+    }
 
     /// Constructor for the Interpretation that initializes it with the given capacity.
     ///
@@ -332,9 +336,10 @@ impl<R: Default> Interpretation<R> {
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            tknown:  HashMap::with_capacity(capacity),
-            fknown:  HashMap::with_capacity(capacity),
-            unknown: HashMap::with_capacity(capacity),
+            tknown:  HashSet::with_capacity(capacity),
+            fknown:  HashSet::with_capacity(capacity),
+            unknown: HashSet::with_capacity(capacity),
+            defs:    HashMap::with_capacity(capacity),
             state:   R::default(),
         }
     }
@@ -364,7 +369,9 @@ impl<R: BuildHasher> Interpretation<R> {
     /// # Returns
     /// An empty Interpretation with the given state for hashes.
     #[inline]
-    pub fn with_state(state: R) -> Self { Self { tknown: HashMap::new(), fknown: HashMap::new(), unknown: HashMap::new(), state } }
+    pub fn with_state(state: R) -> Self {
+        Self { tknown: HashSet::new(), fknown: HashSet::new(), unknown: HashSet::new(), defs: HashMap::new(), state }
+    }
 
     /// Performs the stable transformation on the Interpretation.
     ///
@@ -373,7 +380,7 @@ impl<R: BuildHasher> Interpretation<R> {
     pub fn apply_stable_transformation(&mut self) {
         // Because we're doing the assumptions in-interpretation, and because $Datalog^\neg$ cannot derive negatives, we should first discard all negatives to remove the assumptions
         // Also, if both the assumption and a true counterpart are true, then definitely get rid of the assumption altogether
-        self.unknown.extend(self.fknown.drain().filter(|(h, _)| !self.tknown.contains_key(&h)));
+        self.unknown.extend(self.fknown.drain().filter(|h| !self.tknown.contains(&h)));
 
         // Then we move the unknowns to false...
         std::mem::swap(&mut self.fknown, &mut self.unknown);
@@ -391,6 +398,7 @@ impl<R: BuildHasher> Interpretation<R> {
         self.tknown.clear();
         self.fknown.clear();
         self.unknown.clear();
+        self.defs.clear();
     }
 
     /// Returns whether the universe exists.
@@ -398,7 +406,7 @@ impl<R: BuildHasher> Interpretation<R> {
     /// # Returns
     /// True if we know that at least one fact is either known or unknown.
     #[inline]
-    pub fn is_empty(&self) -> bool { self.tknown.is_empty() && self.fknown.is_empty() && self.unknown.is_empty() }
+    pub fn is_empty(&self) -> bool { self.defs.is_empty() }
 
     /// Returns the number of facts in the universe.
     ///
@@ -407,7 +415,7 @@ impl<R: BuildHasher> Interpretation<R> {
     /// # Returns
     /// The number of atoms in this Interpretation.
     #[inline]
-    pub fn len(&self) -> usize { self.tknown.len() + self.fknown.len() + self.unknown.len() }
+    pub fn len(&self) -> usize { self.defs.len() }
 
     /// Computes some hash of this interpretation.
     ///
@@ -421,7 +429,7 @@ impl<R: BuildHasher> Interpretation<R> {
         let mut state: DefaultHasher = DefaultHasher::new();
 
         // Get a predictable order on the known keys (in case the hasher is not cummatative), then hash them
-        let mut keys: Vec<u64> = self.tknown.keys().cloned().collect();
+        let mut keys: Vec<u64> = self.tknown.iter().cloned().collect();
         keys.sort();
         for key in &keys {
             // Write it's true
@@ -431,7 +439,7 @@ impl<R: BuildHasher> Interpretation<R> {
 
         // Do the same for false knowns
         keys.clear();
-        keys.extend(self.fknown.keys().cloned());
+        keys.extend(self.fknown.iter().cloned());
         keys.sort();
         for key in &keys {
             // Write it's false
@@ -441,7 +449,7 @@ impl<R: BuildHasher> Interpretation<R> {
 
         // And finally the unknowns
         keys.clear();
-        keys.extend(self.unknown.keys().cloned());
+        keys.extend(self.unknown.iter().cloned());
         keys.sort();
         for key in &keys {
             // Write it's unknown
@@ -462,7 +470,7 @@ impl<R: BuildHasher> Interpretation<R> {
     #[inline]
     pub fn find_existing_consts(&self) -> IndexSet<Ident> {
         let mut consts: IndexSet<Ident> = IndexSet::new();
-        for atom in self.tknown.values().chain(self.fknown.values()).chain(self.unknown.values()) {
+        for atom in self.defs.values() {
             if atom.args.as_ref().map(|a| a.args.len()).unwrap_or(0) == 0 {
                 consts.insert(atom.ident);
             }
@@ -555,32 +563,32 @@ impl<R: BuildHasher> Interpretation<R> {
 
         // Attempt to find the atom in the list of truths
         match self.unknown.remove(&hash) {
-            Some(atom) => {
+            true => {
                 // For this one, can never already exist
                 if truth {
-                    self.tknown.insert(hash, atom);
+                    self.tknown.insert(hash);
                     None
                 } else {
-                    self.fknown.insert(hash, atom);
+                    self.fknown.insert(hash);
                     None
                 }
             },
-            None => {
+            false => {
                 // NOTE: We don't _move_ the atom from false -> true and vice versa; we merely observe that it is _also_ true.
                 if truth {
-                    if self.tknown.contains_key(&hash) {
+                    if self.tknown.contains(&hash) {
                         Some(true)
-                    } else if let Some(atom) = self.fknown.get(&hash) {
-                        self.tknown.insert(hash, atom.clone());
+                    } else if self.fknown.contains(&hash) {
+                        self.tknown.insert(hash);
                         Some(false)
                     } else {
                         panic!("Cannot learn anything about non-existing atom '{atom}'");
                     }
                 } else {
-                    if self.fknown.contains_key(&hash) {
+                    if self.fknown.contains(&hash) {
                         Some(false)
-                    } else if let Some(atom) = self.tknown.get(&hash) {
-                        self.fknown.insert(hash, atom.clone());
+                    } else if self.tknown.contains(&hash) {
+                        self.fknown.insert(hash);
                         Some(true)
                     } else {
                         panic!("Cannot learn anything about non-existing atom '{atom}'");
@@ -611,32 +619,32 @@ impl<R: BuildHasher> Interpretation<R> {
 
         // Attempt to find the atom in the list of truths
         match self.unknown.remove(&hash) {
-            Some(atom) => {
+            true => {
                 // For this one, can never already exist
                 if truth {
-                    self.tknown.insert(hash, atom);
+                    self.tknown.insert(hash);
                     None
                 } else {
-                    self.fknown.insert(hash, atom);
+                    self.fknown.insert(hash);
                     None
                 }
             },
-            None => {
-                // NOTE: We don't _move_ the atom from false -> true and vice versa; we merely observe that it is _also_ true.
+            false => {
+                // NOTE: We don't _move_ the atom from false -> true and vice versa; we merely observe that it is _also_ true/false.
                 if truth {
-                    if self.tknown.contains_key(&hash) {
+                    if self.tknown.contains(&hash) {
                         Some(true)
-                    } else if let Some(atom) = self.fknown.get(&hash) {
-                        self.tknown.insert(hash, atom.clone());
+                    } else if self.fknown.contains(&hash) {
+                        self.tknown.insert(hash);
                         Some(false)
                     } else {
                         panic!("Cannot learn anything about non-existing atom '{atom}'");
                     }
                 } else {
-                    if self.fknown.contains_key(&hash) {
+                    if self.fknown.contains(&hash) {
                         Some(false)
-                    } else if let Some(atom) = self.tknown.get(&hash) {
-                        self.fknown.insert(hash, atom.clone());
+                    } else if self.tknown.contains(&hash) {
+                        self.fknown.insert(hash);
                         Some(true)
                     } else {
                         panic!("Cannot learn anything about non-existing atom '{atom}'");
@@ -661,8 +669,13 @@ impl<R: BuildHasher> Interpretation<R> {
     pub fn insert(&mut self, atom: Atom) -> bool {
         let hash: u64 = self.hash_atom(&atom);
 
-        // Insert it into the unknown atoms
-        self.unknown.insert(hash, atom).is_some()
+        // Just to be sure, remove it from the true & false lists
+        self.tknown.remove(&hash);
+        self.fknown.remove(&hash);
+
+        // Insert it into the unknown atoms, as that's how it starts, and then the defs
+        self.unknown.insert(hash);
+        self.defs.insert(hash, atom).is_some()
     }
 
     /// Populates the Interpretation with the Herbrand universe dictated by the given [`Spec`].
@@ -748,7 +761,8 @@ impl<R: BuildHasher> Interpretation<R> {
 
                         // Alright now insert _that_
                         let hash: u64 = self.hash_atom(&atom);
-                        self.unknown.insert(hash, atom);
+                        self.unknown.insert(hash);
+                        self.defs.insert(hash, atom);
                     }
                 }
             } else {
@@ -756,7 +770,8 @@ impl<R: BuildHasher> Interpretation<R> {
                 for atom in rule.consequences.values().chain(rule.tail.iter().flat_map(|t| t.antecedents.values().map(|a| a.atom()))) {
                     // Insert the non-constants
                     let hash: u64 = self.hash_atom(atom);
-                    self.unknown.insert(hash, atom.clone());
+                    self.unknown.insert(hash);
+                    self.defs.insert(hash, atom.clone());
                 }
             }
         }
@@ -766,9 +781,10 @@ impl<R: BuildHasher> Interpretation<R> {
         self.fknown.reserve(self.unknown.len());
     }
 
-    /// Returns whether we're  particular atom is in the know.
+    /// Returns whether a particular atom is in the know.
     ///
-    /// This function is more powerful than comparing the result of open world queries, because you can ask for a different between positive and negative atoms.
+    /// This function is more powerful than comparing the result of open world queries, because you can specifically ask for the status of the positive and negative atom variants.
+    /// [`Self::open_world_truth()`](Interpretation::open_world_truth()) will always tell you true exists if it does, regardless of whether false exists.
     ///
     /// # Arguments
     /// - `atom`: Some [`Atom`] to attempt to find the truth of.
@@ -781,12 +797,13 @@ impl<R: BuildHasher> Interpretation<R> {
         let hash: u64 = self.hash_atom(&atom);
 
         // Do the procedure above
-        if truth { self.tknown.contains_key(&hash) } else { self.fknown.contains_key(&hash) }
+        if truth { self.tknown.contains(&hash) } else { self.fknown.contains(&hash) }
     }
 
-    /// Returns whether we're  particular atom is in the know.
+    /// Returns whether a particular atom is in the know.
     ///
-    /// This function is more powerful than comparing the result of open world queries, because you can ask for a different between positive and negative atoms.
+    /// This function is more powerful than comparing the result of open world queries, because you can specifically ask for the status of the positive and negative atom variants.
+    /// [`Self::open_world_truth()`](Interpretation::open_world_truth()) will always tell you true exists if it does, regardless of whether false exists.
     ///
     /// # Arguments
     /// - `atom`: Some [`Atom`] to attempt to find the truth of.
@@ -800,7 +817,7 @@ impl<R: BuildHasher> Interpretation<R> {
         let hash: u64 = self.hash_atom_with_assign(&atom, assign);
 
         // Do the procedure above
-        if truth { self.tknown.contains_key(&hash) } else { self.fknown.contains_key(&hash) }
+        if truth { self.tknown.contains(&hash) } else { self.fknown.contains(&hash) }
     }
 
     /// Returns the truth value of the given atom under the closed-world assumption.
@@ -818,11 +835,11 @@ impl<R: BuildHasher> Interpretation<R> {
         let hash: u64 = self.hash_atom(&atom);
 
         // Do the procedure above
-        if self.tknown.contains_key(&hash) {
+        if self.tknown.contains(&hash) {
             Some(true)
-        } else if self.fknown.contains_key(&hash) {
+        } else if self.fknown.contains(&hash) {
             Some(false)
-        } else if self.unknown.contains_key(&hash) {
+        } else if self.unknown.contains(&hash) {
             None
         } else {
             Some(false)
@@ -844,11 +861,11 @@ impl<R: BuildHasher> Interpretation<R> {
         let hash: u64 = self.hash_atom(&atom);
 
         // Do the procedure above
-        if self.tknown.contains_key(&hash) {
+        if self.tknown.contains(&hash) {
             Some(true)
-        } else if self.fknown.contains_key(&hash) {
+        } else if self.fknown.contains(&hash) {
             Some(false)
-        } else if self.unknown.contains_key(&hash) {
+        } else if self.unknown.contains(&hash) {
             None
         } else {
             None
@@ -875,11 +892,11 @@ impl<R: BuildHasher> Interpretation<R> {
         let hash: u64 = self.hash_atom_with_assign(&atom, assign);
 
         // Do the procedure above
-        if self.tknown.contains_key(&hash) {
+        if self.tknown.contains(&hash) {
             Some(true)
-        } else if self.fknown.contains_key(&hash) {
+        } else if self.fknown.contains(&hash) {
             Some(false)
-        } else if self.unknown.contains_key(&hash) {
+        } else if self.unknown.contains(&hash) {
             None
         } else {
             None
@@ -891,9 +908,9 @@ impl<R: BuildHasher> Interpretation<R> {
 impl<R: BuildHasher> Display for Interpretation<R> {
     fn fmt(&self, f: &mut Formatter) -> FResult {
         // Get a sorted list of both kinds of atoms
-        let mut tknown: Vec<&Atom> = self.tknown.values().collect();
-        let mut fknown: Vec<&Atom> = self.fknown.values().collect();
-        let mut unknown: Vec<&Atom> = self.unknown.values().collect();
+        let mut tknown: Vec<&Atom> = self.tknown.iter().map(|h| self.defs.get(h).unwrap()).collect();
+        let mut fknown: Vec<&Atom> = self.fknown.iter().map(|h| self.defs.get(h).unwrap()).collect();
+        let mut unknown: Vec<&Atom> = self.unknown.iter().map(|h| self.defs.get(h).unwrap()).collect();
         tknown.sort_by(|i1, i2| {
             i1.ident
                 .value
