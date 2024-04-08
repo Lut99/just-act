@@ -4,7 +4,7 @@
 //  Created:
 //    26 Mar 2024, 19:36:31
 //  Last edited:
-//    04 Apr 2024, 16:13:11
+//    08 Apr 2024, 17:33:26
 //  Auto updated?
 //    Yes
 //
@@ -182,7 +182,7 @@ mod tests {
             Ok(res) => res,
             Err(err) => panic!("{err}"),
         };
-        assert_eq!(res.len(), 12);
+        assert_eq!(res.len(), 11);
         assert_eq!(res.closed_world_truth(&make_atom("foo", [])), Some(true));
         assert_eq!(res.closed_world_truth(&make_atom("bar", [])), Some(true));
         assert_eq!(res.closed_world_truth(&make_atom("baz", ["foo"])), Some(true));
@@ -234,7 +234,7 @@ mod tests {
             Ok(res) => res,
             Err(err) => panic!("{err}"),
         };
-        assert_eq!(res.len(), 8);
+        assert_eq!(res.len(), 7);
         assert_eq!(res.closed_world_truth(&make_atom("a", None)), None);
         assert_eq!(res.closed_world_truth(&make_atom("b", None)), None);
         assert_eq!(res.closed_world_truth(&make_atom("c", None)), Some(true));
@@ -261,7 +261,7 @@ mod tests {
             Ok(res) => res,
             Err(err) => panic!("{err}"),
         };
-        assert_eq!(res.len(), 99);
+        assert_eq!(res.len(), 26);
         assert_eq!(res.closed_world_truth(&make_atom("wins", ["a"])), Some(false));
         assert_eq!(res.closed_world_truth(&make_atom("wins", ["b"])), Some(true));
         assert_eq!(res.closed_world_truth(&make_atom("wins", ["c"])), Some(false));
@@ -289,7 +289,7 @@ mod tests {
             Ok(res) => res,
             Err(err) => panic!("{err}"),
         };
-        assert_eq!(res.len(), 24);
+        assert_eq!(res.len(), 12);
         assert_eq!(res.closed_world_truth(&make_atom("wins", ["a"])), None);
         assert_eq!(res.closed_world_truth(&make_atom("wins", ["b"])), None);
         assert_eq!(res.closed_world_truth(&make_atom("wins", ["c"])), Some(true));
@@ -312,7 +312,7 @@ mod tests {
             Ok(res) => res,
             Err(err) => panic!("{err}"),
         };
-        assert_eq!(res.len(), 15);
+        assert_eq!(res.len(), 9);
         assert_eq!(res.closed_world_truth(&make_atom("wins", ["a"])), Some(false));
         assert_eq!(res.closed_world_truth(&make_atom("wins", ["b"])), Some(true));
         assert_eq!(res.closed_world_truth(&make_atom("wins", ["c"])), Some(false));
@@ -651,216 +651,3 @@ impl Spec {
         }
     }
 }
-
-
-
-// // Interpreter extensions for the [`Rule`].
-// impl Rule {
-//     /// Finds a set of [`AntecedentQuantifier`] that can be used to do quantification over a rule.
-//     ///
-//     /// # Arguments
-//     /// - `consts`: A set of _constants_ (atoms with arity 0) we found in the parent [`Spec`].
-//     /// - `iters`: A buffer to store the iterators in. It is guaranteed that, when done, the first [`None`] indicates the current end of the buffer.
-//     /// - `n_cons`: Keeps track of the number of arguments in the consequences. Because why not, if we're iterating anyway.
-//     /// - `n_vars`: Keeps track of how many iterators actually quantify variables.
-//     ///
-//     /// # Errors
-//     /// This function can error if the total number of arguments in the function exceeds `LEN`,
-//     fn find_iters<'c, const LEN: usize>(
-//         &self,
-//         consts: &'c IndexSet<Ident>,
-//         iters: &mut StackVec<LEN, AntecedentQuantifier<'c>>,
-//         n_cons: &mut usize,
-//         n_vars: &mut usize,
-//     ) -> Result<(), Error> {
-//         // A shadow buffer we use to keep track of the variables we've already seen.
-//         iters.clear();
-//         *n_cons = 0;
-//         *n_vars = 0;
-//         let mut vars: StackVec<LEN, (Ident, usize)> = StackVec::new();
-
-//         // Examine everything in one big happy heap
-//         'arg: for arg in self
-//             .consequences
-//             .values()
-//             .flat_map(|v| v.args.iter().flat_map(|a| a.args.values()))
-//             .inspect(|_| *n_cons += 1)
-//             .chain(self.tail.iter().flat_map(|t| t.antecedents.values().flat_map(|v| v.atom().args.iter().flat_map(|a| a.args.values()))))
-//         {
-//             // Catch out-of-bounds
-//             if iters.len() >= iters.capacity() {
-//                 return Err(Error::QuantifyOverflow { rule: self.clone(), max: LEN });
-//             }
-
-//             // See if we're dealing with an atom or a VARIABLE
-//             match arg {
-//                 AtomArg::Atom(a) => {
-//                     // Insert an atom iterator at the end of the current list
-//                     iters.push(AntecedentQuantifier::Atom(consts.len(), *a, 0));
-//                 },
-//                 AtomArg::Var(v) => {
-//                     // Check if we've seen this variable before somewhere
-//                     for i in 0..*n_vars {
-//                         // SAFETY: We promise ourselves that we only see [`None`]s after the list ended, i.e., i >= vars_end. But the range prevents this from happening.
-//                         let (var, idx): (Ident, usize) = vars[i];
-//                         if v == &var {
-//                             // We have seen this before! So insert this variable's quantifier.
-//                             iters.push(iters[idx]);
-//                             continue 'arg;
-//                         }
-
-//                         // Else, keep on searching
-//                     }
-
-//                     // We haven't seen this variable before. Add a new quantifier.
-//                     vars.push((*v, iters.len()));
-//                     iters.push(AntecedentQuantifier::Var(consts, (0, 0, 0), *n_vars));
-//                     *n_vars += 1;
-//                 },
-//             }
-//         }
-
-//         // Inject a phony argument if none were found. This is important to still derive constants.
-//         if iters.is_empty() {
-//             iters.push(AntecedentQuantifier::Atom(
-//                 1,
-//                 Ident { value: Span::new("<auto generated by Rule::find_iters()>", "you should never see this :)") },
-//                 0,
-//             ));
-//             *n_cons += 1;
-//         }
-
-//         // Alrighty done
-//         Ok(())
-//     }
-
-//     /// Performs forward derivation of the Rule.
-//     ///
-//     /// In the paper, this is called the _immediate consequence operator_. It is simply defined as
-//     /// the "forward derivation" of a rule, where we note the rule's consequences as derived if we
-//     /// observe all of its antecedents to be in the given interpretation.
-//     ///
-//     /// Note that the paper makes a point to consider all negative antecedents to be "new" atoms,
-//     /// i.e., we must observe negative atoms explicitly instead of the absence of positives.
-//     ///
-//     /// # Generics
-//     /// - `LEN`: Some buffer length to use internally. This determines the maximum total number of arguments among _all_ consequences and antecedents in the rule. **Must be > 0.**
-//     ///
-//     /// # Arguments
-//     /// - `cons`: A set of _constants_ (atoms with arity 0) we found in the parent [`Spec`].
-//     /// - `int`: Some [`Interpretation`] to derive from.
-//     /// - `res`: Another [`Interpretation`] that we populate with derived facts.
-//     ///
-//     /// # Returns
-//     /// Whether any new facts were derived or not.
-//     ///
-//     /// # Errors
-//     /// This function can error if the total number of arguments in the function exceeds `LEN`,
-//     pub fn immediate_consequence<const LEN: usize>(
-//         &self,
-//         consts: &IndexSet<Ident>,
-//         int: &Interpretation,
-//         res: &mut Interpretation,
-//     ) -> Result<bool, Error> {
-//         debug!("Running immediate consequent operator for rule '{self}'");
-
-//         // Create a set of iterators that quantify over any variables found in the rule
-//         let mut n_vars: usize = 0;
-//         let mut n_cons_args: usize = 0;
-//         let mut iters: StackVec<LEN, AntecedentQuantifier> = StackVec::new();
-//         self.find_iters(consts, &mut iters, &mut n_cons_args, &mut n_vars)?;
-
-//         // Now hit the road jack no more no more (or something along those lines)
-//         let mut changed: bool = false;
-//         let mut assign: StackVec<LEN, Ident> = StackVec::new();
-//         'instance: loop {
-//             // Find the next assignment
-//             assign.clear();
-//             for iter in &mut iters {
-//                 assign.push(match iter.next(n_vars) {
-//                     Some(next) => next,
-//                     None => break 'instance,
-//                 });
-//             }
-//             trace!("[Rule '{self}'] Considering instantiation '{}'", format_rule_assign(self, &assign));
-
-//             // See if we can find the concrete antecedents in the interpretation. No antecedents? Rule trivially accepted!
-//             let mut ant_assign = assign.iter().skip(n_cons_args);
-//             for ante in self.tail.iter().flat_map(|t| t.antecedents.values()) {
-//                 // Get the polarity of the literal
-//                 let polarity: bool = matches!(ante, Literal::Atom(_));
-
-//                 // Check if
-//                 if int.truth_of_atom_by_hash(int.hash_atom_with_assign(
-//                     &ante.atom().ident,
-//                     (&mut ant_assign).take(ante.atom().args.as_ref().map(|a| a.args.len()).unwrap_or(0)).map(|a| *a),
-//                 )) != Some(polarity)
-//                 {
-//                     // The antecedant (as a literal, so negation taken into account) is not true; cannot derive this fact
-//                     trace!(
-//                         "[Rule '{self}' // '{}'] Antecedent '{ante}' not true in the interpretation; rule does not hold",
-//                         format_rule_assign(self, &assign)
-//                     );
-//                     continue 'instance;
-//                 }
-//             }
-//             trace!("[Rule '{self}' // '{}'] All antecedents hold", format_rule_assign(self, &assign));
-
-//             // If all antecedants were in the interpretation, then derive the consequents.
-//             let mut con_assign = assign.iter();
-//             for cons in self.consequences.values() {
-//                 // Create the instantiation of the consequent
-//                 let mut cons: Atom = cons.clone();
-//                 for arg in cons.args.iter_mut().flat_map(|a| a.args.values_mut()) {
-//                     *arg = AtomArg::Atom(con_assign.next().cloned().unwrap());
-//                 }
-
-//                 // Now derive it
-//                 trace!("[Rule '{self}' // '{}'] Deriving '{cons}'", format_rule_assign(self, &assign));
-//                 if !matches!(res.learn(cons, true), Some(true)) {
-//                     changed = true;
-//                 }
-//             }
-//         }
-
-//         // Done, return whether this had any effect
-//         Ok(changed)
-
-//         // debug!("Running immediate consequent transformation");
-
-//         // // This transformation is saturating, so continue until no rules are triggered anymore.
-//         // // NOTE: Monotonic because we can never remove truths, inferring the same fact does not count as a change and we are iterating over a Herbrand instantiation so our search space is finite (for $Datalog^\neg$, at least).
-//         // let mut changed: bool = true;
-//         // let mut i: usize = 0;
-//         // while changed {
-//         //     changed = false;
-//         //     i += 1;
-
-//         //     // Go thru da rules
-//         //     // NOTE: HerbrandInstantiationIterator is not an official iterator because it doesn't GAT. So we do this manually.
-//         //     'rule: while let Some(rule) = rules.next() {
-//         //         trace!("[{i}] Running immediate consequent transformation for '{rule}'");
-
-//         //         // See if we can find the antecedents in the interpretation. No antecedents? Rule trivially accepted!
-//         //         for ante in rule.tail.iter().map(|t| t.antecedents.values()).flatten() {
-//         //             if !matches!(int.truth_of_lit(ante), Some(true)) {
-//         //                 // The antecedant is not true; cannot derive this fact
-//         //                 trace!("[{i}] Antecedent '{ante}' not true in the interpretation; Rule '{rule}' does not hold");
-//         //                 continue 'rule;
-//         //             }
-//         //         }
-
-//         //         // If all antecedants were in the interpretation, then derive the consequents.
-//         //         for cons in rule.consequences.values() {
-//         //             trace!("[{i}] Deriving '{cons}' from '{rule}' (all antecedents explicitly hold)");
-//         //             if !matches!(int.learn(cons.clone(), true), Some(true)) {
-//         //                 changed = true;
-//         //             }
-//         //         }
-//         //     }
-//         // }
-
-//         // // Done!
-//         // trace!("Done saturating immediate consequent transformation (took {i} passes)");
-//     }
-// }

@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 10:22:40
 //  Last edited:
-//    04 Apr 2024, 16:23:14
+//    08 Apr 2024, 17:33:11
 //  Auto updated?
 //    Yes
 //
@@ -18,7 +18,7 @@ use std::hash::{BuildHasher, DefaultHasher, Hash as _, Hasher, RandomState};
 
 use indexmap::{IndexMap, IndexSet};
 
-use crate::ast::{Atom, AtomArg, Ident, Spec};
+use crate::ast::{Atom, AtomArg, Ident, Literal, NegAtom, Spec};
 use crate::log::warn;
 
 
@@ -164,12 +164,14 @@ mod tests {
             foo. bar(baz). quz(X) :- bar(X), qux(quux).
         };
         let int: Interpretation = Interpretation::from_universe(&rules);
-        assert_eq!(int.len(), 5);
+        println!("{int}");
+        assert_eq!(int.len(), 3);
         assert_eq!(int.closed_world_truth(&make_atom("foo", [])), None);
-        assert_eq!(int.closed_world_truth(&make_atom("bar", ["foo"])), None);
+        assert_eq!(int.closed_world_truth(&make_atom("bar", ["foo"])), Some(false));
         assert_eq!(int.closed_world_truth(&make_atom("bar", ["baz"])), None);
         assert_eq!(int.closed_world_truth(&make_atom("quz", ["foo"])), None);
-        assert_eq!(int.closed_world_truth(&make_atom("qux", ["quux"])), None);
+        assert_eq!(int.closed_world_truth(&make_atom("quz", ["baz"])), Some(false));
+        assert_eq!(int.closed_world_truth(&make_atom("qux", ["quux"])), Some(false));
         assert_eq!(int.closed_world_truth(&make_atom("bingo", ["boingo"])), Some(false));
     }
 }
@@ -690,7 +692,7 @@ impl<R: BuildHasher> Interpretation<R> {
         // First, find the Herbrand 0-base of the spec (i.e., constants only)
         let mut consts: IndexSet<Ident> = IndexSet::new();
         for rule in &spec.rules {
-            // Go over the consequences only
+            // Go over the consequences only (since these are the only ones that can be true)
             for cons in rule.consequences.values() {
                 // Add the consequent if it has no arguments
                 if cons.args.as_ref().map(|a| a.args.len()).unwrap_or(0) == 0 {
@@ -737,8 +739,14 @@ impl<R: BuildHasher> Interpretation<R> {
                         }
                     }
 
-                    // Go over the consequences only... and antecedents lol
-                    for atom in rule.consequences.values().chain(rule.tail.iter().flat_map(|t| t.antecedents.values().map(|a| a.atom()))) {
+                    // Go over the consequences only... and _negative_ antecedents
+                    // The former represents the possible atoms that _can_ be true, the latter represents the things we may want to search for are false.
+                    for atom in rule.consequences.values().chain(rule.tail.iter().flat_map(|t| {
+                        t.antecedents.values().filter_map(|a| match a {
+                            Literal::Atom(_) => None,
+                            Literal::NegAtom(NegAtom { atom, .. }) => Some(atom),
+                        })
+                    })) {
                         // Turn this atom into a concrete instance, if it has variables
                         let atom: Atom = if atom.has_vars() {
                             // Apply that assignment to the variables
@@ -767,7 +775,12 @@ impl<R: BuildHasher> Interpretation<R> {
                 }
             } else {
                 // Go over the consequences only... and antecedents lol
-                for atom in rule.consequences.values().chain(rule.tail.iter().flat_map(|t| t.antecedents.values().map(|a| a.atom()))) {
+                for atom in rule.consequences.values().chain(rule.tail.iter().flat_map(|t| {
+                    t.antecedents.values().filter_map(|a| match a {
+                        Literal::Atom(_) => None,
+                        Literal::NegAtom(NegAtom { atom, .. }) => Some(atom),
+                    })
+                })) {
                     // Insert the non-constants
                     let hash: u64 = self.hash_atom(atom);
                     self.unknown.insert(hash);
