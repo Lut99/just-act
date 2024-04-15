@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 10:22:40
 //  Last edited:
-//    08 Apr 2024, 17:33:11
+//    15 Apr 2024, 15:55:26
 //  Auto updated?
 //    Yes
 //
@@ -26,7 +26,7 @@ use crate::log::warn;
 #[cfg(all(test, feature = "derive"))]
 mod tests {
     use ast_toolkit_punctuated::Punctuated;
-    use justact_datalog_derive::datalog;
+    use datalog_derive::datalog;
 
     use super::*;
     use crate::ast::{AtomArgs, Comma, Parens, Span};

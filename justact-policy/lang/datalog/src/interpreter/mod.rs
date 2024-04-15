@@ -4,7 +4,7 @@
 //  Created:
 //    26 Mar 2024, 19:36:31
 //  Last edited:
-//    08 Apr 2024, 17:33:26
+//    15 Apr 2024, 15:55:22
 //  Auto updated?
 //    Yes
 //
@@ -44,7 +44,7 @@ use crate::log::{debug, trace};
 mod tests {
     use ast_toolkit_punctuated::Punctuated;
     use ast_toolkit_span::Span;
-    use justact_datalog_derive::datalog;
+    use datalog_derive::datalog;
 
     use super::*;
     use crate::ast::{Atom, AtomArgs, Comma, Parens};

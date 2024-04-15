@@ -1,12 +1,18 @@
 [workspace]
 resolver = "2"
 members = [
+    # Simulation implementations
+    "justact-demo",
+
+    # Policy-related
+    "justact-policy/lang/datalog",
+    "justact-policy",
+
     # The main framework library
     "justact-core",
 
     # Derive libs
-    "justact-datalog",
-    "derive/justact-datalog-derive",
+    "derive/datalog-derive",
 ]
 
 

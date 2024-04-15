@@ -1,5 +1,5 @@
 [package]
-name = "justact-datalog"
+name = "datalog"
 version = "0.1.0"
 edition.workspace = true
 authors = ["Tim Müller"]
@@ -17,8 +17,7 @@ itertools = "0.12"
 log = { version = "0.4", optional = true }
 paste = "1.0"
 
-# justact-core = { path = "../justact-core" }
-justact-datalog-derive = { path = "../derive/justact-datalog-derive", optional = true }
+datalog-derive = { path = "../../../derive/datalog-derive", optional = true }
 
 
 [dev-dependencies]
@@ -32,5 +31,5 @@ interpreter = []
 # parser = ["dep:ast-toolkit-snack"]
 parser = []
 
-derive = ["dep:justact-datalog-derive"]
+derive = ["dep:datalog-derive"]
 log = ["dep:log"]
