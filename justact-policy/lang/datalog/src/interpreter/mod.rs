@@ -4,7 +4,7 @@
 //  Created:
 //    26 Mar 2024, 19:36:31
 //  Last edited:
-//    15 Apr 2024, 15:55:22
+//    15 Apr 2024, 19:06:34
 //  Auto updated?
 //    Yes
 //
@@ -455,6 +455,218 @@ fn format_atom_assign(atom: &Atom, assign: &HashMap<Ident, Ident>) -> String {
 
 
 
+/***** LIBRARY FUNCTIONS *****/
+/// Performs forward derivation of the Spec.
+///
+/// In the paper, this is called the _immediate consequence operator_. It is simply defined as
+/// the "forward derivation" of all rules, where we note the rule's consequences as derived if we
+/// observe all of its antecedents to be in the given interpretation.
+///
+/// Note that the paper makes a point to consider all negative antecedents to be "new" atoms,
+/// i.e., we must observe negative atoms explicitly instead of the absence of positives.
+///
+/// # Arguments
+/// - `int`: Some [`Interpretation`] to derive in. Specifically, will move atoms from unknown to known if they can be derived.
+///
+/// # Returns
+/// Whether any new facts were derived or not.
+///
+/// # Errors
+/// This function can error if the total number of arguments in a rule exceeds `LEN`,
+pub fn immediate_consequence<'r, 'i, I>(rules: I, int: &'i mut Interpretation) -> Result<bool, Error>
+where
+    I: IntoIterator<Item = &'r Rule>,
+    I::IntoIter: Clone,
+{
+    let rules = rules.into_iter();
+    debug!("Running immediate consequent transformation");
+
+    // Some buffer referring to all the constants in the interpretation.
+    let consts: IndexSet<Ident> = int.find_existing_consts();
+    // Some buffer for holding variable quantifiers
+    let mut vars: HashMap<Ident, VarQuantifier> = HashMap::new();
+    // Some buffer for holding variable assignments
+    let mut assign: HashMap<Ident, Ident> = HashMap::new();
+
+    // This transformation is saturating, so continue until the database did not change anymore.
+    // NOTE: Monotonic because we can never remove truths, inferring the same fact does not count as a change and we are iterating over a Herbrand instantiation so our search space is finite (for $Datalog^\neg$, at least).
+    let mut changed: bool = true;
+    let mut i: usize = 0;
+    while changed {
+        changed = false;
+        i += 1;
+        trace!("Derivation run {i} starting");
+
+        // Go thru da rules
+        'rule: for rule in rules.clone() {
+            // First, build quantifiers for this rule's variables
+            vars.clear();
+            for arg in rule
+                .consequences
+                .values()
+                .flat_map(|c| c.args.iter().flat_map(|a| a.args.values()))
+                .chain(rule.tail.iter().flat_map(|t| t.antecedents.values().flat_map(|a| a.atom().args.iter().flat_map(|a| a.args.values()))))
+            {
+                if let AtomArg::Var(v) = arg {
+                    let vars_len: usize = vars.len();
+                    if !vars.contains_key(v) {
+                        vars.insert(*v, VarQuantifier::new(&consts, vars_len));
+                    }
+                }
+            }
+            let n_vars: usize = vars.len();
+
+            // Now switch on whether there are any or not
+            if n_vars > 0 {
+                'assign: loop {
+                    // Get the next assignment
+                    assign.clear();
+                    for (v, i) in vars.iter_mut() {
+                        match i.next(n_vars) {
+                            Some(a) => {
+                                assign.insert(*v, a);
+                            },
+                            None => break 'assign,
+                        }
+                    }
+                    trace!("--> Rule '{}'", format_rule_assign(rule, &assign));
+
+                    // Do the antecedents for this assignment
+                    for ant in rule.tail.iter().flat_map(|t| t.antecedents.values()) {
+                        if !int.knows_about_atom_with_assign(ant.atom(), &assign, ant.polarity()) {
+                            // Not present; cannot derive
+                            trace!("-----> Antecedent '{}' not present in interpretation, rule does not apply", format_lit_assign(ant, &assign));
+                            continue 'assign;
+                        }
+                    }
+
+                    // If here, then derive consequents
+                    for con in rule.consequences.values() {
+                        trace!("-----> Deriving consequent '{}'", format_atom_assign(con, &assign));
+                        if int.learn_with_assign(con, &assign, true) != Some(true) {
+                            changed = true;
+                        }
+                    }
+                }
+            } else {
+                trace!("--> Rule '{rule}'");
+
+                // It's easier; no need to do assignments
+                for ant in rule.tail.iter().flat_map(|t| t.antecedents.values()) {
+                    if !int.knows_about_atom(ant.atom(), ant.polarity()) {
+                        // Not present; cannot derive
+                        trace!("-----> Antecedent '{ant}' not present in interpretation, rule does not apply");
+                        continue 'rule;
+                    }
+                }
+
+                // If here, then derive consequents
+                for con in rule.consequences.values() {
+                    trace!("-----> Deriving consequent '{con}'");
+                    if int.learn(con, true) != Some(true) {
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Done!
+    trace!("Done saturating immediate consequent transformation (took {i} passes)");
+    Ok(changed)
+}
+
+/// Performs a proper derivation using the full well-founded semantics.
+///
+/// In the paper, this is given as:
+/// - Apply the immediate consequence operator;
+/// - Apply the [stable transformation](Interpretation::apply_stable_transformation()); and
+/// - Repeat the last two steps until you reach some state you've seen before (it sufficies to just check the last three states).
+///
+/// Then the interpretation you're left with is a well-founded model for the spec.
+///
+/// # Returns
+/// A new [`Interpretation`] that contains the things we derived about the facts in the [`Spec`].
+///
+/// # Errors
+/// This function can error if the total number of arguments in a rule exceeds `LEN`.
+pub fn alternating_fixpoint<'r, I>(rules: I) -> Result<Interpretation, Error>
+where
+    I: IntoIterator<Item = &'r Rule>,
+    I::IntoIter: Clone,
+{
+    let mut int: Interpretation = Interpretation::new();
+    alternating_fixpoint_mut(rules, &mut int)?;
+    Ok(int)
+}
+
+/// Performs a proper derivation using the full well-founded semantics.
+///
+/// In the paper, this is given as:
+/// - Apply the [immediate consequence operator](Self::immediate_consequence());
+/// - Apply the [stable transformation](Interpretation::apply_stable_transformation()); and
+/// - Repeat the last two steps until you reach some state you've seen before (it sufficies to just check the last three states).
+///
+/// Then the interpretation you're left with is a well-founded model for the spec.
+///
+/// # Arguments
+/// - `int`: Some existing [`Interpretation`] to [`clear()`](Interpretation::clear()) and then populate again. Might be more efficient than allocating a new one if you already have one lying around.
+///
+/// # Errors
+/// This function can error if the total number of arguments in a rule exceeds `LEN`.
+pub fn alternating_fixpoint_mut<'r, 'i, I>(rules: I, int: &'i mut Interpretation) -> Result<(), Error>
+where
+    I: IntoIterator<Item = &'r Rule>,
+    I::IntoIter: Clone,
+{
+    let rules = rules.into_iter();
+    debug!(
+        "Running alternating-fixpoint transformation\n\nSpec:\n{}\n{}{}\n",
+        (0..80).map(|_| '-').collect::<String>(),
+        rules.clone().map(|r| format!("   {r}\n")).collect::<String>(),
+        (0..80).map(|_| '-').collect::<String>()
+    );
+    int.clear();
+
+    // Create the universe of atoms
+    int.extend_universe(rules.clone());
+
+    // Contains the hash of the last three interpretations, to recognize when we found a stable model.
+    let mut prev_hashes: [u64; 3] = [0; 3];
+
+    // We alternate
+    let mut i: usize = 0;
+    loop {
+        i += 1;
+        debug!("Starting alternating-fixpoint run {i}");
+
+        // Do the trick; first the immediate consequence, then the stable transformation
+        immediate_consequence(rules.clone(), int)?;
+        debug!("Post-operator interpretation\n\n{int}\n");
+
+        // See if we reached a stable point
+        let hash: u64 = int.hash();
+        if i % 2 == 1 && prev_hashes[0] == prev_hashes[2] && prev_hashes[1] == hash {
+            // Stable! Merge the stable transformation and the result and we're done
+            debug!("Completed alternating-fixpoint transformation (took {i} runs)");
+            return Ok(());
+        }
+
+        // We didn't stabelize; run the stable transformation
+        int.apply_stable_transformation();
+        debug!("Post-transformation interpretation\n\n{int}\n");
+
+        // Move the slots one back
+        prev_hashes[0] = prev_hashes[1];
+        prev_hashes[1] = prev_hashes[2];
+        prev_hashes[2] = hash;
+    }
+}
+
+
+
+
+
 /***** LIBRARY *****/
 // Interpreter extensions for the [`Spec`].
 impl Spec {
@@ -475,103 +687,8 @@ impl Spec {
     ///
     /// # Errors
     /// This function can error if the total number of arguments in a rule exceeds `LEN`,
-    pub fn immediate_consequence(&self, int: &mut Interpretation) -> Result<bool, Error> {
-        debug!("Running immediate consequent transformation");
-
-        // Some buffer referring to all the constants in the interpretation.
-        let consts: IndexSet<Ident> = int.find_existing_consts();
-        // Some buffer for holding variable quantifiers
-        let mut vars: HashMap<Ident, VarQuantifier> = HashMap::new();
-        // Some buffer for holding variable assignments
-        let mut assign: HashMap<Ident, Ident> = HashMap::new();
-
-        // This transformation is saturating, so continue until the database did not change anymore.
-        // NOTE: Monotonic because we can never remove truths, inferring the same fact does not count as a change and we are iterating over a Herbrand instantiation so our search space is finite (for $Datalog^\neg$, at least).
-        let mut changed: bool = true;
-        let mut i: usize = 0;
-        while changed {
-            changed = false;
-            i += 1;
-            trace!("Derivation run {i} starting");
-
-            // Go thru da rules
-            'rule: for rule in &self.rules {
-                // First, build quantifiers for this rule's variables
-                vars.clear();
-                for arg in rule
-                    .consequences
-                    .values()
-                    .flat_map(|c| c.args.iter().flat_map(|a| a.args.values()))
-                    .chain(rule.tail.iter().flat_map(|t| t.antecedents.values().flat_map(|a| a.atom().args.iter().flat_map(|a| a.args.values()))))
-                {
-                    if let AtomArg::Var(v) = arg {
-                        let vars_len: usize = vars.len();
-                        if !vars.contains_key(v) {
-                            vars.insert(*v, VarQuantifier::new(&consts, vars_len));
-                        }
-                    }
-                }
-                let n_vars: usize = vars.len();
-
-                // Now switch on whether there are any or not
-                if n_vars > 0 {
-                    'assign: loop {
-                        // Get the next assignment
-                        assign.clear();
-                        for (v, i) in vars.iter_mut() {
-                            match i.next(n_vars) {
-                                Some(a) => {
-                                    assign.insert(*v, a);
-                                },
-                                None => break 'assign,
-                            }
-                        }
-                        trace!("--> Rule '{}'", format_rule_assign(rule, &assign));
-
-                        // Do the antecedents for this assignment
-                        for ant in rule.tail.iter().flat_map(|t| t.antecedents.values()) {
-                            if !int.knows_about_atom_with_assign(ant.atom(), &assign, ant.polarity()) {
-                                // Not present; cannot derive
-                                trace!("-----> Antecedent '{}' not present in interpretation, rule does not apply", format_lit_assign(ant, &assign));
-                                continue 'assign;
-                            }
-                        }
-
-                        // If here, then derive consequents
-                        for con in rule.consequences.values() {
-                            trace!("-----> Deriving consequent '{}'", format_atom_assign(con, &assign));
-                            if int.learn_with_assign(con, &assign, true) != Some(true) {
-                                changed = true;
-                            }
-                        }
-                    }
-                } else {
-                    trace!("--> Rule '{rule}'");
-
-                    // It's easier; no need to do assignments
-                    for ant in rule.tail.iter().flat_map(|t| t.antecedents.values()) {
-                        if !int.knows_about_atom(ant.atom(), ant.polarity()) {
-                            // Not present; cannot derive
-                            trace!("-----> Antecedent '{ant}' not present in interpretation, rule does not apply");
-                            continue 'rule;
-                        }
-                    }
-
-                    // If here, then derive consequents
-                    for con in rule.consequences.values() {
-                        trace!("-----> Deriving consequent '{con}'");
-                        if int.learn(con, true) != Some(true) {
-                            changed = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Done!
-        trace!("Done saturating immediate consequent transformation (took {i} passes)");
-        Ok(changed)
-    }
+    #[inline]
+    pub fn immediate_consequence(&self, int: &mut Interpretation) -> Result<bool, Error> { immediate_consequence(&self.rules, int) }
 
     /// Performs a proper derivation using the full well-founded semantics.
     ///
@@ -587,11 +704,8 @@ impl Spec {
     ///
     /// # Errors
     /// This function can error if the total number of arguments in a rule exceeds `LEN`.
-    pub fn alternating_fixpoint(&self) -> Result<Interpretation, Error> {
-        let mut int: Interpretation = Interpretation::new();
-        self.alternating_fixpoint_mut(&mut int)?;
-        Ok(int)
-    }
+    #[inline]
+    pub fn alternating_fixpoint(&self) -> Result<Interpretation, Error> { alternating_fixpoint(&self.rules) }
 
     /// Performs a proper derivation using the full well-founded semantics.
     ///
@@ -607,47 +721,6 @@ impl Spec {
     ///
     /// # Errors
     /// This function can error if the total number of arguments in a rule exceeds `LEN`.
-    pub fn alternating_fixpoint_mut(&self, int: &mut Interpretation) -> Result<(), Error> {
-        debug!(
-            "Running alternating-fixpoint transformation\n\nSpec:\n{}\n{}{}\n",
-            (0..80).map(|_| '-').collect::<String>(),
-            self.rules.iter().map(|r| format!("   {r}\n")).collect::<String>(),
-            (0..80).map(|_| '-').collect::<String>()
-        );
-        int.clear();
-
-        // Create the universe of atoms
-        int.extend_universe(self);
-
-        // Contains the hash of the last three interpretations, to recognize when we found a stable model.
-        let mut prev_hashes: [u64; 3] = [0; 3];
-
-        // We alternate
-        let mut i: usize = 0;
-        loop {
-            i += 1;
-            debug!("Starting alternating-fixpoint run {i}");
-
-            // Do the trick; first the immediate consequence, then the stable transformation
-            self.immediate_consequence(int)?;
-            debug!("Post-operator interpretation\n\n{int}\n");
-
-            // See if we reached a stable point
-            let hash: u64 = int.hash();
-            if i % 2 == 1 && prev_hashes[0] == prev_hashes[2] && prev_hashes[1] == hash {
-                // Stable! Merge the stable transformation and the result and we're done
-                debug!("Completed alternating-fixpoint transformation (took {i} runs)");
-                return Ok(());
-            }
-
-            // We didn't stabelize; run the stable transformation
-            int.apply_stable_transformation();
-            debug!("Post-transformation interpretation\n\n{int}\n");
-
-            // Move the slots one back
-            prev_hashes[0] = prev_hashes[1];
-            prev_hashes[1] = prev_hashes[2];
-            prev_hashes[2] = hash;
-        }
-    }
+    #[inline]
+    pub fn alternating_fixpoint_mut(&self, int: &mut Interpretation) -> Result<(), Error> { alternating_fixpoint_mut(&self.rules, int) }
 }

@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:22:55
 //  Last edited:
-//    15 Apr 2024, 17:00:50
+//    15 Apr 2024, 19:07:25
 //  Auto updated?
 //    Yes
 //
@@ -51,7 +51,7 @@ impl justact::MessageSet for MessageSet {
         // Combine all the policies
         let mut rules: Vec<&Rule> = Vec::with_capacity(self.messages.len());
         for message in &self.messages {
-            rules.extend(message.policy.rules.iter());
+            rules.extend(message.policy.0.iter());
         }
         Policy
     }

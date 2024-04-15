@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 10:22:40
 //  Last edited:
-//    15 Apr 2024, 15:55:26
+//    15 Apr 2024, 19:05:47
 //  Auto updated?
 //    Yes
 //
@@ -18,7 +18,7 @@ use std::hash::{BuildHasher, DefaultHasher, Hash as _, Hasher, RandomState};
 
 use indexmap::{IndexMap, IndexSet};
 
-use crate::ast::{Atom, AtomArg, Ident, Literal, NegAtom, Spec};
+use crate::ast::{Atom, AtomArg, Ident, Literal, NegAtom, Rule, Spec};
 use crate::log::warn;
 
 
@@ -358,7 +358,7 @@ impl<R: BuildHasher + Default> Interpretation<R> {
     pub fn from_universe(spec: &Spec) -> Self {
         // Built an empty self first
         let mut res: Self = Self::new();
-        res.extend_universe(spec);
+        res.extend_universe(&spec.rules);
         res
     }
 }
@@ -687,11 +687,17 @@ impl<R: BuildHasher> Interpretation<R> {
     /// This sufficies for $Datalog^\neg$ because it cannot nest arguments.
     ///
     /// # Arguments
-    /// - `spec`: The [`Spec`] to populate this interpretation with.
-    pub fn extend_universe(&mut self, spec: &Spec) {
+    /// - `rules`: The [`Rule`]s to populate this interpretation with.
+    pub fn extend_universe<'r, I>(&mut self, rules: I)
+    where
+        I: IntoIterator<Item = &'r Rule>,
+        I::IntoIter: Clone,
+    {
+        let rules = rules.into_iter();
+
         // First, find the Herbrand 0-base of the spec (i.e., constants only)
         let mut consts: IndexSet<Ident> = IndexSet::new();
-        for rule in &spec.rules {
+        for rule in rules.clone() {
             // Go over the consequences only (since these are the only ones that can be true)
             for cons in rule.consequences.values() {
                 // Add the consequent if it has no arguments
@@ -705,7 +711,7 @@ impl<R: BuildHasher> Interpretation<R> {
         // NOTE: Is an IndexMap to have predictable assignment order, nice for testing
         let mut vars: IndexMap<Ident, VarQuantifier> = IndexMap::new();
         let mut assign: HashMap<Ident, Ident> = HashMap::new();
-        for rule in &spec.rules {
+        for rule in rules {
             // Build quantifiers over the variables in the rule
             vars.clear();
             for arg in rule
