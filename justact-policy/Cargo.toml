@@ -15,6 +15,8 @@ justact-core = { path = "../justact-core" }
 [features]
 default = []
 derive = ["datalog-derive"]
+log = ["datalog-log"]
 
 datalog = ["dep:datalog"]
 datalog-derive = ["datalog/derive"]
+datalog-log = ["datalog/log"]

@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:59:05
 //  Last edited:
-//    15 Apr 2024, 16:57:49
+//    16 Apr 2024, 16:04:23
 //  Auto updated?
 //    Yes
 //
@@ -14,16 +14,23 @@
 //!   which represents a particular collection of them.
 //
 
+use crate::collection::Collection;
 use crate::policy::Policy;
 
 
 /***** LIBRARY *****/
 /// Provides the abstraction for a message that is sent between agents.
 pub trait Message {
+    /// Defines how message identifiers look like.
+    type Id;
     /// Defines how authors look like.
-    ///
-    /// Usually, this aligns with [`Agent::Identifier`](crate::agent::Agent::Identifier) in order to match agents with (their own) messages.
     type Author;
+
+    /// Returns some identifier of the message.
+    ///
+    /// # Returns
+    /// An identifier of type [`Self::Id`](Message::Id).
+    fn id(&self) -> Self::Id;
 
     /// Returns the author of the message.
     ///
@@ -37,7 +44,7 @@ pub trait Message {
 /// This is a particular set of messages that can be interpreted as a [`Policy`].
 ///
 /// This is meaningfully different from a [`MessageCollection`], as that does not impose such a semantic cohesion on its elements.
-pub trait MessageSet {
+pub trait MessageSet: Collection<Self::Message> {
     /// The type of messages which are contained in this MessageSet.
     type Message: Message;
     /// The type of policy extracted from this set.
@@ -53,12 +60,7 @@ pub trait MessageSet {
     fn extract<'s>(&'s self) -> Self::Policy<'s>;
 }
 
-/// Defines a _meaningless_ collection of messages.
-///
-/// This is a particular set of messages that are grouped together by chance or necessecity, _not_ because they form a coherent policy.
-///
-/// This is meaningfully different from a [`MessageSet`], as that _does_ impose such a semantic cohesion on its elements.
-pub trait MessageCollection {}
+
 
 /// Defines a justified enactment.
 ///
@@ -90,5 +92,5 @@ pub trait Action {
     ///
     /// # Returns
     /// A `Self::MessageSet` describing the basis of the action.
-    fn enact(&self) -> &Self::MessageSet;
+    fn enactment(&self) -> &Self::MessageSet;
 }

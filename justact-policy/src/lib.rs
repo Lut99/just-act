@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 15:55:37
 //  Last edited:
-//    15 Apr 2024, 15:55:44
+//    16 Apr 2024, 11:03:29
 //  Auto updated?
 //    Yes
 //
@@ -14,4 +14,5 @@
 //
 
 // Declare submodules
+#[cfg(feature = "datalog")]
 pub mod datalog;

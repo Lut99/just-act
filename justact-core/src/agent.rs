@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:52:41
 //  Last edited:
-//    15 Apr 2024, 16:15:28
+//    16 Apr 2024, 11:15:31
 //  Auto updated?
 //    Yes
 //
@@ -80,7 +80,7 @@ pub trait RationalAgent: Agent {
     ///
     /// # Errors
     /// Only fatal errors that prevent the Agent from participating in the system should cause this function to error. Examples are failures to emit errors to the `interface`.
-    fn poll<'s, 'p, 'i>(&'s mut self, pool: &'p mut Self::MessagePool, interface: &'i mut Self::Interface) -> Result<AgentPoll, Self::Error>;
+    fn poll(&mut self, pool: &mut Self::MessagePool, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error>;
 }
 
 /// Extends an [`Agent`] with the capacity to think, i.e., do something.

@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 16:43:37
 //  Last edited:
-//    15 Apr 2024, 15:55:15
+//    16 Apr 2024, 15:06:31
 //  Auto updated?
 //    Yes
 //
@@ -15,8 +15,7 @@
 use std::fmt::{Display, Formatter, Result as FResult};
 use std::hash::{Hash, Hasher};
 
-pub use ast_toolkit_punctuated::punct;
-use ast_toolkit_punctuated::Punctuated;
+pub use ast_toolkit_punctuated::Punctuated;
 pub use ast_toolkit_span::Span;
 // Re-export the derive macro
 #[cfg(feature = "derive")]

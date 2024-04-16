@@ -8,13 +8,22 @@ description = "Provides an implementation of a simple demo environment that simu
 
 
 [dependencies]
+console = "0.15"
 justact-core = { path = "../justact-core" }
-justact-policy = { path = "../justact-policy" }
+justact-policy = { path = "../justact-policy", features = ["datalog-derive"] }
+log = "0.4"
+stackvec = { git = "https://github.com/Lut99/stackvec-rs" }
+# uuid = { version = "1.8", default-features = false, features = ["std", "v7"] }
+
+
+[dev-dependencies]
+clap = { version = "4.5", features = ["derive"] }
+error-trace = { git = "https://github.com/Lut99/error-trace-rs" }
+humanlog = { git = "https://github.com/Lut99/humanlog-rs" }
 
 
 [features]
 default = []
-derive = ["datalog-derive"]
 
 datalog = ["justact-policy/datalog"]
-datalog-derive = ["justact-policy/datalog-derive"]
+datalog-log = ["justact-policy/datalog-log"]

@@ -4,7 +4,7 @@
 //  Created:
 //    26 Mar 2024, 19:36:31
 //  Last edited:
-//    15 Apr 2024, 19:06:34
+//    16 Apr 2024, 11:06:02
 //  Auto updated?
 //    Yes
 //
@@ -35,7 +35,7 @@ use std::fmt::{Display, Formatter, Result as FResult};
 use indexmap::set::IndexSet;
 
 use self::interpretation::{Interpretation, VarQuantifier};
-use crate::ast::{Atom, AtomArg, Ident, Literal, Rule, Spec};
+use crate::ast::{AtomArg, Ident, Rule, Spec};
 use crate::log::{debug, trace};
 
 
@@ -354,6 +354,7 @@ impl error::Error for Error {}
 ///
 /// # Returns
 /// A [`String`] representing the format.
+#[cfg(feature = "log")]
 fn format_rule_assign(rule: &Rule, assign: &HashMap<Ident, Ident>) -> String {
     let mut buf: String = String::new();
 
@@ -409,7 +410,8 @@ fn format_rule_assign(rule: &Rule, assign: &HashMap<Ident, Ident>) -> String {
 ///
 /// # Returns
 /// A [`String`] representing the format.
-fn format_lit_assign(lit: &Literal, assign: &HashMap<Ident, Ident>) -> String {
+#[cfg(feature = "log")]
+fn format_lit_assign(lit: &crate::ast::Literal, assign: &HashMap<Ident, Ident>) -> String {
     format!(
         "{}{}({})",
         if lit.polarity() { "" } else { "not " },
@@ -435,7 +437,8 @@ fn format_lit_assign(lit: &Literal, assign: &HashMap<Ident, Ident>) -> String {
 ///
 /// # Returns
 /// A [`String`] representing the format.
-fn format_atom_assign(atom: &Atom, assign: &HashMap<Ident, Ident>) -> String {
+#[cfg(feature = "log")]
+fn format_atom_assign(atom: &crate::ast::Atom, assign: &HashMap<Ident, Ident>) -> String {
     format!(
         "{}({})",
         atom.ident,
@@ -491,10 +494,14 @@ where
     // This transformation is saturating, so continue until the database did not change anymore.
     // NOTE: Monotonic because we can never remove truths, inferring the same fact does not count as a change and we are iterating over a Herbrand instantiation so our search space is finite (for $Datalog^\neg$, at least).
     let mut changed: bool = true;
+    #[cfg(feature = "log")]
     let mut i: usize = 0;
     while changed {
         changed = false;
-        i += 1;
+        #[cfg(feature = "log")]
+        {
+            i += 1;
+        }
         trace!("Derivation run {i} starting");
 
         // Go thru da rules
