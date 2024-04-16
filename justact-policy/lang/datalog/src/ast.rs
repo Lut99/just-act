@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 16:43:37
 //  Last edited:
-//    16 Apr 2024, 15:06:31
+//    16 Apr 2024, 17:34:42
 //  Auto updated?
 //    Yes
 //
@@ -16,6 +16,8 @@ use std::fmt::{Display, Formatter, Result as FResult};
 use std::hash::{Hash, Hasher};
 
 pub use ast_toolkit_punctuated::Punctuated;
+#[cfg(feature = "railroad")]
+use ast_toolkit_railroad::{railroad as rr, ToDelimNode, ToNode, ToNonTerm};
 pub use ast_toolkit_span::Span;
 // Re-export the derive macro
 #[cfg(feature = "derive")]
@@ -110,6 +112,45 @@ macro_rules! impl_enum_map {
 
 
 
+/***** LIBRARY FUNCTIONS *****/
+/// Generates a static railroad diagram of the $Datalog^\neg$ AST.
+///
+/// This simply wraps [`Spec`] and calls [`ToNode::railroad()`] on it.
+///
+/// # Returns
+/// - A [`railroad::Diagram`] that represents the generated diagram.
+#[cfg(feature = "railroad")]
+#[inline]
+pub fn diagram() -> rr::Diagram<rr::VerticalGrid<Box<dyn rr::Node>>> {
+    ast_toolkit_railroad::diagram!(
+        Spec as "Spec",
+    )
+}
+
+/// Generates a static railroad diagram of the $Datalog^\neg$ AST to a location of your choice.
+///
+/// This simply wraps [`Spec`] and calls [`ToNode::railroad()`] on it.
+///
+/// # Arguments
+/// - `path`: The path to generate the file.
+///
+/// # Errors
+/// This function may error if it failed to write the file.
+#[cfg(feature = "railroad")]
+pub fn diagram_to_path(path: impl AsRef<std::path::Path>) -> Result<(), std::io::Error> {
+    // Generate the diagram
+    let mut diagram: rr::Diagram<_> = diagram();
+    diagram.add_element(rr::svg::Element::new("style").set("type", "text/css").text(rr::DEFAULT_CSS));
+
+    // Write it to a file
+    let path: &std::path::Path = path.as_ref();
+    std::fs::write(path, diagram.to_string())
+}
+
+
+
+
+
 /***** LIBRARY *****/
 /// The root node that specifies a policy.
 ///
@@ -119,6 +160,7 @@ macro_rules! impl_enum_map {
 /// foo.
 /// ```
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "railroad", derive(ToNonTerm))]
 pub struct Spec {
     /// The list of rules in this program.
     pub rules: Vec<Rule>,
@@ -163,6 +205,19 @@ impl Display for Rule {
         )
     }
 }
+#[cfg(feature = "railroad")]
+impl ToNode for Rule {
+    type Node = rr::Sequence<Box<dyn rr::Node>>;
+
+    #[inline]
+    fn railroad() -> Self::Node {
+        rr::Sequence::new(vec![
+            Box::new(rr::Repeat::new(Atom::railroad(), Comma::railroad())),
+            Box::new(rr::Optional::new(RuleAntecedents::railroad())),
+            Box::new(Dot::railroad()),
+        ])
+    }
+}
 impl_map!(Rule, consequences, tail);
 
 /// Defines the second half of the rule, if any.
@@ -177,6 +232,15 @@ pub struct RuleAntecedents {
     pub arrow_token: Arrow,
     /// The list of antecedents.
     pub antecedents: Punctuated<Literal, Comma>,
+}
+#[cfg(feature = "railroad")]
+impl ToNode for RuleAntecedents {
+    type Node = rr::Sequence<Box<dyn rr::Node>>;
+
+    #[inline]
+    fn railroad() -> Self::Node {
+        rr::Sequence::new(vec![Box::new(Arrow::railroad()), Box::new(rr::Repeat::new(Literal::railroad(), Comma::railroad()))])
+    }
 }
 impl Display for RuleAntecedents {
     #[inline]
@@ -197,6 +261,7 @@ impl_map!(RuleAntecedents, antecedents);
 /// not foo
 /// ```
 #[derive(Clone, Debug, EnumDebug)]
+#[cfg_attr(feature = "railroad", derive(ToNode))]
 pub enum Literal {
     /// Non-negated atom.
     ///
@@ -269,6 +334,7 @@ impl_enum_map!(Literal, Atom(atom), NegAtom(atom));
 /// not foo(bar)
 /// ```
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "railroad", derive(ToNode))]
 pub struct NegAtom {
     /// The not-token.
     pub not_token: Not,
@@ -291,6 +357,7 @@ impl_map!(NegAtom, atom);
 /// foo(bar, Baz)
 /// ```
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "railroad", derive(ToNode))]
 pub struct Atom {
     /// The identifier itself.
     pub ident: Ident,
@@ -343,6 +410,19 @@ impl Display for AtomArgs {
         write!(f, "({})", self.args.values().map(|a| a.to_string()).collect::<Vec<String>>().join(","))
     }
 }
+#[cfg(feature = "railroad")]
+impl ToNode for AtomArgs {
+    type Node = rr::Sequence<Box<dyn rr::Node>>;
+
+    #[inline]
+    fn railroad() -> Self::Node {
+        rr::Sequence::new(vec![
+            Box::new(Parens::railroad_open()),
+            Box::new(rr::Repeat::new(AtomArg::railroad(), Comma::railroad())),
+            Box::new(Parens::railroad_close()),
+        ])
+    }
+}
 impl_map!(AtomArgs, args);
 
 /// Represents an argument to an Atom, which is either a variable or a nested atom.
@@ -350,10 +430,10 @@ impl_map!(AtomArgs, args);
 /// # Syntax
 /// ```plain
 /// foo
-/// foo(bar)
 /// Baz
 /// ```
 #[derive(Clone, Debug, EnumDebug)]
+#[cfg_attr(feature = "railroad", derive(ToNode))]
 pub enum AtomArg {
     /// It's a nested atom.
     ///
@@ -370,6 +450,7 @@ pub enum AtomArg {
     /// ```plain
     /// Foo
     /// ```
+    #[cfg_attr(feature = "railroad", railroad(regex = "^[A-Z_][a-zA-Z_-]*$"))]
     Var(Ident),
 }
 impl AtomArg {
@@ -408,6 +489,8 @@ impl_enum_map!(AtomArg, Atom(ident), Var(ident));
 /// foo
 /// ```
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "railroad", derive(ToNode))]
+#[cfg_attr(feature = "railroad", railroad(regex = "^[a-z_][a-z_-]*$"))]
 pub struct Ident {
     /// The value of the identifier itself.
     pub value: Span<&'static str, &'static str>,
@@ -427,6 +510,8 @@ impl_map!(Ident, value);
 /// :-
 /// ```
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "railroad", derive(ToNode))]
+#[cfg_attr(feature = "railroad", railroad(term = ":-"))]
 pub struct Arrow {
     /// The source of this arrow in the source.
     pub span: Span<&'static str, &'static str>,
@@ -440,6 +525,8 @@ impl_map_invariant!(Arrow);
 /// ,
 /// ```
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "railroad", derive(ToNode))]
+#[cfg_attr(feature = "railroad", railroad(term = ","))]
 pub struct Comma {
     /// The source of this comma in the source.
     pub span: Span<&'static str, &'static str>,
@@ -453,6 +540,8 @@ impl_map_invariant!(Comma);
 /// .
 /// ```
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "railroad", derive(ToNode))]
+#[cfg_attr(feature = "railroad", railroad(term = "."))]
 pub struct Dot {
     /// The source of this dot in the source.
     pub span: Span<&'static str, &'static str>,
@@ -466,6 +555,8 @@ impl_map_invariant!(Dot);
 /// not
 /// ```
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "railroad", derive(ToNode))]
+#[cfg_attr(feature = "railroad", railroad(term = "not"))]
 pub struct Not {
     /// The source of this not in the source.
     pub span: Span<&'static str, &'static str>,
@@ -479,6 +570,8 @@ impl_map_invariant!(Not);
 /// ()
 /// ```
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "railroad", derive(ToDelimNode))]
+#[cfg_attr(feature = "railroad", railroad(open = "(", close = ")"))]
 pub struct Parens {
     /// The opening-parenthesis.
     pub open:  Span<&'static str, &'static str>,

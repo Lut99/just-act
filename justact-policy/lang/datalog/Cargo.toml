@@ -9,6 +9,7 @@ description = "A simple Datalog^\\neg interpreter to support the language as dis
 
 [dependencies]
 ast-toolkit-punctuated = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack" }
+ast-toolkit-railroad = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack", features = ["derive"], optional = true }
 # ast-toolkit-snack = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack", optional = true }
 ast-toolkit-span = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack" }
 enum-debug = { git = "https://github.com/Lut99/enum-debug", features = ["derive"] }
@@ -21,7 +22,11 @@ datalog-derive = { path = "../../../derive/datalog-derive", optional = true }
 
 
 [dev-dependencies]
+clap = { version = "4.5", features = ["derive"] }
+console = "0.15"
+error-trace = { git = "https://github.com/Lut99/error-trace-rs" }
 humanlog = { git = "https://github.com/Lut99/humanlog-rs" }
+log = "0.4"
 
 
 [features]
@@ -33,3 +38,4 @@ parser = []
 
 derive = ["dep:datalog-derive"]
 log = ["dep:log"]
+railroad = ["dep:ast-toolkit-railroad"]
