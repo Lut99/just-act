@@ -48,3 +48,12 @@ foo :- not foo.        // 'foo' will become 'unknown'
 The following represents the concrete syntax of $Datalog^\neg$ as a railroad diagram.
 
 ![The railroad diagram for the $Datalog^\neg$ language.](./datalog/examples/railroad.svg)
+
+
+## Features
+This crate supports the following features:
+- `interpreter`: Enables the `alternating_fixpoint`-functions to allow derivation for the $Datalog^\neg$-programs.
+- `parser`: Enables a parser that can parse $Datalog^\neg$-programs from source text **(TODO)**.
+- `derive`: Enables the `datalog!()`-macro for writing $Datalog^\neg$-programs as a Rust embedded DSL.
+- `log`: Enables `log`-traces during the derivation process for debugging purposes.
+- `railroad`: Enables implementations of `ToNode` and associated traits from the [`ast-toolkit-railroad`]() for AST nodes. This allows railroad diagrams to be generated (see the [`railroad.rs`](./examples/railroad.rs)).
