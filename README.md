@@ -9,7 +9,7 @@ This repository is structured as follows.
 
 The core ontology, and therefore the root crate of the project, is defined in the [`justact-core`](./justact-core/)-crate. It is a little more detailled than the paper, as it aims to provide the ontology as a set of interfaces (Rust traits) that, when implemented, allow one to emulate the relations presented.
 
-As the paper does not specify policy languages, some languages are implemented in the [`justact-policy](./justact-policy/)-crate. Specifically, this project hosts a small $Datalog^\neg$ interpreter, which is the example language used in the paper. The code can be found in the [`datalog`](./justact-policy/lang/datalog/)-crate.
+As the paper does not specify policy languages, some languages are implemented in the [`justact-policy`](./justact-policy/)-crate. Specifically, this project hosts a small $Datalog^\neg$ interpreter, which is the example language used in the paper. The code can be found in the [`datalog`](./justact-policy/lang/datalog/)-crate.
 
 Finally, the repository aims to support multiple demo environments. Currently, only the [`justact-demo`](./justact-demo/)-crate implements a simple, purely in-memory simulator that runs agents step-by-step. Actual implementations of scripts for agents is given in that crate's [examples](./justact-demo/examples/) directory.
 

@@ -47,4 +47,4 @@ foo :- not foo.        // 'foo' will become 'unknown'
 ## Syntax
 The following represents the concrete syntax of $Datalog^\neg$ as a railroad diagram.
 
-![The railroad diagram for the $Datalog^\neg$ language.](./examples/railroad.svg)
+![The railroad diagram for the $Datalog^\neg$ language.](/justact-policy/lang/datalog/examples/railroad.svg)
