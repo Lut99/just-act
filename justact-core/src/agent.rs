@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:52:41
 //  Last edited:
-//    16 Apr 2024, 11:15:31
+//    17 Apr 2024, 11:10:49
 //  Auto updated?
 //    Yes
 //
@@ -24,13 +24,13 @@ use crate::world::{Interface, InterfaceAsync, MessagePool, MessagePoolAsync};
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum AgentPoll {
     /// The agent lives on, nothing happens.
-    Stay,
+    Alive,
     /// The agent should be terminated. Its work has been completed.
-    Kill,
+    Dead,
 }
 impl Default for AgentPoll {
     #[inline]
-    fn default() -> Self { Self::Stay }
+    fn default() -> Self { Self::Alive }
 }
 
 

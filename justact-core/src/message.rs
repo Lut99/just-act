@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:59:05
 //  Last edited:
-//    16 Apr 2024, 16:04:23
+//    17 Apr 2024, 16:35:35
 //  Auto updated?
 //    Yes
 //
@@ -42,16 +42,32 @@ pub trait Message {
 /// Defines a _meaningful_ collection of messages.
 ///
 /// This is a particular set of messages that can be interpreted as a [`Policy`].
-///
-/// This is meaningfully different from a [`MessageCollection`], as that does not impose such a semantic cohesion on its elements.
 pub trait MessageSet: Collection<Self::Message> {
     /// The type of messages which are contained in this MessageSet.
     type Message: Message;
-    /// The type of policy extracted from this set.
+    /// The type of policy extracted from this message.
     type Policy<'s>: 's + Policy
     where
         Self: 's;
 
+
+    /// Builds a new MessageSet out of a singleton [`Message`].
+    ///
+    /// # Arguments
+    /// - `msg`: The `Self::Message` to build a new set out of.
+    ///
+    /// # Returns
+    /// A new instance of Self that only wraps the given msg.
+    fn from_singleton(msg: Self::Message) -> Self;
+
+    /// Builds a new MessageSet out of a reference to a singleton [`Message`].
+    ///
+    /// # Arguments
+    /// - `msg`: The `Self::Message` to build a new set out of.
+    ///
+    /// # Returns
+    /// A new instance of Self that only wraps the given msg.
+    fn from_singleton_ref(msg: &Self::Message) -> Self;
 
     /// Returns some policy from the fragments contained in the messages of this set.
     ///
@@ -66,8 +82,10 @@ pub trait MessageSet: Collection<Self::Message> {
 ///
 /// This is simply a stand-in for a tuple of a _basis_ (agreement), _justification_ and _enactment_, all three [`MessageSet`]s.
 pub trait Action {
+    /// The type of Message out of which this Action is built.
+    type Message: Message;
     /// The type of MessageSet out of which this Action is built.
-    type MessageSet: MessageSet;
+    type MessageSet: MessageSet<Message = Self::Message>;
 
 
     /// Returns the _basis_ of this action.
@@ -76,7 +94,7 @@ pub trait Action {
     ///
     /// # Returns
     /// A `Self::MessageSet` describing the basis of the action.
-    fn basis(&self) -> &Self::MessageSet;
+    fn basis(&self) -> &Self::Message;
 
     /// Returns the _justification_ of this action.
     ///
@@ -84,6 +102,7 @@ pub trait Action {
     ///
     /// # Returns
     /// A `Self::MessageSet` describing the justification of the action.
+    /// TODO: Includes basis and enactment
     fn justification(&self) -> &Self::MessageSet;
 
     /// Returns the _enactment_ of this action.
@@ -92,5 +111,5 @@ pub trait Action {
     ///
     /// # Returns
     /// A `Self::MessageSet` describing the basis of the action.
-    fn enactment(&self) -> &Self::MessageSet;
+    fn enactment(&self) -> &Self::Message;
 }

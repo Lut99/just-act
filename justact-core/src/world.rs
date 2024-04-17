@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 15:11:55
 //  Last edited:
-//    16 Apr 2024, 16:24:20
+//    17 Apr 2024, 16:30:43
 //  Auto updated?
 //    Yes
 //
@@ -18,7 +18,7 @@ use std::fmt::Display;
 use std::future::Future;
 
 use crate::collection::Collection;
-use crate::message::{Action, Message};
+use crate::message::{Action, Message, MessageSet};
 
 
 /***** LIBRARY *****/
@@ -175,7 +175,7 @@ pub trait Interface {
     /// The error type returned by this Interface's functions.
     type Error: Error;
 
-    /// Allows an agent to log something to the system or user.
+    /// Allows an agent to log something generic to the system or user.
     ///
     /// # Arguments
     /// - `id`: Some identifier by which the user may recognize this agent.
@@ -184,6 +184,35 @@ pub trait Interface {
     /// # Errors
     /// This function can error if it failed to log the statement.
     fn log(&mut self, id: &str, msg: impl Display) -> Result<(), Self::Error>;
+
+    /// Allows an agent to log that they emit a [`Message`] to the system or user.
+    ///
+    /// # Arguments
+    /// - `id`: Some identifier by which the user may recognize this agent.
+    /// - `msg`: The [`Message`] to log.
+    ///
+    /// # Errors
+    /// This function can error if it failed to log the statement.
+    fn log_emit<M>(&mut self, id: &str, msg: &M) -> Result<(), Self::Error>
+    where
+        M: Display + Message,
+        M::Author: Display,
+        M::Id: Display;
+
+    /// Allows an agent to log that they enacted an [`Action`] to the system or user.
+    ///
+    /// # Arguments
+    /// - `id`: Some identifier by which the user may recognize this agent.
+    /// - `act`: The [`Action`] to log.
+    ///
+    /// # Errors
+    /// This function can error if it failed to log the statement.
+    fn log_enact<'a, A>(&mut self, id: &str, act: &'a A) -> Result<(), Self::Error>
+    where
+        A: Display + Action,
+        <A::Message as Message>::Author: Display,
+        <A::Message as Message>::Id: Display,
+        <A::MessageSet as MessageSet>::Policy<'a>: Display;
 
     /// Allows an agent to log something bad to the system or user.
     ///
@@ -213,8 +242,36 @@ pub trait InterfaceAsync {
     ///
     /// # Errors
     /// This function can error if it failed to log the statement.
-    fn log_async<'s1, 's2, 'd>(&'s1 mut self, id: &'s2 str, msg: impl 'd + Display)
-    -> impl 's1 + 's2 + 'd + Future<Output = Result<(), Self::Error>>;
+    fn log_async<'s, 'i, 'm>(&'s mut self, id: &'i str, msg: impl 'm + Display) -> impl 's + 's + 'm + Future<Output = Result<(), Self::Error>>;
+
+    /// Allows an agent to log that they emit a [`Message`] to the system or user.
+    ///
+    /// # Arguments
+    /// - `id`: Some identifier by which the user may recognize this agent.
+    /// - `msg`: The [`Message`] to log.
+    ///
+    /// # Errors
+    /// This function can error if it failed to log the statement.
+    fn log_emit_async<'s, 'i, 'm, M>(&'s mut self, id: &'i str, msg: &'m M) -> impl 's + 'i + 'm + Future<Output = Result<(), Self::Error>>
+    where
+        M: Display + Message,
+        M::Author: Display,
+        M::Id: Display;
+
+    /// Allows an agent to log that they enacted an [`Action`] to the system or user.
+    ///
+    /// # Arguments
+    /// - `id`: Some identifier by which the user may recognize this agent.
+    /// - `act`: The [`Action`] to log.
+    ///
+    /// # Errors
+    /// This function can error if it failed to log the statement.
+    fn log_enact_async<'s, 'i, 'a, A>(&'s mut self, id: &'i str, act: &'a A) -> impl 's + 'i + 'a + Future<Output = Result<(), Self::Error>>
+    where
+        A: Display + Action,
+        <A::Message as Message>::Author: Display,
+        <A::Message as Message>::Id: Display,
+        <A::MessageSet as MessageSet>::Policy<'a>: Display;
 
     /// Allows an agent to log something bad to the system or user.
     ///

@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:06:51
 //  Last edited:
-//    16 Apr 2024, 16:47:51
+//    17 Apr 2024, 11:25:01
 //  Auto updated?
 //    Yes
 //
@@ -17,6 +17,7 @@ use std::fmt::{Display, Formatter, Result as FResult};
 
 use console::Style;
 use justact_core::agent::{AgentPoll, RationalAgent};
+use justact_core::collection::CollectionMut as _;
 use justact_core::message::MessageSet as _;
 use justact_core::policy::Policy as _;
 use justact_core::world::{Interface as _, MessagePool as _};
@@ -152,6 +153,16 @@ impl<A> Simulation<A> {
         self.agents.push(agent.into());
     }
 
+    /// Registers a new agent after creation, calling the provided constructor for it.
+    ///
+    /// # Arguments
+    /// - `constructor_fn`: Some constructor to create an Agent that is compatible with `A`. It should accept a mutable reference to an [`Interface`] to register itself.
+    #[inline]
+    pub fn register_with_interface<APrime: Into<A>>(&mut self, constructor_fn: impl FnOnce(&mut Interface) -> APrime) {
+        debug!("Registered agent {}", self.agents.len());
+        self.agents.push(constructor_fn(&mut self.interface).into());
+    }
+
     /// Returns a reference to the internal [`MessagePool`].
     #[inline]
     pub fn pool(&self) -> &MessagePool { &self.pool }
@@ -189,8 +200,8 @@ where
                 i += 1;
                 debug!("Polling agent {}...", i - 1);
                 match a.poll(&mut self.pool, &mut self.interface) {
-                    Ok(AgentPoll::Stay) => Some(Ok(a)),
-                    Ok(AgentPoll::Kill) => None,
+                    Ok(AgentPoll::Alive) => Some(Ok(a)),
+                    Ok(AgentPoll::Dead) => None,
                     Err(err) => Some(Err(Error::AgentPoll { i: i - 1, err })),
                 }
             })
@@ -216,7 +227,7 @@ where
                     let mut set: MessageSet = MessageSet::empty();
                     set.join(act.basis.as_borrow());
                     set.join(act.justification.as_borrow());
-                    set.join(act.enactment.as_borrow());
+                    set.add(act.enactment.as_borrow());
 
                     // Get the policy out of it
                     let policy: Policy = set.extract();

@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:00:44
 //  Last edited:
-//    16 Apr 2024, 16:45:32
+//    17 Apr 2024, 11:11:25
 //  Auto updated?
 //    Yes
 //
@@ -18,8 +18,6 @@
 #[cfg(not(all(feature = "datalog")))]
 compile_error!("Please enable the 'datalog'-feature");
 
-use std::borrow::Cow;
-
 use clap::Parser;
 use console::Style;
 use error_trace::trace;
@@ -31,7 +29,6 @@ use justact_demo::message::datalog::{Action, Message};
 use justact_demo::pool::{MessagePool, Scope};
 use justact_demo::Simulation;
 use justact_policy::datalog::ast::{datalog, Spec};
-use justact_policy::datalog::Policy;
 use log::{error, info};
 
 
@@ -138,19 +135,17 @@ impl RationalAgent for Consortium {
                 owns(administrator, Data) :- ctl_accesses(Accessor, Data).
                 error :- ctl_accesses(Accessor, Data), owns(Owner, Data), not ctl_authorises(Owner, Accessor, Data).
             };
+            let msg: Message = Message::new("s1", "consortium", spec.into());
 
             // Log it
-            interface.log(
-                "consortium",
-                format!("Consortium emitted 's1' {{\n{}}}", spec.rules.iter().map(|r| format!("    {r}\n")).collect::<String>()),
-            )?;
+            interface.log_emit("consortium", &msg)?;
 
             // Emit it
-            pool.emit(Message::new("s1", "consortium", Policy(spec.rules.into_iter().map(Cow::Owned).collect())), Scope::All)?;
+            pool.emit(msg, Scope::All)?;
         }
 
         // That's it, this agent is done for the day
-        Ok(AgentPoll::Kill)
+        Ok(AgentPoll::Dead)
     }
 }
 
@@ -188,22 +183,20 @@ impl RationalAgent for Administrator {
             let spec: Spec = datalog! { #![crate = "::justact_policy::datalog"]
                 ctl_authorises(administrator, amy, x_rays).
             };
+            let msg: Message = Message::new("s2", "administrator", spec.into());
 
             // Log it
-            interface.log(
-                "administrator",
-                format!("Administrator emitted 's2' {{\n{}}}", spec.rules.iter().map(|r| format!("    {r}\n")).collect::<String>()),
-            )?;
+            interface.log_emit("administrator", &msg)?;
 
             // Emit it
-            pool.emit(Message::new("s2", "administrator", Policy(spec.rules.into_iter().map(Cow::Owned).collect())), Scope::All)?;
+            pool.emit(msg, Scope::All)?;
 
             // The admin is done for this example
-            return Ok(AgentPoll::Kill);
+            return Ok(AgentPoll::Dead);
         }
 
         // That's it, this agent is done for the day
-        Ok(AgentPoll::Stay)
+        Ok(AgentPoll::Alive)
     }
 }
 
@@ -243,12 +236,13 @@ impl RationalAgent for Amy {
                 let spec: Spec = datalog! { #![crate = "::justact_policy::datalog"]
                     ctl_accesses(amy, x_rays).
                 };
+                let msg: Message = Message::new("s3", "amy", spec.into());
 
                 // Log it
-                interface.log("amy", format!("Amy emitted 's3' {{\n{}}}", spec.rules.iter().map(|r| format!("    {r}\n")).collect::<String>()))?;
+                interface.log_emit("amy", &msg)?;
 
                 // Emit it
-                pool.emit(Message::new("s3", "amy", Policy(spec.rules.into_iter().map(Cow::Owned).collect())), Scope::All)?;
+                pool.emit(msg, Scope::All)?;
             }
 
             // Then, she creates an Action
@@ -268,11 +262,11 @@ impl RationalAgent for Amy {
             }
 
             // That's Amy's role
-            return Ok(AgentPoll::Kill);
+            return Ok(AgentPoll::Dead);
         }
 
         // That's it, this agent is done for the day
-        Ok(AgentPoll::Stay)
+        Ok(AgentPoll::Alive)
     }
 }
 
@@ -312,26 +306,26 @@ impl RationalAgent for Anton {
                 let spec: Spec = datalog! { #![crate = "::justact_policy::datalog"]
                     ctl_authorises(administrator, anton, x_rays).
                 };
+                let msg: Message = Message::new("s4", "anton", spec.into());
 
                 // Log it
-                interface
-                    .log("anton", format!("Anton emitted 's4' {{\n{}}}", spec.rules.iter().map(|r| format!("    {r}\n")).collect::<String>()))?;
+                interface.log_emit("anton", &msg)?;
 
                 // Emit it
-                pool.emit(Message::new("s4", "anton", Policy(spec.rules.into_iter().map(Cow::Owned).collect())), Scope::All)?;
+                pool.emit(msg, Scope::All)?;
             }
             {
                 // Define the policy to emit
                 let spec: Spec = datalog! { #![crate = "::justact_policy::datalog"]
                     ctl_accesses(anton, x_rays).
                 };
+                let msg: Message = Message::new("s5", "anton", spec.into());
 
                 // Log it
-                interface
-                    .log("anton", format!("Anton emitted 's5' {{\n{}}}", spec.rules.iter().map(|r| format!("    {r}\n")).collect::<String>()))?;
+                interface.log_emit("anton", &msg)?;
 
                 // Emit it
-                pool.emit(Message::new("s5", "anton", Policy(spec.rules.into_iter().map(Cow::Owned).collect())), Scope::All)?;
+                pool.emit(msg, Scope::All)?;
             }
             {
                 // The action to emit
@@ -352,17 +346,15 @@ impl RationalAgent for Anton {
             let spec: Spec = datalog! { #![crate = "::justact_policy::datalog"]
                 owns(anton, x_rays).
             };
+            let msg: Message = Message::new("s6", "anton", spec.into());
 
             // Log it
-            interface.log("anton", format!("Anton emitted 's6' {{\n{}}}", spec.rules.iter().map(|r| format!("    {r}\n")).collect::<String>()))?;
-
-            // Emit it
-            pool.emit(Message::new("s6", "anton", Policy(spec.rules.into_iter().map(Cow::Owned).collect())), Scope::All)?;
-            return Ok(AgentPoll::Kill);
+            interface.log_emit("anton", &msg)?;
+            return Ok(AgentPoll::Dead);
         }
 
         // Wait until it's Anton's moment to shine
-        Ok(AgentPoll::Stay)
+        Ok(AgentPoll::Alive)
     }
 }
 
@@ -383,22 +375,10 @@ fn main() {
 
     // Build the Simulation
     let mut sim: Simulation<AbstractAgent> = Simulation::with_capacity(1);
-    {
-        let agent = Consortium::new(sim.interface_mut());
-        sim.register(agent);
-    }
-    {
-        let agent = Administrator::new(sim.interface_mut());
-        sim.register(agent);
-    }
-    {
-        let agent = Amy::new(sim.interface_mut());
-        sim.register(agent);
-    }
-    {
-        let agent = Anton::new(sim.interface_mut());
-        sim.register(agent);
-    }
+    sim.register_with_interface(Consortium::new);
+    sim.register_with_interface(Administrator::new);
+    sim.register_with_interface(Amy::new);
+    sim.register_with_interface(Anton::new);
 
     // Run it
     println!();
