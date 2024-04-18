@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 10:22:40
 //  Last edited:
-//    15 Apr 2024, 19:05:47
+//    18 Apr 2024, 16:06:38
 //  Auto updated?
 //    Yes
 //
@@ -305,7 +305,7 @@ impl<'c> VarQuantifier<'c> {
 /// complement, and negates the global truth to compute the per-fact negation.
 ///
 /// The purpose of the immediate consequence operator is then to shuffle facts from unknown to known.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Interpretation<R = RandomState> {
     /// The atoms stored in this set that we know (or assume!) to be _true_.
     tknown:  HashSet<u64>,

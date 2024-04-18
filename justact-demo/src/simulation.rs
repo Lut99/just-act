@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:06:51
 //  Last edited:
-//    17 Apr 2024, 11:25:01
+//    18 Apr 2024, 17:25:59
 //  Auto updated?
 //    Yes
 //
@@ -16,17 +16,13 @@ use std::error;
 use std::fmt::{Display, Formatter, Result as FResult};
 
 use console::Style;
-use justact_core::agent::{AgentPoll, RationalAgent};
-use justact_core::collection::CollectionMut as _;
-use justact_core::message::MessageSet as _;
-use justact_core::policy::Policy as _;
-use justact_core::world::{Interface as _, MessagePool as _};
-use justact_policy::datalog::Policy;
+use justact_core::agent::{Agent, AgentPoll, RationalAgent};
+use justact_core::statements::Statements as _;
 use log::{debug, info};
+use stackvec::StackVec;
 
 use crate::interface::Interface;
-use crate::message::datalog::MessageSet;
-use crate::pool::MessagePool;
+use crate::statements::{Scope, Statements};
 
 
 /***** ERROR *****/
@@ -67,7 +63,7 @@ impl<E: 'static + error::Error> error::Error for Error<E> {
 #[derive(Debug)]
 pub struct Simulation<A> {
     /// The [`MessagePool`] that agents communicate through.
-    pool:      MessagePool,
+    stmts:     Statements,
     /// The [`Interface`] that agents report through.
     interface: Interface,
     /// The (alive!) agents in the simulation.
@@ -91,7 +87,7 @@ impl<A> Simulation<A> {
         interface.register("<system>", Style::new().bold());
 
         // Create ourselves with that
-        Self { pool: MessagePool::new(), interface, agents: Vec::new() }
+        Self { stmts: Statements::new(), interface, agents: Vec::new() }
     }
 
     /// Creates a new Simulation with no agents registered yet, but space to do so before re-allocation is triggered.
@@ -110,7 +106,7 @@ impl<A> Simulation<A> {
         interface.register("<system>", Style::new().bold());
 
         // Create ourselves with that
-        Self { pool: MessagePool::new(), interface, agents: Vec::with_capacity(capacity) }
+        Self { stmts: Statements::new(), interface, agents: Vec::with_capacity(capacity) }
     }
 
     /// Builds a new Simulation with the given set of agents registered to it from the get-go.
@@ -140,7 +136,7 @@ impl<A> Simulation<A> {
 
         // Now built self
         debug!("Created demo Simulation with {} agents", agents.len());
-        Self { pool: MessagePool::new(), interface, agents }
+        Self { stmts: Statements::new(), interface, agents }
     }
 
     /// Registers a new agent after creation.
@@ -163,13 +159,13 @@ impl<A> Simulation<A> {
         self.agents.push(constructor_fn(&mut self.interface).into());
     }
 
-    /// Returns a reference to the internal [`MessagePool`].
+    /// Returns a reference to the internal [`Statements`].
     #[inline]
-    pub fn pool(&self) -> &MessagePool { &self.pool }
+    pub fn stmts(&self) -> &Statements { &self.stmts }
 
-    /// Returns a mutable reference to the internal [`MessagePool`].
+    /// Returns a mutable reference to the internal [`Statements`].
     #[inline]
-    pub fn pool_mut(&mut self) -> &mut MessagePool { &mut self.pool }
+    pub fn stmts_mut(&mut self) -> &mut Statements { &mut self.stmts }
 
     /// Returns a reference to the internal [`Interface`].
     #[inline]
@@ -181,7 +177,7 @@ impl<A> Simulation<A> {
 }
 impl<A> Simulation<A>
 where
-    A: RationalAgent<MessagePool = MessagePool, Interface = Interface>,
+    A: Agent<Identifier = &'static str> + RationalAgent<Statements = Statements, Interface = Interface>,
 {
     /// Polls all the agents in the simulation once.
     ///
@@ -191,21 +187,18 @@ where
     /// # Errors
     /// This function errors if any of the agents fails to communicate with the end-user or other agents.
     pub fn poll(&mut self) -> Result<bool, Error<A::Error>> {
-        let mut i: usize = 0;
         info!("Starting new agent iteration");
-        self.agents = self
-            .agents
-            .drain(..)
-            .filter_map(|mut a| {
-                i += 1;
-                debug!("Polling agent {}...", i - 1);
-                match a.poll(&mut self.pool, &mut self.interface) {
-                    Ok(AgentPoll::Alive) => Some(Ok(a)),
-                    Ok(AgentPoll::Dead) => None,
-                    Err(err) => Some(Err(Error::AgentPoll { i: i - 1, err })),
-                }
-            })
-            .collect::<Result<Vec<A>, Error<A::Error>>>()?;
+        let mut agents: StackVec<64, A> = StackVec::new();
+        for (i, mut agent) in self.agents.drain(..).enumerate() {
+            debug!("Polling agent {}...", i);
+            let id: &'static str = agent.id();
+            match agent.poll(&mut self.stmts.scope(Scope::Agent(id)), &mut self.interface) {
+                Ok(AgentPoll::Alive) => agents.push(agent),
+                Ok(AgentPoll::Dead) => continue,
+                Err(err) => return Err(Error::AgentPoll { i, err }),
+            }
+        }
+        self.agents.extend(agents);
         Ok(!self.agents.is_empty())
     }
 
@@ -219,27 +212,12 @@ where
             // Run the next iteration
             let reiterate: bool = self.poll()?;
 
-            // Check if any actions are unjustified
-            if !self.pool.all_actions().is_empty() {
-                let mut actions_ok: bool = true;
-                for act in self.pool.all_actions() {
-                    // Throw the action's message sets in one pile
-                    let mut set: MessageSet = MessageSet::empty();
-                    set.join(act.basis.as_borrow());
-                    set.join(act.justification.as_borrow());
-                    set.add(act.enactment.as_borrow());
-
-                    // Get the policy out of it
-                    let policy: Policy = set.extract();
-
-                    // Ensure it's OK
-                    if let Err(int) = policy.check_validity() {
-                        self.interface.error("<system>", format!("Invalid action found\n{act}{int}")).unwrap();
-                        actions_ok = false;
-                    }
-                }
-                if actions_ok {
-                    self.interface.log("<system>", "All actions are valid").unwrap();
+            // Run an audit
+            if self.stmts.any_enacted() {
+                debug!("Running audit on {} actions...", self.stmts.n_enacted());
+                match self.stmts.audit() {
+                    Ok(_) => self.interface.log("<system>", "All actions are valid"),
+                    Err(expl) => self.interface.error_audit_datalog("<system>", expl),
                 }
             }
 

@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:00:44
 //  Last edited:
-//    17 Apr 2024, 11:11:25
+//    18 Apr 2024, 17:25:06
 //  Auto updated?
 //    Yes
 //
@@ -18,15 +18,17 @@
 #[cfg(not(all(feature = "datalog")))]
 compile_error!("Please enable the 'datalog'-feature");
 
+use std::borrow::Cow;
+
 use clap::Parser;
 use console::Style;
 use error_trace::trace;
 use humanlog::{DebugMode, HumanLogger};
 use justact_core::agent::{Agent, AgentPoll, RationalAgent};
-use justact_core::world::{Interface as _, MessagePool as _};
+use justact_core::statements::{Statements as _, Stating};
 use justact_demo::interface::Interface;
-use justact_demo::message::datalog::{Action, Message};
-use justact_demo::pool::{MessagePool, Scope};
+use justact_demo::lang::datalog::{Action, Message};
+use justact_demo::statements::{Scope, Statements};
 use justact_demo::Simulation;
 use justact_policy::datalog::ast::{datalog, Spec};
 use log::{error, info};
@@ -58,10 +60,10 @@ enum AbstractAgent {
 }
 impl Agent for AbstractAgent {
     type Error = std::convert::Infallible;
-    type Identifier<'s> = &'static str;
+    type Identifier = &'static str;
 
     #[inline]
-    fn id<'s>(&'s self) -> Self::Identifier<'s> {
+    fn id(&self) -> Self::Identifier {
         match self {
             Self::Administrator(a) => a.id(),
             Self::Amy(a) => a.id(),
@@ -72,9 +74,9 @@ impl Agent for AbstractAgent {
 }
 impl RationalAgent for AbstractAgent {
     type Interface = Interface;
-    type MessagePool = MessagePool;
+    type Statements = Statements;
 
-    fn poll(&mut self, pool: &mut Self::MessagePool, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
+    fn poll(&mut self, pool: &mut Self::Statements, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
         match self {
             Self::Administrator(a) => a.poll(pool, interface),
             Self::Amy(a) => a.poll(pool, interface),
@@ -118,18 +120,18 @@ impl Consortium {
 }
 impl Agent for Consortium {
     type Error = std::convert::Infallible;
-    type Identifier<'s> = &'static str;
+    type Identifier = &'static str;
 
     #[inline]
-    fn id<'s>(&'s self) -> Self::Identifier<'s> { "consortium" }
+    fn id(&self) -> Self::Identifier { "consortium" }
 }
 impl RationalAgent for Consortium {
     type Interface = Interface;
-    type MessagePool = MessagePool;
+    type Statements = Statements;
 
-    fn poll(&mut self, pool: &mut Self::MessagePool, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
+    fn poll(&mut self, stmts: &mut Self::Statements, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
         // The consortium emits 's1' at the start of the interaction
-        if !pool.all_messages().contains_key("s1") {
+        if !stmts.is_stated("s1") {
             // Define the policy to emit
             let spec: Spec = datalog! { #![crate = "::justact_policy::datalog"]
                 owns(administrator, Data) :- ctl_accesses(Accessor, Data).
@@ -138,10 +140,10 @@ impl RationalAgent for Consortium {
             let msg: Message = Message::new("s1", "consortium", spec.into());
 
             // Log it
-            interface.log_emit("consortium", &msg)?;
+            interface.log_state_datalog("consortium", &msg);
 
             // Emit it
-            pool.emit(msg, Scope::All)?;
+            stmts.state(Cow::Owned(msg), Scope::All)?;
         }
 
         // That's it, this agent is done for the day
@@ -167,18 +169,18 @@ impl Administrator {
 }
 impl Agent for Administrator {
     type Error = std::convert::Infallible;
-    type Identifier<'s> = &'static str;
+    type Identifier = &'static str;
 
     #[inline]
-    fn id<'s>(&'s self) -> Self::Identifier<'s> { "administrator" }
+    fn id(&self) -> Self::Identifier { "administrator" }
 }
 impl RationalAgent for Administrator {
     type Interface = Interface;
-    type MessagePool = MessagePool;
+    type Statements = Statements;
 
-    fn poll(&mut self, pool: &mut Self::MessagePool, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
+    fn poll(&mut self, stmts: &mut Self::Statements, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
         // The administrator emits 's2' after the agreement has een emitted
-        if pool.all_messages().contains_key("s1") {
+        if stmts.is_stated("s1") {
             // Define the policy to emit
             let spec: Spec = datalog! { #![crate = "::justact_policy::datalog"]
                 ctl_authorises(administrator, amy, x_rays).
@@ -186,10 +188,10 @@ impl RationalAgent for Administrator {
             let msg: Message = Message::new("s2", "administrator", spec.into());
 
             // Log it
-            interface.log_emit("administrator", &msg)?;
+            interface.log_state_datalog("administrator", &msg);
 
             // Emit it
-            pool.emit(msg, Scope::All)?;
+            stmts.state(Cow::Owned(msg), Scope::All)?;
 
             // The admin is done for this example
             return Ok(AgentPoll::Dead);
@@ -218,18 +220,18 @@ impl Amy {
 }
 impl Agent for Amy {
     type Error = std::convert::Infallible;
-    type Identifier<'s> = &'static str;
+    type Identifier = &'static str;
 
     #[inline]
-    fn id<'s>(&'s self) -> Self::Identifier<'s> { "amy" }
+    fn id(&self) -> Self::Identifier { "amy" }
 }
 impl RationalAgent for Amy {
     type Interface = Interface;
-    type MessagePool = MessagePool;
+    type Statements = Statements;
 
-    fn poll(&mut self, pool: &mut Self::MessagePool, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
+    fn poll(&mut self, stmts: &mut Self::Statements, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
         // The amy emits 's3' (an enacted action) after she received authorisation from the administrator
-        if pool.all_messages().contains_key("s2") {
+        if stmts.is_stated("s2") {
             // Amy first emits her intended enactment
             {
                 // The policy to emit
@@ -239,26 +241,26 @@ impl RationalAgent for Amy {
                 let msg: Message = Message::new("s3", "amy", spec.into());
 
                 // Log it
-                interface.log_emit("amy", &msg)?;
+                interface.log_state_datalog("amy", &msg);
 
                 // Emit it
-                pool.emit(msg, Scope::All)?;
+                stmts.state(Cow::Owned(msg), Scope::All)?;
             }
 
             // Then, she creates an Action
             {
                 // The action to emit
                 let act: Action = Action {
-                    basis: pool.all_messages().get("s1").unwrap().clone().into(),
-                    justification: pool.all_messages().get("s2").unwrap().clone().into(),
-                    enactment: pool.all_messages().get("s3").unwrap().clone().into(),
+                    basis: Cow::Owned(stmts.get_stated("s1").unwrap()),
+                    justification: Cow::Owned::<Message>(stmts.get_stated("s2").unwrap()).into(),
+                    enactment: Cow::Owned(stmts.get_stated("s3").unwrap()),
                 };
 
                 // Log it
-                interface.log("amy", "Amy enacts 's3' using 's1' as basis and 's2' as justification")?;
+                interface.log_enact_datalog("amy", &act);
 
                 // Emit it
-                pool.enact(act, Scope::All)?;
+                stmts.enact(act, Scope::All)?;
             }
 
             // That's Amy's role
@@ -288,18 +290,18 @@ impl Anton {
 }
 impl Agent for Anton {
     type Error = std::convert::Infallible;
-    type Identifier<'s> = &'static str;
+    type Identifier = &'static str;
 
     #[inline]
-    fn id<'s>(&'s self) -> Self::Identifier<'s> { "anton" }
+    fn id(&self) -> Self::Identifier { "anton" }
 }
 impl RationalAgent for Anton {
     type Interface = Interface;
-    type MessagePool = MessagePool;
+    type Statements = Statements;
 
-    fn poll(&mut self, pool: &mut Self::MessagePool, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
+    fn poll(&mut self, stmts: &mut Self::Statements, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
         // Anton emits some malicious messages at the end
-        if pool.all_messages().contains_key("s3") && !pool.all_messages().contains_key("s5") {
+        if stmts.is_stated("s3") && !stmts.is_stated("s5") {
             // To illustrate, we also emit an action at the end
             {
                 // Define the policy to emit
@@ -309,10 +311,10 @@ impl RationalAgent for Anton {
                 let msg: Message = Message::new("s4", "anton", spec.into());
 
                 // Log it
-                interface.log_emit("anton", &msg)?;
+                interface.log_state_datalog("anton", &msg);
 
                 // Emit it
-                pool.emit(msg, Scope::All)?;
+                stmts.state(Cow::Owned(msg), Scope::All)?;
             }
             {
                 // Define the policy to emit
@@ -322,26 +324,26 @@ impl RationalAgent for Anton {
                 let msg: Message = Message::new("s5", "anton", spec.into());
 
                 // Log it
-                interface.log_emit("anton", &msg)?;
+                interface.log_state_datalog("anton", &msg);
 
                 // Emit it
-                pool.emit(msg, Scope::All)?;
+                stmts.state(Cow::Owned(msg), Scope::All)?;
             }
             {
                 // The action to emit
                 let act: Action = Action {
-                    basis: pool.all_messages().get("s1").unwrap().clone().into(),
-                    justification: pool.all_messages().get("s4").unwrap().clone().into(),
-                    enactment: pool.all_messages().get("s5").unwrap().clone().into(),
+                    basis: Cow::Owned(stmts.get_stated("s1").unwrap()),
+                    justification: Cow::Owned::<Message>(stmts.get_stated("s4").unwrap()).into(),
+                    enactment: Cow::Owned(stmts.get_stated("s5").unwrap()),
                 };
 
                 // Log it
-                interface.log("anton", "Anton enacts 's5' using 's1' as basis and 's4' as justification")?;
+                interface.log_enact_datalog("anton", &act);
 
                 // Emit it
-                pool.enact(act, Scope::All)?;
+                stmts.enact(act, Scope::All)?;
             }
-        } else if pool.all_messages().contains_key("s5") {
+        } else if stmts.is_stated("s5") {
             // Define the policy to emit
             let spec: Spec = datalog! { #![crate = "::justact_policy::datalog"]
                 owns(anton, x_rays).
@@ -349,7 +351,12 @@ impl RationalAgent for Anton {
             let msg: Message = Message::new("s6", "anton", spec.into());
 
             // Log it
-            interface.log_emit("anton", &msg)?;
+            interface.log_state_datalog("anton", &msg);
+
+            // Emit it
+            stmts.state(Cow::Owned(msg), Scope::All)?;
+
+            // That's Anton's work forever
             return Ok(AgentPoll::Dead);
         }
 

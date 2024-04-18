@@ -2,16 +2,16 @@
 //    by Lut99
 //
 //  Created:
-//    15 Apr 2024, 16:22:21
+//    18 Apr 2024, 11:51:52
 //  Last edited:
-//    15 Apr 2024, 16:22:31
+//    18 Apr 2024, 11:53:04
 //  Auto updated?
 //    Yes
 //
 //  Description:
-//!   Defines how messages look like in the demo environment.
+//!   Defines language-specific parts of the demo simulation.
 //
 
-// Declare submodules
+// Declare modules
 #[cfg(feature = "datalog")]
 pub mod datalog;

@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:52:41
 //  Last edited:
-//    17 Apr 2024, 11:10:49
+//    18 Apr 2024, 17:23:51
 //  Auto updated?
 //    Yes
 //
@@ -16,7 +16,7 @@
 use std::error::Error;
 use std::future::Future;
 
-use crate::world::{Interface, InterfaceAsync, MessagePool, MessagePoolAsync};
+use crate::statements::{Statements, Stating, StatingAsync};
 
 
 /***** AUXILLARY *****/
@@ -43,16 +43,14 @@ pub trait Agent {
     /// The type of error emitted by functions for this type of Agent.
     type Error: Error;
     /// Some type of identifier that can be used to recognize this agent.
-    type Identifier<'s>: 's
-    where
-        Self: 's;
+    type Identifier;
 
 
     /// Returns some identifyer for this agent that can be used to uniquely recognize it within the system.
     ///
     /// # Returns
     /// A `Self::Identifier` that represents this agent in terms of identification.
-    fn id<'s>(&'s self) -> Self::Identifier<'s>;
+    fn id(&self) -> Self::Identifier;
 }
 
 
@@ -61,10 +59,10 @@ pub trait Agent {
 ///
 /// This version does so **synchronously**. See [`RationalAgentAsync`] for a version that is `async`.
 pub trait RationalAgent: Agent {
-    /// The pool that agents use to inspect the messages that they might know of.
-    type MessagePool: MessagePool;
+    /// The pool that agents use to state messages / enact actions, and inspect what others did.
+    type Statements: Statements + Stating;
     /// The interface type that allows the Agent to communicate with users.
-    type Interface: Interface;
+    type Interface;
 
 
     /// Runs the underlying Agent code for one run.
@@ -80,17 +78,17 @@ pub trait RationalAgent: Agent {
     ///
     /// # Errors
     /// Only fatal errors that prevent the Agent from participating in the system should cause this function to error. Examples are failures to emit errors to the `interface`.
-    fn poll(&mut self, pool: &mut Self::MessagePool, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error>;
+    fn poll(&mut self, pool: &mut Self::Statements, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error>;
 }
 
 /// Extends an [`Agent`] with the capacity to think, i.e., do something.
 ///
 /// This version does so **asynchronously**, i.e., `async`. See [`RationalAgent`] for a version that is not `async`.
 pub trait RationalAgentAsync: Agent {
-    /// The pool that agents use to inspect the messages that they might know of.
-    type MessagePool: MessagePoolAsync;
+    /// The pool that agents use to state messages / enact actions, and inspect what others did.
+    type StatementsAsync: Statements + StatingAsync;
     /// The interface type that allows the Agent to communicate with users.
-    type Interface: InterfaceAsync;
+    type InterfaceAsync;
 
 
     /// Runs the underlying Agent code for one run.
@@ -108,7 +106,7 @@ pub trait RationalAgentAsync: Agent {
     /// Only fatal errors that prevent the Agent from participating in the system should cause this function to error. Examples are failures to emit errors to the `interface`.
     fn poll_async<'s, 'p, 'i>(
         &'s mut self,
-        pool: &'p mut Self::MessagePool,
-        interface: &'i mut Self::Interface,
+        pool: &'p mut Self::StatementsAsync,
+        interface: &'i mut Self::InterfaceAsync,
     ) -> impl 's + 'p + 'i + Future<Output = Result<AgentPoll, Self::Error>>;
 }

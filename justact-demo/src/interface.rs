@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 10:58:56
 //  Last edited:
-//    17 Apr 2024, 16:33:27
+//    18 Apr 2024, 17:14:09
 //  Auto updated?
 //    Yes
 //
@@ -13,13 +13,17 @@
 //!   communicate with the simulation environment's end user.
 //
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Display;
 
 use console::{style, Style};
-use justact_core::collection::Collection as _;
-use justact_core::message::{Action, Message, MessageSet};
-use justact_core::world as justact;
+use justact_core::message::{Action as _, Message as _};
+use justact_core::set::{MessageSet as _, Set as _};
+
+#[cfg(feature = "datalog")]
+use crate::lang::datalog;
+use crate::statements::Explanation;
 
 
 /***** LIBRARY *****/
@@ -59,29 +63,30 @@ impl Interface {
     /// - `style`: A [`Style`] describing colouring to apply for that agent.
     #[inline]
     pub fn register(&mut self, id: impl Into<String>, style: impl Into<Style>) { self.entities.insert(id.into(), style.into()); }
-}
 
-impl justact::Interface for Interface {
-    type Error = std::convert::Infallible;
-
-    fn log(&mut self, id: &str, msg: impl Display) -> Result<(), Self::Error> {
+    /// Logs an arbitrary message to stdout.
+    ///
+    /// # Arguments
+    /// - `id`: The identifier of the agent who is logging.
+    /// - `msg`: Some message (retrieved as [`Display`]) to show.
+    pub fn log(&self, id: &str, msg: impl Display) {
         // Retrieve some style for this agent
-        let style: &Style = match self.entities.get(id) {
+        let astyle: &Style = match self.entities.get(id) {
             Some(style) => style,
             None => panic!("Unregistered entity '{id}'"),
         };
 
         // Write for that agent
-        println!("{}", style.apply_to(format!("[INFO][{id}] {msg}")));
-        Ok(())
+        println!("{}{}{} {}", style("[INFO] [").bold(), astyle.apply_to(id), style("]").bold(), msg);
     }
 
-    fn log_emit<M>(&mut self, id: &str, msg: &M) -> Result<(), Self::Error>
-    where
-        M: Display + Message,
-        M::Author: Display,
-        M::Id: Display,
-    {
+    /// Logs the statement of a datalog [`Message`] to stdout.
+    ///
+    /// # Arguments
+    /// - `id`: The identifier of the agent who is logging.
+    /// - `msg`: Some [`datalog::Message`] to emit.
+    #[cfg(feature = "datalog")]
+    pub fn log_state_datalog(&self, id: &str, msg: &datalog::Message) {
         // Retrieve some style for this agent
         let astyle: &Style = match self.entities.get(id) {
             Some(style) => style,
@@ -92,7 +97,7 @@ impl justact::Interface for Interface {
         println!("{}{}{} Emitted message '{}'", style("[INFO] [").bold(), astyle.apply_to(id), style("]").bold(), msg.id());
 
         // Generate a serialized message
-        let smsg: String = msg.to_string().replace('\n', "\n         ");
+        let smsg: String = msg.to_string().replace('\n', "\n        ");
         let smsg: &str = smsg.trim_end();
 
         // Write the message
@@ -102,16 +107,15 @@ impl justact::Interface for Interface {
         println!();
 
         // Done
-        Ok(())
     }
 
-    fn log_enact<'a, A>(&mut self, id: &str, act: &'a A) -> Result<(), Self::Error>
-    where
-        A: Display + Action,
-        <A::Message as Message>::Author: Display,
-        <A::Message as Message>::Id: Display,
-        <A::MessageSet as MessageSet>::Policy<'a>: Display,
-    {
+    /// Logs the enactment of a datalog [`Action`] to stdout.
+    ///
+    /// # Arguments
+    /// - `id`: The identifier of the agent who is logging.
+    /// - `act`: Some [`datalog::Action`] to emit.
+    #[cfg(feature = "datalog")]
+    pub fn log_enact_datalog(&self, id: &str, act: &datalog::Action) {
         // Retrieve some style for this agent
         let astyle: &Style = match self.entities.get(id) {
             Some(style) => style,
@@ -120,7 +124,7 @@ impl justact::Interface for Interface {
 
         // Retrieve the message IDs for the justication
         let mut just_ids: String = String::new();
-        for msg in act.justification().iter() {
+        for msg in act.justification.iter() {
             if !just_ids.is_empty() {
                 just_ids.push_str(", ");
             }
@@ -139,13 +143,13 @@ impl justact::Interface for Interface {
         );
 
         // Generate serialized messages
-        let sbasis: String = A::MessageSet::from(act.basis()).extract().to_string().replace('\n', "\n         ");
-        let sbasis: &str = sbasis.trim_end();
+        let sbasis: String = datalog::MessageSet::from(Cow::Borrowed(act.basis())).extract().to_string().replace('\n', "\n |      ");
+        let sbasis: &str = &sbasis[..sbasis.len() - if sbasis.ends_with("\n |      ") { 10 } else { 0 }];
 
-        let sjust: String = act.justification().extract().to_string().replace('\n', "\n         ");
-        let sjust: &str = sjust.trim_end();
+        let sjust: String = act.justification.extract().to_string().replace('\n', "\n |      ");
+        let sjust: &str = &sjust[..sjust.len() - if sjust.ends_with("\n |      ") { 10 } else { 0 }];
 
-        let senact: String = A::MessageSet::from(act.enactment()).extract().to_string().replace('\n', "\n         ");
+        let senact: String = datalog::MessageSet::from(Cow::Borrowed(act.enactment())).extract().to_string().replace('\n', "\n        ");
         let senact: &str = senact.trim_end();
 
         // Write the sets
@@ -161,12 +165,85 @@ impl justact::Interface for Interface {
         println!();
 
         // Done
-        Ok(())
     }
 
-    fn error(&mut self, id: &str, msg: impl std::fmt::Display) -> Result<(), Self::Error> {
+    /// Logs an error message to stdout.
+    ///
+    /// # Arguments
+    /// - `id`: The identifier of the agent who is logging.
+    /// - `msg`: Some message (retrieved as [`Display`]) to show.
+    pub fn error(&self, id: &str, msg: impl Display) {
+        // Retrieve some style for this agent
+        let astyle: &Style = match self.entities.get(id) {
+            Some(style) => style,
+            None => panic!("Unregistered entity '{id}'"),
+        };
+
         // Write for that agent
-        println!("{}", Style::new().bold().red().apply_to(format!("[ERRR][{id}] {msg}")));
-        Ok(())
+        println!("{}{}{}{}{} {}", style("[").bold(), style("ERROR").bold().red(), style("] [").bold(), astyle.apply_to(id), style("]").bold(), msg);
+    }
+
+    /// Logs a the result of a failed audit to stdout.
+    ///
+    /// # Arguments
+    /// - `id`: The identifier of the agent who is logging.
+    /// - `msg`: Some message (retrieved as [`Display`]) to show.
+    #[cfg(feature = "datalog")]
+    pub fn error_audit_datalog(&self, id: &str, expl: Explanation) {
+        // Retrieve some style for this agent
+        let astyle: &Style = match self.entities.get(id) {
+            Some(style) => style,
+            None => panic!("Unregistered entity '{id}'"),
+        };
+
+        // Write for that agent
+        println!(
+            "{}{}{}{}{} Action that enacts '{}' did not succeed audit",
+            style("[").bold(),
+            style("ERROR").bold().red(),
+            style("] [").bold(),
+            astyle.apply_to(id),
+            style("]").bold(),
+            expl.action.enactment().id(),
+        );
+
+        // Retrieve the message IDs for the justication
+        let mut just_ids: String = String::new();
+        for msg in expl.action.justification.iter() {
+            if !just_ids.is_empty() {
+                just_ids.push_str(", ");
+            }
+            just_ids.push_str(&msg.id().to_string());
+        }
+
+        // Generate serialized messages
+        let sbasis: String = datalog::MessageSet::from(Cow::Borrowed(expl.action.basis())).extract().to_string().replace('\n', "\n |      ");
+        let sbasis: &str = &sbasis[..sbasis.len() - if sbasis.ends_with("\n |      ") { 10 } else { 0 }];
+
+        let sjust: String = expl.action.justification.extract().to_string().replace('\n', "\n |      ");
+        let sjust: &str = &sjust[..sjust.len() - if sjust.ends_with("\n |      ") { 10 } else { 0 }];
+
+        let senact: String = datalog::MessageSet::from(Cow::Borrowed(expl.action.enactment())).extract().to_string().replace('\n', "\n        ");
+        let senact: &str = senact.trim_end();
+
+        let sint: String = match expl.explanation {
+            datalog::Explanation::NotStated { message } => format!("Message '{}' is not stated", style(message).bold()),
+            datalog::Explanation::Error { int } => format!("{}", int.to_string().replace('\n', "\n         ")),
+        };
+        let sint: &str = sint.trim_end();
+
+        // Write the sets
+        println!(" ├> Basis '{}' {{", style(expl.action.basis().id()).bold());
+        println!(" |      {sbasis}");
+        println!(" |  }}");
+        println!(" ├> Justification '{}' {{", style(just_ids).bold());
+        println!(" |      {sjust}");
+        println!(" |  }}");
+        println!(" ├> Enactment '{}' {{", style(expl.action.enactment().id()).bold());
+        println!(" |      {senact}");
+        println!(" |  }}");
+        println!(" |");
+        println!(" └> {sint}");
+        println!();
     }
 }

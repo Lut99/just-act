@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 15:11:07
 //  Last edited:
-//    16 Apr 2024, 16:30:57
+//    18 Apr 2024, 14:33:12
 //  Auto updated?
 //    Yes
 //
@@ -19,6 +19,7 @@
 pub trait Policy {
     /// The type of the object that explains why this policy is invalid.
     type Explanation;
+
 
     /// Checks if this policy is valid.
     ///

@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:59:05
 //  Last edited:
-//    17 Apr 2024, 16:35:35
+//    18 Apr 2024, 17:23:38
 //  Auto updated?
 //    Yes
 //
@@ -14,15 +14,17 @@
 //!   which represents a particular collection of them.
 //
 
-use crate::collection::Collection;
-use crate::policy::Policy;
+use std::borrow::Cow;
+
+use crate::set::MessageSet;
+use crate::statements::Statements;
 
 
 /***** LIBRARY *****/
 /// Provides the abstraction for a message that is sent between agents.
 pub trait Message {
     /// Defines how message identifiers look like.
-    type Id;
+    type Identifier;
     /// Defines how authors look like.
     type Author;
 
@@ -30,7 +32,7 @@ pub trait Message {
     ///
     /// # Returns
     /// An identifier of type [`Self::Id`](Message::Id).
-    fn id(&self) -> Self::Id;
+    fn id(&self) -> Self::Identifier;
 
     /// Returns the author of the message.
     ///
@@ -39,41 +41,27 @@ pub trait Message {
     fn author(&self) -> Self::Author;
 }
 
-/// Defines a _meaningful_ collection of messages.
-///
-/// This is a particular set of messages that can be interpreted as a [`Policy`].
-pub trait MessageSet: Collection<Self::Message> {
-    /// The type of messages which are contained in this MessageSet.
-    type Message: Message;
-    /// The type of policy extracted from this message.
-    type Policy<'s>: 's + Policy
-    where
-        Self: 's;
+// Implement over some pointer-like types
+impl<'a, T: Clone + Message> Message for &'a T {
+    type Author = T::Author;
+    type Identifier = T::Identifier;
 
+    #[inline]
+    fn author(&self) -> Self::Author { T::author(self) }
 
-    /// Builds a new MessageSet out of a singleton [`Message`].
-    ///
-    /// # Arguments
-    /// - `msg`: The `Self::Message` to build a new set out of.
-    ///
-    /// # Returns
-    /// A new instance of Self that only wraps the given msg.
-    fn from_singleton(msg: Self::Message) -> Self;
+    #[inline]
+    fn id(&self) -> Self::Identifier { T::id(self) }
+}
 
-    /// Builds a new MessageSet out of a reference to a singleton [`Message`].
-    ///
-    /// # Arguments
-    /// - `msg`: The `Self::Message` to build a new set out of.
-    ///
-    /// # Returns
-    /// A new instance of Self that only wraps the given msg.
-    fn from_singleton_ref(msg: &Self::Message) -> Self;
+impl<'a, T: Clone + Message> Message for Cow<'a, T> {
+    type Author = T::Author;
+    type Identifier = T::Identifier;
 
-    /// Returns some policy from the fragments contained in the messages of this set.
-    ///
-    /// # Returns
-    /// A new policy of type [`Self::Policy`](MessageSet::Policy) that is the extracted policy.
-    fn extract<'s>(&'s self) -> Self::Policy<'s>;
+    #[inline]
+    fn author(&self) -> Self::Author { T::author(self) }
+
+    #[inline]
+    fn id(&self) -> Self::Identifier { T::id(self) }
 }
 
 
@@ -82,10 +70,16 @@ pub trait MessageSet: Collection<Self::Message> {
 ///
 /// This is simply a stand-in for a tuple of a _basis_ (agreement), _justification_ and _enactment_, all three [`MessageSet`]s.
 pub trait Action {
+    /// Something that explains why this Action did not succeed an audit.
+    type Explanation;
     /// The type of Message out of which this Action is built.
-    type Message: Message;
+    type Message<'s>: 's + Message
+    where
+        Self: 's;
     /// The type of MessageSet out of which this Action is built.
-    type MessageSet: MessageSet<Message = Self::Message>;
+    type MessageSet<'s>: 's + MessageSet
+    where
+        Self: 's;
 
 
     /// Returns the _basis_ of this action.
@@ -94,7 +88,7 @@ pub trait Action {
     ///
     /// # Returns
     /// A `Self::MessageSet` describing the basis of the action.
-    fn basis(&self) -> &Self::Message;
+    fn basis<'s>(&'s self) -> Self::Message<'s>;
 
     /// Returns the _justification_ of this action.
     ///
@@ -103,7 +97,7 @@ pub trait Action {
     /// # Returns
     /// A `Self::MessageSet` describing the justification of the action.
     /// TODO: Includes basis and enactment
-    fn justification(&self) -> &Self::MessageSet;
+    fn justification<'s>(&'s self) -> Self::MessageSet<'s>;
 
     /// Returns the _enactment_ of this action.
     ///
@@ -111,5 +105,19 @@ pub trait Action {
     ///
     /// # Returns
     /// A `Self::MessageSet` describing the basis of the action.
-    fn enactment(&self) -> &Self::Message;
+    fn enactment<'s>(&'s self) -> Self::Message<'s>;
+
+
+    /// Audits this action.
+    ///
+    /// In particular, will check if the [justification](Action::justification()) is valid according to the policy language and all of its embedded messages have been stated.
+    ///
+    /// # Arguments
+    /// - `stmts`: Some [`Statements`] that can be used to check if messages are stated.
+    ///
+    /// # Errors
+    /// If this action did not match the requirements of the audit, then an [`Action::Explanation`] is returned with why this is the case.
+    fn audit<'s, S>(&'s self, stmts: &S) -> Result<(), Self::Explanation>
+    where
+        S: Statements<Id = <Self::Message<'s> as Message>::Identifier>;
 }
