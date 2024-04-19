@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:00:44
 //  Last edited:
-//    18 Apr 2024, 17:25:06
+//    19 Apr 2024, 11:47:16
 //  Auto updated?
 //    Yes
 //
@@ -28,7 +28,7 @@ use justact_core::agent::{Agent, AgentPoll, RationalAgent};
 use justact_core::statements::{Statements as _, Stating};
 use justact_demo::interface::Interface;
 use justact_demo::lang::datalog::{Action, Message};
-use justact_demo::statements::{Scope, Statements};
+use justact_demo::statements::{Scope, StatementsMut};
 use justact_demo::Simulation;
 use justact_policy::datalog::ast::{datalog, Spec};
 use log::{error, info};
@@ -74,9 +74,9 @@ impl Agent for AbstractAgent {
 }
 impl RationalAgent for AbstractAgent {
     type Interface = Interface;
-    type Statements = Statements;
+    type Statements<'s> = StatementsMut<'s>;
 
-    fn poll(&mut self, pool: &mut Self::Statements, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
+    fn poll(&mut self, pool: &mut Self::Statements<'_>, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
         match self {
             Self::Administrator(a) => a.poll(pool, interface),
             Self::Amy(a) => a.poll(pool, interface),
@@ -127,9 +127,9 @@ impl Agent for Consortium {
 }
 impl RationalAgent for Consortium {
     type Interface = Interface;
-    type Statements = Statements;
+    type Statements<'s> = StatementsMut<'s>;
 
-    fn poll(&mut self, stmts: &mut Self::Statements, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
+    fn poll(&mut self, stmts: &mut Self::Statements<'_>, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
         // The consortium emits 's1' at the start of the interaction
         if !stmts.is_stated("s1") {
             // Define the policy to emit
@@ -176,9 +176,9 @@ impl Agent for Administrator {
 }
 impl RationalAgent for Administrator {
     type Interface = Interface;
-    type Statements = Statements;
+    type Statements<'s> = StatementsMut<'s>;
 
-    fn poll(&mut self, stmts: &mut Self::Statements, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
+    fn poll(&mut self, stmts: &mut Self::Statements<'_>, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
         // The administrator emits 's2' after the agreement has een emitted
         if stmts.is_stated("s1") {
             // Define the policy to emit
@@ -227,9 +227,9 @@ impl Agent for Amy {
 }
 impl RationalAgent for Amy {
     type Interface = Interface;
-    type Statements = Statements;
+    type Statements<'s> = StatementsMut<'s>;
 
-    fn poll(&mut self, stmts: &mut Self::Statements, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
+    fn poll(&mut self, stmts: &mut Self::Statements<'_>, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
         // The amy emits 's3' (an enacted action) after she received authorisation from the administrator
         if stmts.is_stated("s2") {
             // Amy first emits her intended enactment
@@ -297,9 +297,9 @@ impl Agent for Anton {
 }
 impl RationalAgent for Anton {
     type Interface = Interface;
-    type Statements = Statements;
+    type Statements<'s> = StatementsMut<'s>;
 
-    fn poll(&mut self, stmts: &mut Self::Statements, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
+    fn poll(&mut self, stmts: &mut Self::Statements<'_>, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
         // Anton emits some malicious messages at the end
         if stmts.is_stated("s3") && !stmts.is_stated("s5") {
             // To illustrate, we also emit an action at the end

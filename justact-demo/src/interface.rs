@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 10:58:56
 //  Last edited:
-//    18 Apr 2024, 17:14:09
+//    19 Apr 2024, 13:58:55
 //  Auto updated?
 //    Yes
 //
@@ -23,7 +23,6 @@ use justact_core::set::{MessageSet as _, Set as _};
 
 #[cfg(feature = "datalog")]
 use crate::lang::datalog;
-use crate::statements::Explanation;
 
 
 /***** LIBRARY *****/
@@ -137,17 +136,17 @@ impl Interface {
             style("[INFO] [").bold(),
             astyle.apply_to(id),
             style("]").bold(),
-            act.basis().id(),
+            act.enactment().id(),
             just_ids,
-            act.enactment().id()
+            act.basis().id(),
         );
 
         // Generate serialized messages
         let sbasis: String = datalog::MessageSet::from(Cow::Borrowed(act.basis())).extract().to_string().replace('\n', "\n |      ");
-        let sbasis: &str = &sbasis[..sbasis.len() - if sbasis.ends_with("\n |      ") { 10 } else { 0 }];
+        let sbasis: &str = &sbasis[..sbasis.len() - if sbasis.ends_with("\n |      ") { 9 } else { 0 }];
 
         let sjust: String = act.justification.extract().to_string().replace('\n', "\n |      ");
-        let sjust: &str = &sjust[..sjust.len() - if sjust.ends_with("\n |      ") { 10 } else { 0 }];
+        let sjust: &str = &sjust[..sjust.len() - if sjust.ends_with("\n |      ") { 9 } else { 0 }];
 
         let senact: String = datalog::MessageSet::from(Cow::Borrowed(act.enactment())).extract().to_string().replace('\n', "\n        ");
         let senact: &str = senact.trim_end();
@@ -187,9 +186,10 @@ impl Interface {
     ///
     /// # Arguments
     /// - `id`: The identifier of the agent who is logging.
-    /// - `msg`: Some message (retrieved as [`Display`]) to show.
+    /// - `act`: The [`datalog::Action`] that failed the audit.
+    /// - `expl`: The [`datalog::Explanation`] of why the audit failed.
     #[cfg(feature = "datalog")]
-    pub fn error_audit_datalog(&self, id: &str, expl: Explanation) {
+    pub fn error_audit_datalog(&self, id: &str, act: &datalog::Action<'_>, expl: datalog::Explanation) {
         // Retrieve some style for this agent
         let astyle: &Style = match self.entities.get(id) {
             Some(style) => style,
@@ -204,12 +204,12 @@ impl Interface {
             style("] [").bold(),
             astyle.apply_to(id),
             style("]").bold(),
-            expl.action.enactment().id(),
+            act.enactment().id(),
         );
 
         // Retrieve the message IDs for the justication
         let mut just_ids: String = String::new();
-        for msg in expl.action.justification.iter() {
+        for msg in act.justification.iter() {
             if !just_ids.is_empty() {
                 just_ids.push_str(", ");
             }
@@ -217,29 +217,29 @@ impl Interface {
         }
 
         // Generate serialized messages
-        let sbasis: String = datalog::MessageSet::from(Cow::Borrowed(expl.action.basis())).extract().to_string().replace('\n', "\n |      ");
-        let sbasis: &str = &sbasis[..sbasis.len() - if sbasis.ends_with("\n |      ") { 10 } else { 0 }];
+        let sbasis: String = datalog::MessageSet::from(Cow::Borrowed(act.basis())).extract().to_string().replace('\n', "\n |      ");
+        let sbasis: &str = &sbasis[..sbasis.len() - if sbasis.ends_with("\n |      ") { 9 } else { 0 }];
 
-        let sjust: String = expl.action.justification.extract().to_string().replace('\n', "\n |      ");
-        let sjust: &str = &sjust[..sjust.len() - if sjust.ends_with("\n |      ") { 10 } else { 0 }];
+        let sjust: String = act.justification.extract().to_string().replace('\n', "\n |      ");
+        let sjust: &str = &sjust[..sjust.len() - if sjust.ends_with("\n |      ") { 9 } else { 0 }];
 
-        let senact: String = datalog::MessageSet::from(Cow::Borrowed(expl.action.enactment())).extract().to_string().replace('\n', "\n        ");
+        let senact: String = datalog::MessageSet::from(Cow::Borrowed(act.enactment())).extract().to_string().replace('\n', "\n        ");
         let senact: &str = senact.trim_end();
 
-        let sint: String = match expl.explanation {
+        let sint: String = match expl {
             datalog::Explanation::NotStated { message } => format!("Message '{}' is not stated", style(message).bold()),
-            datalog::Explanation::Error { int } => format!("{}", int.to_string().replace('\n', "\n         ")),
+            datalog::Explanation::Error { int } => format!("{}", int.to_string().replace('\n', "\n    ")),
         };
         let sint: &str = sint.trim_end();
 
         // Write the sets
-        println!(" ├> Basis '{}' {{", style(expl.action.basis().id()).bold());
+        println!(" ├> Basis '{}' {{", style(act.basis().id()).bold());
         println!(" |      {sbasis}");
         println!(" |  }}");
         println!(" ├> Justification '{}' {{", style(just_ids).bold());
         println!(" |      {sjust}");
         println!(" |  }}");
-        println!(" ├> Enactment '{}' {{", style(expl.action.enactment().id()).bold());
+        println!(" ├> Enactment '{}' {{", style(act.enactment().id()).bold());
         println!(" |      {senact}");
         println!(" |  }}");
         println!(" |");

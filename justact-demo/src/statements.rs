@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:16:19
 //  Last edited:
-//    18 Apr 2024, 17:06:43
+//    19 Apr 2024, 12:00:14
 //  Auto updated?
 //    Yes
 //
@@ -17,9 +17,7 @@
 compile_error!("Please enable the 'datalog'-feature.");
 
 use std::borrow::Cow;
-use std::cell::{Ref, RefCell};
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
 
 use justact_core::message::{Action as _, Message as _};
 use justact_core::statements as justact;
@@ -28,8 +26,77 @@ use justact_core::statements as justact;
 use crate::lang::datalog;
 
 
+/***** ITERATORS *****/
+/// Iterates over all stated [`Message`](justact_core::message::Message)s in a [`StatementsMut`].
+#[derive(Clone, Debug)]
+pub struct StatedIter<'s> {
+    /// The agent for which we're scoped.
+    agent:  &'static str,
+    /// The iterator producing scopes filtered to us.
+    scopes: std::collections::hash_map::Iter<'s, Scope, HashMap<&'static str, datalog::Message>>,
+    /// The iterator going over the messages in a scope.
+    msgs:   Option<std::collections::hash_map::Values<'s, &'static str, datalog::Message>>,
+}
+impl<'s> Iterator for StatedIter<'s> {
+    type Item = &'s datalog::Message;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.msgs.iter_mut().flat_map(|i| i).next() {
+            Some(next) => Some(next),
+            None => match self.scopes.next() {
+                Some((scope, msgs)) => {
+                    if *scope == Scope::All || *scope == Scope::Agent(self.agent) {
+                        self.msgs = Some(msgs.values());
+                        self.next()
+                    } else {
+                        self.next()
+                    }
+                },
+                None => None,
+            },
+        }
+    }
+}
+
+/// Iterates over all enacted [`Action`](justact_core::message::Action)s in a [`StatementsMut`].
+#[derive(Clone, Debug)]
+pub struct EnactedIter<'s> {
+    /// The agent for which we're scoped.
+    agent:  &'static str,
+    /// The iterator producing scopes filtered to us.
+    scopes: std::collections::hash_map::Iter<'s, Scope, HashSet<datalog::Action<'static>>>,
+    /// The iterator going over the actions in a scope.
+    acts:   Option<std::collections::hash_set::Iter<'s, datalog::Action<'static>>>,
+}
+impl<'s> Iterator for EnactedIter<'s> {
+    type Item = &'s datalog::Action<'static>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.acts.iter_mut().flat_map(|i| i).next() {
+            Some(next) => Some(next),
+            None => match self.scopes.next() {
+                Some((scope, acts)) => {
+                    if *scope == Scope::All || *scope == Scope::Agent(self.agent) {
+                        self.acts = Some(acts.iter());
+                        self.next()
+                    } else {
+                        self.next()
+                    }
+                },
+                None => None,
+            },
+        }
+    }
+}
+
+
+
+
+
 /***** Auxillary *****/
-/// Determines the possible scopes that agents can send messages to for this [`MessagePool`].
+/// Determines the possible scopes that agents can send messages to for this [`Statements`].
 ///
 /// It's only to everybody.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -59,19 +126,16 @@ pub struct Explanation {
 /// Implements a [`Statements`](justact_core::statements::Statements) with a potentially partial view on messages.
 #[derive(Clone, Debug)]
 pub struct Statements {
-    /// Some scope that determines which part of the messages is returned.
-    scope: Scope,
-
     /// All messages in the system.
     ///
     /// They are mapped by scope, then by message ID.
     #[cfg(feature = "datalog")]
-    messages: Rc<RefCell<HashMap<Scope, HashMap<&'static str, datalog::Message>>>>,
+    messages: HashMap<Scope, HashMap<&'static str, datalog::Message>>,
     /// All actions in the system.
     ///
     /// They are mapped by scope.
     #[cfg(feature = "datalog")]
-    actions:  Rc<RefCell<HashMap<Scope, HashSet<datalog::Action<'static>>>>>,
+    actions:  HashMap<Scope, HashSet<datalog::Action<'static>>>,
 }
 
 impl Default for Statements {
@@ -84,90 +148,58 @@ impl Statements {
     /// # Returns
     /// A new Statements ready for use in the simulation.
     #[inline]
-    pub fn new() -> Self {
-        Self { scope: Scope::All, messages: Rc::new(RefCell::new(HashMap::new())), actions: Rc::new(RefCell::new(HashMap::new())) }
-    }
+    pub fn new() -> Self { Self { messages: HashMap::new(), actions: HashMap::new() } }
 
     /// Returns a new Statements that is scoped to the given agent.
     ///
     /// # Arguments
-    /// - `scope`: The [`Scope`] of the agent.
+    /// - `agent`: The identifier of the agent to scope to.
     ///
     /// # Returns
     /// A new Statements that will only returns messages for the given scope.
     #[inline]
-    pub fn scope(&self, scope: Scope) -> Self { Self { scope, messages: self.messages.clone(), actions: self.actions.clone() } }
+    pub fn scope<'s: 'm, 'm>(&'s mut self, agent: &'static str) -> StatementsMut<'m> {
+        StatementsMut { agent, messages: &mut self.messages, actions: &mut self.actions }
+    }
 }
 
 impl justact::Statements for Statements {
+    type EnactedIter<'s> = std::iter::FlatMap<
+        std::collections::hash_map::Values<'s, Scope, HashSet<datalog::Action<'s>>>,
+        std::collections::hash_set::Iter<'s, datalog::Action<'s>>,
+        fn(&'s HashSet<datalog::Action>) -> std::collections::hash_set::Iter<'s, datalog::Action<'s>>,
+    >;
     type Explanation<'s> = Explanation;
     type Id = &'static str;
-    type Message<'s> = datalog::Message;
+    type StatedIter<'s> = std::iter::FlatMap<
+        std::collections::hash_map::Values<'s, Scope, HashMap<&'static str, datalog::Message>>,
+        std::collections::hash_map::Values<'s, &'static str, datalog::Message>,
+        fn(&'s HashMap<&'static str, datalog::Message>) -> std::collections::hash_map::Values<'s, &'static str, datalog::Message>,
+    >;
+    type Statement<'s> = datalog::Message;
 
     #[inline]
     fn audit<'s>(&'s self) -> Result<(), Self::Explanation<'s>> {
-        match self.scope {
-            Scope::All => match self.actions.borrow().values().find_map(|acts| acts.iter().find_map(|a| a.audit(self).err().map(|e| (a, e)))) {
-                Some((action, explanation)) => Err(Explanation { action: action.clone(), explanation }),
-                None => Ok(()),
-            },
-
-            Scope::Agent(agent) => {
-                let acts: Ref<_> = self.actions.borrow();
-                if let Some(all) = acts.get(&Scope::All) {
-                    if let Some((action, explanation)) = all.iter().find_map(|a| a.audit(self).err().map(|e| (a, e))) {
-                        return Err(Explanation { action: action.clone(), explanation });
-                    }
-                } else if let Some(agent) = acts.get(&Scope::Agent(agent)) {
-                    if let Some((action, explanation)) = agent.iter().find_map(|a| a.audit(self).err().map(|e| (a, e))) {
-                        return Err(Explanation { action: action.clone(), explanation });
-                    }
-                }
-                Ok(())
-            },
+        match self.actions.values().find_map(|acts| acts.iter().find_map(|a| a.audit(self).err().map(|e| (a, e)))) {
+            Some((action, explanation)) => Err(Explanation { action: action.clone(), explanation }),
+            None => Ok(()),
         }
     }
 
     #[inline]
-    fn get_stated<'s>(&'s self, id: Self::Id) -> Option<Self::Message<'s>> {
-        match self.scope {
-            Scope::All => self.messages.borrow().values().find_map(|msgs| msgs.get(id)).cloned(),
-            Scope::Agent(agent) => {
-                let msgs: Ref<_> = self.messages.borrow();
-                if let Some(all) = msgs.get(&Scope::All) {
-                    return all.get(id).cloned();
-                } else if let Some(agent) = msgs.get(&Scope::Agent(agent)) {
-                    return agent.get(id).cloned();
-                }
-                None
-            },
-        }
-    }
+    fn get_stated<'s>(&'s self, id: Self::Id) -> Option<Self::Statement<'s>> { self.messages.values().find_map(|msgs| msgs.get(id)).cloned() }
 
     #[inline]
-    fn is_stated(&self, id: Self::Id) -> bool { self.get_stated(id).is_some() }
+    fn n_stated(&self) -> usize { self.messages.values().map(|msgs| msgs.len()).sum() }
 
     #[inline]
-    fn n_stated(&self) -> usize {
-        match self.scope {
-            Scope::All => self.messages.borrow().values().map(|msgs| msgs.len()).sum(),
-            Scope::Agent(agent) => {
-                let msgs: Ref<_> = self.messages.borrow();
-                msgs.get(&Scope::All).map(|msgs| msgs.len()).unwrap_or(0) + msgs.get(&Scope::Agent(agent)).map(|msgs| msgs.len()).unwrap_or(0)
-            },
-        }
-    }
+    fn stated<'s>(&'s self) -> Self::StatedIter<'s> { self.messages.values().flat_map(|msgs| msgs.values()) }
 
     #[inline]
-    fn n_enacted(&self) -> usize {
-        match self.scope {
-            Scope::All => self.actions.borrow().values().map(|acts| acts.len()).sum(),
-            Scope::Agent(agent) => {
-                let acts: Ref<_> = self.actions.borrow();
-                acts.get(&Scope::All).map(|acts| acts.len()).unwrap_or(0) + acts.get(&Scope::Agent(agent)).map(|acts| acts.len()).unwrap_or(0)
-            },
-        }
-    }
+    fn n_enacted(&self) -> usize { self.actions.values().map(|acts| acts.len()).sum() }
+
+    #[inline]
+    fn enacted<'s>(&'s self) -> Self::EnactedIter<'s> { self.actions.values().flat_map(|acts| acts.iter()) }
 }
 impl justact::Stating for Statements {
     #[cfg(feature = "datalog")]
@@ -180,14 +212,101 @@ impl justact::Stating for Statements {
     #[inline]
     fn state(&mut self, message: Self::Message, scope: Scope) -> Result<(), Self::Error> {
         // Inject it into the message pool.
-        self.messages.borrow_mut().entry(scope).or_default().insert(message.id(), message.into_owned());
+        self.messages.entry(scope).or_default().insert(message.id(), message.into_owned());
         Ok(())
     }
 
     #[inline]
     fn enact(&mut self, act: Self::Action, scope: Scope) -> Result<(), Self::Error> {
         // Inject it into the action pool.
-        self.actions.borrow_mut().entry(scope).or_default().insert(act);
+        self.actions.entry(scope).or_default().insert(act);
+        Ok(())
+    }
+}
+
+
+
+/// A mutably borrowed version of the [`Statements`] that is scoped to one particular version of an [`Agent`].
+#[derive(Debug)]
+pub struct StatementsMut<'s> {
+    /// The agent to which this StatementsMut is scoped.
+    agent:    &'static str,
+    /// The messages to mutate/read.
+    #[cfg(feature = "datalog")]
+    messages: &'s mut HashMap<Scope, HashMap<&'static str, datalog::Message>>,
+    /// The actions to mutate/read.
+    #[cfg(feature = "datalog")]
+    actions:  &'s mut HashMap<Scope, HashSet<datalog::Action<'static>>>,
+}
+
+impl<'s> justact::Statements for StatementsMut<'s> {
+    type EnactedIter<'s2> = EnactedIter<'s2> where Self: 's2;
+    type Explanation<'s2> = Explanation where Self: 's2;
+    type Id = &'static str;
+    type StatedIter<'s2> = StatedIter<'s2> where Self: 's2;
+    type Statement<'s2> = datalog::Message where Self: 's2;
+
+    #[inline]
+    fn audit<'s2>(&'s2 self) -> Result<(), Self::Explanation<'s2>> {
+        if let Some(all) = self.actions.get(&Scope::All) {
+            if let Some((action, explanation)) = all.iter().find_map(|a| a.audit(self).err().map(|e| (a, e))) {
+                return Err(Explanation { action: action.clone(), explanation });
+            }
+        } else if let Some(agent) = self.actions.get(&Scope::Agent(self.agent)) {
+            if let Some((action, explanation)) = agent.iter().find_map(|a| a.audit(self).err().map(|e| (a, e))) {
+                return Err(Explanation { action: action.clone(), explanation });
+            }
+        }
+        Ok(())
+    }
+
+    #[inline]
+    fn get_stated<'s2>(&'s2 self, id: Self::Id) -> Option<Self::Statement<'s2>> {
+        if let Some(all) = self.messages.get(&Scope::All) {
+            return all.get(id).cloned();
+        } else if let Some(agent) = self.messages.get(&Scope::Agent(self.agent)) {
+            return agent.get(id).cloned();
+        }
+        None
+    }
+
+    #[inline]
+    fn n_stated(&self) -> usize {
+        self.messages.get(&Scope::All).map(|msgs| msgs.len()).unwrap_or(0)
+            + self.messages.get(&Scope::Agent(self.agent)).map(|msgs| msgs.len()).unwrap_or(0)
+    }
+
+    #[inline]
+    fn stated<'s2>(&'s2 self) -> Self::StatedIter<'s2> { StatedIter { agent: self.agent, scopes: self.messages.iter(), msgs: None } }
+
+    #[inline]
+    fn n_enacted(&self) -> usize {
+        self.actions.get(&Scope::All).map(|acts| acts.len()).unwrap_or(0)
+            + self.actions.get(&Scope::Agent(self.agent)).map(|acts| acts.len()).unwrap_or(0)
+    }
+
+    #[inline]
+    fn enacted<'s2>(&'s2 self) -> Self::EnactedIter<'s2> { EnactedIter { agent: self.agent, scopes: self.actions.iter(), acts: None } }
+}
+impl<'s> justact::Stating for StatementsMut<'s> {
+    #[cfg(feature = "datalog")]
+    type Action = datalog::Action<'static>;
+    type Error = std::convert::Infallible;
+    #[cfg(feature = "datalog")]
+    type Message = Cow<'static, datalog::Message>;
+    type Scope = Scope;
+
+    #[inline]
+    fn state(&mut self, message: Self::Message, scope: Scope) -> Result<(), Self::Error> {
+        // Inject it into the message pool.
+        self.messages.entry(scope).or_default().insert(message.id(), message.into_owned());
+        Ok(())
+    }
+
+    #[inline]
+    fn enact(&mut self, act: Self::Action, scope: Scope) -> Result<(), Self::Error> {
+        // Inject it into the action pool.
+        self.actions.entry(scope).or_default().insert(act);
         Ok(())
     }
 }

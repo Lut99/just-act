@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:06:51
 //  Last edited:
-//    18 Apr 2024, 17:25:59
+//    19 Apr 2024, 13:57:04
 //  Auto updated?
 //    Yes
 //
@@ -12,17 +12,20 @@
 //!   Implements the main simulation loop that can run agents.
 //
 
+use std::collections::HashSet;
 use std::error;
 use std::fmt::{Display, Formatter, Result as FResult};
+use std::hash::{BuildHasher as _, Hash as _, Hasher, RandomState};
 
 use console::Style;
 use justact_core::agent::{Agent, AgentPoll, RationalAgent};
+use justact_core::message::{Action as _, Message as _};
 use justact_core::statements::Statements as _;
 use log::{debug, info};
 use stackvec::StackVec;
 
 use crate::interface::Interface;
-use crate::statements::{Scope, Statements};
+use crate::statements::{Statements, StatementsMut};
 
 
 /***** ERROR *****/
@@ -68,6 +71,8 @@ pub struct Simulation<A> {
     interface: Interface,
     /// The (alive!) agents in the simulation.
     agents:    Vec<A>,
+    /// A set of action (hashes) of the ones we've already audited
+    audited:   HashSet<u64>,
 }
 impl<A> Default for Simulation<A> {
     #[inline]
@@ -87,7 +92,7 @@ impl<A> Simulation<A> {
         interface.register("<system>", Style::new().bold());
 
         // Create ourselves with that
-        Self { stmts: Statements::new(), interface, agents: Vec::new() }
+        Self { stmts: Statements::new(), interface, agents: Vec::new(), audited: HashSet::new() }
     }
 
     /// Creates a new Simulation with no agents registered yet, but space to do so before re-allocation is triggered.
@@ -106,7 +111,7 @@ impl<A> Simulation<A> {
         interface.register("<system>", Style::new().bold());
 
         // Create ourselves with that
-        Self { stmts: Statements::new(), interface, agents: Vec::with_capacity(capacity) }
+        Self { stmts: Statements::new(), interface, agents: Vec::with_capacity(capacity), audited: HashSet::new() }
     }
 
     /// Builds a new Simulation with the given set of agents registered to it from the get-go.
@@ -136,7 +141,7 @@ impl<A> Simulation<A> {
 
         // Now built self
         debug!("Created demo Simulation with {} agents", agents.len());
-        Self { stmts: Statements::new(), interface, agents }
+        Self { stmts: Statements::new(), interface, agents, audited: HashSet::new() }
     }
 
     /// Registers a new agent after creation.
@@ -177,7 +182,7 @@ impl<A> Simulation<A> {
 }
 impl<A> Simulation<A>
 where
-    A: Agent<Identifier = &'static str> + RationalAgent<Statements = Statements, Interface = Interface>,
+    for<'s> A: 's + Agent<Identifier = &'static str> + RationalAgent<Statements<'s> = StatementsMut<'s>, Interface = Interface>,
 {
     /// Polls all the agents in the simulation once.
     ///
@@ -188,16 +193,23 @@ where
     /// This function errors if any of the agents fails to communicate with the end-user or other agents.
     pub fn poll(&mut self) -> Result<bool, Error<A::Error>> {
         info!("Starting new agent iteration");
+
+        // Iterate over the agents and only keep those that report they wanna be kept
         let mut agents: StackVec<64, A> = StackVec::new();
         for (i, mut agent) in self.agents.drain(..).enumerate() {
             debug!("Polling agent {}...", i);
+
+            // Prepare calling the agent's poll method
             let id: &'static str = agent.id();
-            match agent.poll(&mut self.stmts.scope(Scope::Agent(id)), &mut self.interface) {
+            let mut stmts: StatementsMut = self.stmts.scope(id);
+            match agent.poll(&mut stmts, &mut self.interface) {
                 Ok(AgentPoll::Alive) => agents.push(agent),
                 Ok(AgentPoll::Dead) => continue,
                 Err(err) => return Err(Error::AgentPoll { i, err }),
             }
         }
+
+        // Now re-instante those kept and return whether we're done
         self.agents.extend(agents);
         Ok(!self.agents.is_empty())
     }
@@ -208,16 +220,29 @@ where
     /// This function errors if any of the agents fails to communicate with the end-user or other agents.
     #[inline]
     pub fn run(&mut self) -> Result<(), Error<A::Error>> {
+        let state: RandomState = RandomState::default();
         loop {
             // Run the next iteration
             let reiterate: bool = self.poll()?;
 
             // Run an audit
-            if self.stmts.any_enacted() {
-                debug!("Running audit on {} actions...", self.stmts.n_enacted());
-                match self.stmts.audit() {
-                    Ok(_) => self.interface.log("<system>", "All actions are valid"),
-                    Err(expl) => self.interface.error_audit_datalog("<system>", expl),
+            debug!("Running audit on {} actions...", self.stmts.n_enacted());
+            for act in self.stmts.enacted() {
+                // Only audit this act if we didn't already
+                let hash: u64 = {
+                    let mut state = state.build_hasher();
+                    act.hash(&mut state);
+                    state.finish()
+                };
+                if self.audited.contains(&hash) {
+                    continue;
+                }
+                self.audited.insert(hash);
+
+                // Run the audit
+                match act.audit(&self.stmts) {
+                    Ok(_) => self.interface.log("<system>", format!("Action enacting statement '{}' is valid", act.basis().id())),
+                    Err(expl) => self.interface.error_audit_datalog("<system>", act, expl),
                 }
             }
 

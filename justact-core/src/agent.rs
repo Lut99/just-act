@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:52:41
 //  Last edited:
-//    18 Apr 2024, 17:23:51
+//    19 Apr 2024, 11:44:58
 //  Auto updated?
 //    Yes
 //
@@ -60,7 +60,9 @@ pub trait Agent {
 /// This version does so **synchronously**. See [`RationalAgentAsync`] for a version that is `async`.
 pub trait RationalAgent: Agent {
     /// The pool that agents use to state messages / enact actions, and inspect what others did.
-    type Statements: Statements + Stating;
+    type Statements<'s>: 's + Statements + Stating
+    where
+        Self: 's;
     /// The interface type that allows the Agent to communicate with users.
     type Interface;
 
@@ -70,7 +72,7 @@ pub trait RationalAgent: Agent {
     /// This effectively "runs" the agent itself. This receives any events on the incoming queue and outputs any on the outgoing.
     ///
     /// # Arguments
-    /// - `pool`: Some [`MessagePool`] that the agent uses to learn of new messages and/or emits new messages on. Essentially, acts as a way for the agent to interact with other agents.
+    /// - `stmts`: Some [`Statements`] that the agent uses to learn of new messages and/or emits new messages on. Essentially, acts as a way for the agent to interact with other agents.
     /// - `interface`: An [`Interface`] that the agent uses to show logs, receives user input and/or produces errors. Essentially, acts as a way for the agent to interact with users.
     ///
     /// # Returns
@@ -78,7 +80,7 @@ pub trait RationalAgent: Agent {
     ///
     /// # Errors
     /// Only fatal errors that prevent the Agent from participating in the system should cause this function to error. Examples are failures to emit errors to the `interface`.
-    fn poll(&mut self, pool: &mut Self::Statements, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error>;
+    fn poll(&mut self, stmts: &mut Self::Statements<'_>, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error>;
 }
 
 /// Extends an [`Agent`] with the capacity to think, i.e., do something.
@@ -104,9 +106,9 @@ pub trait RationalAgentAsync: Agent {
     ///
     /// # Errors
     /// Only fatal errors that prevent the Agent from participating in the system should cause this function to error. Examples are failures to emit errors to the `interface`.
-    fn poll_async<'s, 'p, 'i>(
+    fn poll_async<'s>(
         &'s mut self,
-        pool: &'p mut Self::StatementsAsync,
-        interface: &'i mut Self::InterfaceAsync,
-    ) -> impl 's + 'p + 'i + Future<Output = Result<AgentPoll, Self::Error>>;
+        pool: Self::StatementsAsync,
+        interface: Self::InterfaceAsync,
+    ) -> impl 's + Future<Output = Result<AgentPoll, Self::Error>>;
 }

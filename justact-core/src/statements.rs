@@ -4,7 +4,7 @@
 //  Created:
 //    18 Apr 2024, 15:27:35
 //  Last edited:
-//    18 Apr 2024, 17:03:12
+//    19 Apr 2024, 10:38:42
 //  Auto updated?
 //    Yes
 //
@@ -28,8 +28,17 @@ pub trait Statements {
     type Explanation<'s>: 's
     where
         Self: 's;
-    /// The type of messages that can be transferred with this pool.
-    type Message<'s>: 's + Message
+
+    /// The type of messages that can be stated.
+    type Statement<'s>: 's + Message
+    where
+        Self: 's;
+    /// An iterator for stated `Self::Statement`s.
+    type StatedIter<'s>: 's + Iterator
+    where
+        Self: 's;
+    /// An iterator for enacted actions.
+    type EnactedIter<'s>: 's + Iterator
     where
         Self: 's;
 
@@ -48,7 +57,8 @@ pub trait Statements {
     ///
     /// # Returns
     /// True if it has, or false if it hasn't.
-    fn is_stated(&self, id: Self::Id) -> bool;
+    #[inline]
+    fn is_stated(&self, id: Self::Id) -> bool { self.get_stated(id).is_some() }
 
     /// Returns a stated message by ID.
     ///
@@ -57,7 +67,7 @@ pub trait Statements {
     ///
     /// # Returns
     /// The referred message if it was stated and this agent had access to it, or else [`None`].
-    fn get_stated<'s>(&'s self, id: Self::Id) -> Option<Self::Message<'s>>;
+    fn get_stated<'s>(&'s self, id: Self::Id) -> Option<Self::Statement<'s>>;
 
     /// Returns the number of (stated) messages, or at least, the number that are reachable by this agent.
     ///
@@ -70,7 +80,13 @@ pub trait Statements {
     /// # Returns
     /// True if [`Statements::n_stated()`] is 0, or false otherwise.
     #[inline]
-    fn any_stated(&self) -> bool { self.n_stated() == 0 }
+    fn any_stated(&self) -> bool { self.n_stated() > 0 }
+
+    /// Returns an iterator over all stated messages.
+    ///
+    /// # Returns
+    /// A `Self::ActionIter` that iterates over the statements to which this agent has access.
+    fn stated<'s>(&'s self) -> Self::StatedIter<'s>;
 
     /// Returns the number of (enacted) actions, or at least, the number that are reachable by this agent.
     ///
@@ -83,7 +99,13 @@ pub trait Statements {
     /// # Returns
     /// True if [`Statements::n_enacted()`] is 0, or false otherwise.
     #[inline]
-    fn any_enacted(&self) -> bool { self.n_enacted() == 0 }
+    fn any_enacted(&self) -> bool { self.n_enacted() > 0 }
+
+    /// Returns an iterator over all enacted actions.
+    ///
+    /// # Returns
+    /// A `Self::ActionIter` that iterates over the enacted actions to which this agent has access.
+    fn enacted<'s>(&'s self) -> Self::EnactedIter<'s>;
 }
 
 
