@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 10:14:23
 //  Last edited:
-//    18 Apr 2024, 15:31:44
+//    19 Apr 2024, 14:02:20
 //  Auto updated?
 //    Yes
 //
@@ -15,7 +15,7 @@
 
 use std::borrow::Cow;
 
-use crate::message::{Action, Message};
+use crate::message::Message;
 use crate::policy::Policy;
 
 
@@ -86,12 +86,4 @@ where
 
     #[inline]
     fn extract<'s>(&'s self) -> Self::Policy<'s> { T::extract(self) }
-}
-
-
-
-/// Defines a collection of actions.
-pub trait ActionSet: From<Self::Action> + Set<Elem = Self::Action> {
-    /// The type of actions which are contained in this ActionSet.
-    type Action: Action;
 }

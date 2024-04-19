@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:00:44
 //  Last edited:
-//    19 Apr 2024, 11:47:16
+//    19 Apr 2024, 14:14:11
 //  Auto updated?
 //    Yes
 //
@@ -73,15 +73,14 @@ impl Agent for AbstractAgent {
     }
 }
 impl RationalAgent for AbstractAgent {
-    type Interface = Interface;
     type Statements<'s> = StatementsMut<'s>;
 
-    fn poll(&mut self, pool: &mut Self::Statements<'_>, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
+    fn poll(&mut self, pool: &mut Self::Statements<'_>) -> Result<AgentPoll, Self::Error> {
         match self {
-            Self::Administrator(a) => a.poll(pool, interface),
-            Self::Amy(a) => a.poll(pool, interface),
-            Self::Anton(a) => a.poll(pool, interface),
-            Self::Consortium(c) => c.poll(pool, interface),
+            Self::Administrator(a) => a.poll(pool),
+            Self::Amy(a) => a.poll(pool),
+            Self::Anton(a) => a.poll(pool),
+            Self::Consortium(c) => c.poll(pool),
         }
     }
 }
@@ -103,20 +102,17 @@ impl From<Consortium> for AbstractAgent {
 }
 
 /// The consortium agent, authoring messages.
-struct Consortium;
+struct Consortium {
+    /// The [`Interface`] with which this agent communicates.
+    interface: Interface,
+}
 impl Consortium {
     /// Constructor for the Consortium.
     ///
-    /// # Arguments
-    /// - `interface`: Some [`Interface`] to register ourselves with.
-    ///
     /// # Returns
     /// A new Consortium agent.
-    fn new(interface: &mut Interface) -> Self {
-        // Register this agent before returning ourselves
-        interface.register("consortium", Style::new().yellow().bold());
-        Self {}
-    }
+    #[inline]
+    fn new() -> Self { Self { interface: Interface::new(Style::new().yellow().bold()) } }
 }
 impl Agent for Consortium {
     type Error = std::convert::Infallible;
@@ -126,10 +122,9 @@ impl Agent for Consortium {
     fn id(&self) -> Self::Identifier { "consortium" }
 }
 impl RationalAgent for Consortium {
-    type Interface = Interface;
     type Statements<'s> = StatementsMut<'s>;
 
-    fn poll(&mut self, stmts: &mut Self::Statements<'_>, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
+    fn poll(&mut self, stmts: &mut Self::Statements<'_>) -> Result<AgentPoll, Self::Error> {
         // The consortium emits 's1' at the start of the interaction
         if !stmts.is_stated("s1") {
             // Define the policy to emit
@@ -140,7 +135,7 @@ impl RationalAgent for Consortium {
             let msg: Message = Message::new("s1", "consortium", spec.into());
 
             // Log it
-            interface.log_state_datalog("consortium", &msg);
+            self.interface.log_state_datalog("consortium", &msg);
 
             // Emit it
             stmts.state(Cow::Owned(msg), Scope::All)?;
@@ -152,20 +147,17 @@ impl RationalAgent for Consortium {
 }
 
 /// The administrator agent, holding all the power.
-struct Administrator;
+struct Administrator {
+    /// The [`Interface`] with which this agent communicates.
+    interface: Interface,
+}
 impl Administrator {
     /// Constructor for the Administrator.
     ///
-    /// # Arguments
-    /// - `interface`: Some [`Interface`] to register ourselves with.
-    ///
     /// # Returns
     /// A new Administrator agent.
-    fn new(interface: &mut Interface) -> Self {
-        // Register this agent before returning ourselves
-        interface.register("administrator", Style::new().blue().bold());
-        Self {}
-    }
+    #[inline]
+    fn new() -> Self { Self { interface: Interface::new(Style::new().blue().bold()) } }
 }
 impl Agent for Administrator {
     type Error = std::convert::Infallible;
@@ -175,10 +167,9 @@ impl Agent for Administrator {
     fn id(&self) -> Self::Identifier { "administrator" }
 }
 impl RationalAgent for Administrator {
-    type Interface = Interface;
     type Statements<'s> = StatementsMut<'s>;
 
-    fn poll(&mut self, stmts: &mut Self::Statements<'_>, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
+    fn poll(&mut self, stmts: &mut Self::Statements<'_>) -> Result<AgentPoll, Self::Error> {
         // The administrator emits 's2' after the agreement has een emitted
         if stmts.is_stated("s1") {
             // Define the policy to emit
@@ -188,7 +179,7 @@ impl RationalAgent for Administrator {
             let msg: Message = Message::new("s2", "administrator", spec.into());
 
             // Log it
-            interface.log_state_datalog("administrator", &msg);
+            self.interface.log_state_datalog("administrator", &msg);
 
             // Emit it
             stmts.state(Cow::Owned(msg), Scope::All)?;
@@ -203,20 +194,17 @@ impl RationalAgent for Administrator {
 }
 
 /// The Amy agent, doing the data access
-struct Amy;
+struct Amy {
+    /// The [`Interface`] with which this agent communicates.
+    interface: Interface,
+}
 impl Amy {
     /// Constructor for the Amy.
     ///
-    /// # Arguments
-    /// - `interface`: Some [`Interface`] to register ourselves with.
-    ///
     /// # Returns
     /// A new Amy agent.
-    fn new(interface: &mut Interface) -> Self {
-        // Register this agent before returning ourselves
-        interface.register("amy", Style::new().green().bold());
-        Self {}
-    }
+    #[inline]
+    fn new() -> Self { Self { interface: Interface::new(Style::new().green().bold()) } }
 }
 impl Agent for Amy {
     type Error = std::convert::Infallible;
@@ -226,10 +214,9 @@ impl Agent for Amy {
     fn id(&self) -> Self::Identifier { "amy" }
 }
 impl RationalAgent for Amy {
-    type Interface = Interface;
     type Statements<'s> = StatementsMut<'s>;
 
-    fn poll(&mut self, stmts: &mut Self::Statements<'_>, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
+    fn poll(&mut self, stmts: &mut Self::Statements<'_>) -> Result<AgentPoll, Self::Error> {
         // The amy emits 's3' (an enacted action) after she received authorisation from the administrator
         if stmts.is_stated("s2") {
             // Amy first emits her intended enactment
@@ -241,7 +228,7 @@ impl RationalAgent for Amy {
                 let msg: Message = Message::new("s3", "amy", spec.into());
 
                 // Log it
-                interface.log_state_datalog("amy", &msg);
+                self.interface.log_state_datalog("amy", &msg);
 
                 // Emit it
                 stmts.state(Cow::Owned(msg), Scope::All)?;
@@ -257,7 +244,7 @@ impl RationalAgent for Amy {
                 };
 
                 // Log it
-                interface.log_enact_datalog("amy", &act);
+                self.interface.log_enact_datalog("amy", &act);
 
                 // Emit it
                 stmts.enact(act, Scope::All)?;
@@ -273,20 +260,17 @@ impl RationalAgent for Amy {
 }
 
 /// The Anton agent, that wreaks havoc.
-struct Anton;
+struct Anton {
+    /// The [`Interface`] with which this agent communicates.
+    interface: Interface,
+}
 impl Anton {
     /// Constructor for the Anton.
     ///
-    /// # Arguments
-    /// - `interface`: Some [`Interface`] to register ourselves with.
-    ///
     /// # Returns
     /// A new Anton agent.
-    fn new(interface: &mut Interface) -> Self {
-        // Register this agent before returning ourselves
-        interface.register("anton", Style::new().magenta().bold());
-        Self {}
-    }
+    #[inline]
+    fn new() -> Self { Self { interface: Interface::new(Style::new().magenta().bold()) } }
 }
 impl Agent for Anton {
     type Error = std::convert::Infallible;
@@ -296,10 +280,9 @@ impl Agent for Anton {
     fn id(&self) -> Self::Identifier { "anton" }
 }
 impl RationalAgent for Anton {
-    type Interface = Interface;
     type Statements<'s> = StatementsMut<'s>;
 
-    fn poll(&mut self, stmts: &mut Self::Statements<'_>, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error> {
+    fn poll(&mut self, stmts: &mut Self::Statements<'_>) -> Result<AgentPoll, Self::Error> {
         // Anton emits some malicious messages at the end
         if stmts.is_stated("s3") && !stmts.is_stated("s5") {
             // To illustrate, we also emit an action at the end
@@ -311,7 +294,7 @@ impl RationalAgent for Anton {
                 let msg: Message = Message::new("s4", "anton", spec.into());
 
                 // Log it
-                interface.log_state_datalog("anton", &msg);
+                self.interface.log_state_datalog("anton", &msg);
 
                 // Emit it
                 stmts.state(Cow::Owned(msg), Scope::All)?;
@@ -324,7 +307,7 @@ impl RationalAgent for Anton {
                 let msg: Message = Message::new("s5", "anton", spec.into());
 
                 // Log it
-                interface.log_state_datalog("anton", &msg);
+                self.interface.log_state_datalog("anton", &msg);
 
                 // Emit it
                 stmts.state(Cow::Owned(msg), Scope::All)?;
@@ -338,7 +321,7 @@ impl RationalAgent for Anton {
                 };
 
                 // Log it
-                interface.log_enact_datalog("anton", &act);
+                self.interface.log_enact_datalog("anton", &act);
 
                 // Emit it
                 stmts.enact(act, Scope::All)?;
@@ -351,7 +334,7 @@ impl RationalAgent for Anton {
             let msg: Message = Message::new("s6", "anton", spec.into());
 
             // Log it
-            interface.log_state_datalog("anton", &msg);
+            self.interface.log_state_datalog("anton", &msg);
 
             // Emit it
             stmts.state(Cow::Owned(msg), Scope::All)?;
@@ -382,10 +365,10 @@ fn main() {
 
     // Build the Simulation
     let mut sim: Simulation<AbstractAgent> = Simulation::with_capacity(1);
-    sim.register_with_interface(Consortium::new);
-    sim.register_with_interface(Administrator::new);
-    sim.register_with_interface(Amy::new);
-    sim.register_with_interface(Anton::new);
+    sim.register(Consortium::new());
+    sim.register(Administrator::new());
+    sim.register(Amy::new());
+    sim.register(Anton::new());
 
     // Run it
     println!();

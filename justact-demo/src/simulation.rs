@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:06:51
 //  Last edited:
-//    19 Apr 2024, 13:57:04
+//    19 Apr 2024, 14:13:15
 //  Auto updated?
 //    Yes
 //
@@ -87,12 +87,8 @@ impl<A> Simulation<A> {
     pub fn new() -> Self {
         info!("Creating demo Simulation");
 
-        // Create an interface with ourselves in it
-        let mut interface: Interface = Interface::new();
-        interface.register("<system>", Style::new().bold());
-
         // Create ourselves with that
-        Self { stmts: Statements::new(), interface, agents: Vec::new(), audited: HashSet::new() }
+        Self { stmts: Statements::new(), interface: Interface::new(Style::new().bold()), agents: Vec::new(), audited: HashSet::new() }
     }
 
     /// Creates a new Simulation with no agents registered yet, but space to do so before re-allocation is triggered.
@@ -106,12 +102,13 @@ impl<A> Simulation<A> {
     pub fn with_capacity(capacity: usize) -> Self {
         info!("Creating demo Simulation");
 
-        // Create an interface with ourselves in it
-        let mut interface: Interface = Interface::new();
-        interface.register("<system>", Style::new().bold());
-
         // Create ourselves with that
-        Self { stmts: Statements::new(), interface, agents: Vec::with_capacity(capacity), audited: HashSet::new() }
+        Self {
+            stmts:     Statements::new(),
+            interface: Interface::new(Style::new().bold()),
+            agents:    Vec::with_capacity(capacity),
+            audited:   HashSet::new(),
+        }
     }
 
     /// Builds a new Simulation with the given set of agents registered to it from the get-go.
@@ -125,10 +122,6 @@ impl<A> Simulation<A> {
     pub fn with_agents(agents: impl IntoIterator<Item = A>) -> Self {
         info!("Creating demo Simulation");
 
-        // Create an interface with ourselves in it
-        let mut interface: Interface = Interface::new();
-        interface.register("<system>", Style::new().bold());
-
         // Create agents out of the given iterator, logging as we go
         let agents: Vec<A> = agents
             .into_iter()
@@ -141,7 +134,7 @@ impl<A> Simulation<A> {
 
         // Now built self
         debug!("Created demo Simulation with {} agents", agents.len());
-        Self { stmts: Statements::new(), interface, agents, audited: HashSet::new() }
+        Self { stmts: Statements::new(), interface: Interface::new(Style::new().bold()), agents, audited: HashSet::new() }
     }
 
     /// Registers a new agent after creation.
@@ -152,16 +145,6 @@ impl<A> Simulation<A> {
     pub fn register(&mut self, agent: impl Into<A>) {
         debug!("Registered agent {}", self.agents.len());
         self.agents.push(agent.into());
-    }
-
-    /// Registers a new agent after creation, calling the provided constructor for it.
-    ///
-    /// # Arguments
-    /// - `constructor_fn`: Some constructor to create an Agent that is compatible with `A`. It should accept a mutable reference to an [`Interface`] to register itself.
-    #[inline]
-    pub fn register_with_interface<APrime: Into<A>>(&mut self, constructor_fn: impl FnOnce(&mut Interface) -> APrime) {
-        debug!("Registered agent {}", self.agents.len());
-        self.agents.push(constructor_fn(&mut self.interface).into());
     }
 
     /// Returns a reference to the internal [`Statements`].
@@ -182,7 +165,7 @@ impl<A> Simulation<A> {
 }
 impl<A> Simulation<A>
 where
-    for<'s> A: 's + Agent<Identifier = &'static str> + RationalAgent<Statements<'s> = StatementsMut<'s>, Interface = Interface>,
+    for<'s> A: 's + Agent<Identifier = &'static str> + RationalAgent<Statements<'s> = StatementsMut<'s>>,
 {
     /// Polls all the agents in the simulation once.
     ///
@@ -202,7 +185,7 @@ where
             // Prepare calling the agent's poll method
             let id: &'static str = agent.id();
             let mut stmts: StatementsMut = self.stmts.scope(id);
-            match agent.poll(&mut stmts, &mut self.interface) {
+            match agent.poll(&mut stmts) {
                 Ok(AgentPoll::Alive) => agents.push(agent),
                 Ok(AgentPoll::Dead) => continue,
                 Err(err) => return Err(Error::AgentPoll { i, err }),

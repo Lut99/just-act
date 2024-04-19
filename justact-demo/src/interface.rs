@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 10:58:56
 //  Last edited:
-//    19 Apr 2024, 13:58:55
+//    19 Apr 2024, 14:08:40
 //  Auto updated?
 //    Yes
 //
@@ -14,7 +14,6 @@
 //
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::fmt::Display;
 
 use console::{style, Style};
@@ -29,39 +28,20 @@ use crate::lang::datalog;
 /// Implements a [`justact::Interface`] that allows agents to communicate with the simulation environment's end user.
 #[derive(Clone, Debug)]
 pub struct Interface {
-    /// Maps registered entities to some style for them.
-    entities: HashMap<String, Style>,
+    /// The style for this agent's interface.
+    style: Style,
 }
 
-impl Default for Interface {
-    #[inline]
-    fn default() -> Self { Self::new() }
-}
 impl Interface {
     /// Constructor for the Interface.
     ///
-    /// # Returns
-    /// A new Interface ready for use in the simulation.
-    #[inline]
-    pub fn new() -> Self { Self { entities: HashMap::new() } }
-
-    /// Constructor for the Interface that prepares space for some entities.
-    ///
     /// # Arguments
-    /// - `capacity`: The minimum number of entities that can register before a re-allocation happens.
+    /// - `style`: The [`Style`] to initialize this interface logger for.
     ///
     /// # Returns
     /// A new Interface ready for use in the simulation.
     #[inline]
-    pub fn with_capacity(capacity: usize) -> Self { Self { entities: HashMap::with_capacity(capacity) } }
-
-    /// Registers a new agent with this Interface.
-    ///
-    /// # Arguments
-    /// - `id`: Some identifier to recognize the agent under later.
-    /// - `style`: A [`Style`] describing colouring to apply for that agent.
-    #[inline]
-    pub fn register(&mut self, id: impl Into<String>, style: impl Into<Style>) { self.entities.insert(id.into(), style.into()); }
+    pub fn new(style: Style) -> Self { Self { style } }
 
     /// Logs an arbitrary message to stdout.
     ///
@@ -69,14 +49,7 @@ impl Interface {
     /// - `id`: The identifier of the agent who is logging.
     /// - `msg`: Some message (retrieved as [`Display`]) to show.
     pub fn log(&self, id: &str, msg: impl Display) {
-        // Retrieve some style for this agent
-        let astyle: &Style = match self.entities.get(id) {
-            Some(style) => style,
-            None => panic!("Unregistered entity '{id}'"),
-        };
-
-        // Write for that agent
-        println!("{}{}{} {}", style("[INFO] [").bold(), astyle.apply_to(id), style("]").bold(), msg);
+        println!("{}{}{} {}\n", style("[INFO] [").bold(), self.style.apply_to(id), style("]").bold(), msg);
     }
 
     /// Logs the statement of a datalog [`Message`] to stdout.
@@ -86,14 +59,8 @@ impl Interface {
     /// - `msg`: Some [`datalog::Message`] to emit.
     #[cfg(feature = "datalog")]
     pub fn log_state_datalog(&self, id: &str, msg: &datalog::Message) {
-        // Retrieve some style for this agent
-        let astyle: &Style = match self.entities.get(id) {
-            Some(style) => style,
-            None => panic!("Unregistered entity '{id}'"),
-        };
-
         // Write the main log-line
-        println!("{}{}{} Emitted message '{}'", style("[INFO] [").bold(), astyle.apply_to(id), style("]").bold(), msg.id());
+        println!("{}{}{} Emitted message '{}'", style("[INFO] [").bold(), self.style.apply_to(id), style("]").bold(), msg.id());
 
         // Generate a serialized message
         let smsg: String = msg.to_string().replace('\n', "\n        ");
@@ -115,12 +82,6 @@ impl Interface {
     /// - `act`: Some [`datalog::Action`] to emit.
     #[cfg(feature = "datalog")]
     pub fn log_enact_datalog(&self, id: &str, act: &datalog::Action) {
-        // Retrieve some style for this agent
-        let astyle: &Style = match self.entities.get(id) {
-            Some(style) => style,
-            None => panic!("Unregistered entity '{id}'"),
-        };
-
         // Retrieve the message IDs for the justication
         let mut just_ids: String = String::new();
         for msg in act.justification.iter() {
@@ -134,7 +95,7 @@ impl Interface {
         println!(
             "{}{}{} Enacted message '{}' using '{}' (basis '{}')",
             style("[INFO] [").bold(),
-            astyle.apply_to(id),
+            self.style.apply_to(id),
             style("]").bold(),
             act.enactment().id(),
             just_ids,
@@ -172,14 +133,15 @@ impl Interface {
     /// - `id`: The identifier of the agent who is logging.
     /// - `msg`: Some message (retrieved as [`Display`]) to show.
     pub fn error(&self, id: &str, msg: impl Display) {
-        // Retrieve some style for this agent
-        let astyle: &Style = match self.entities.get(id) {
-            Some(style) => style,
-            None => panic!("Unregistered entity '{id}'"),
-        };
-
-        // Write for that agent
-        println!("{}{}{}{}{} {}", style("[").bold(), style("ERROR").bold().red(), style("] [").bold(), astyle.apply_to(id), style("]").bold(), msg);
+        println!(
+            "{}{}{}{}{} {}\n",
+            style("[").bold(),
+            style("ERROR").bold().red(),
+            style("] [").bold(),
+            self.style.apply_to(id),
+            style("]").bold(),
+            msg
+        );
     }
 
     /// Logs a the result of a failed audit to stdout.
@@ -190,19 +152,13 @@ impl Interface {
     /// - `expl`: The [`datalog::Explanation`] of why the audit failed.
     #[cfg(feature = "datalog")]
     pub fn error_audit_datalog(&self, id: &str, act: &datalog::Action<'_>, expl: datalog::Explanation) {
-        // Retrieve some style for this agent
-        let astyle: &Style = match self.entities.get(id) {
-            Some(style) => style,
-            None => panic!("Unregistered entity '{id}'"),
-        };
-
         // Write for that agent
         println!(
             "{}{}{}{}{} Action that enacts '{}' did not succeed audit",
             style("[").bold(),
             style("ERROR").bold().red(),
             style("] [").bold(),
-            astyle.apply_to(id),
+            self.style.apply_to(id),
             style("]").bold(),
             act.enactment().id(),
         );

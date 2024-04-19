@@ -15,11 +15,12 @@ Initial release!
 
 ### Core - Added
 - `Message`-, `MessageSet`- and `Action`-traits for encoding policy-on-the-wire.
+    - Added `Set` as a non-`Message`-specific set abstraction trait.
 - `Policy`-trait for encoding policy.
-- `MessagePool`- and `Interface`-traits for representing agent communication channels.
-    - Also added `MessagePoolAsync` and `InterfaceAsync` counterparts.
+- `Statements`-trait for encoding stated messages and enacted actions.
+    - Also added `StatementsAsync` counterpart.
 - `Agent`- and `RationalAgent`-traits for representing agents.
-    - Also added `RationalAgentAsync` counterpart.
+    - Also added `RationalAgentAsync` counterpart for the latter.
 
 
 ### Policy - Added
@@ -35,7 +36,8 @@ Initial release!
 
 ### Demo - Added
 - $Datalog^\neg$-specific implementations for `Message`, `MessageSet` and `Action`.
-- Simple, synchronous implementations for `MessagePool` and `Interface`.
+- Fully in-memory implementation for `Statements`.
+- Some `Interface` that agents use to log their actions.
 - Examples:
     - The first example from the paper, Step1 ([`paper1.rs`](/justact-demo/examples/paper1.rs)).
         - This adds the `AbstractAgent`, `Consortium`, `Administrator`, `Amy` and `Anton` implementations for `RationalAgent`.

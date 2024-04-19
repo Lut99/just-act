@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:52:41
 //  Last edited:
-//    19 Apr 2024, 11:44:58
+//    19 Apr 2024, 14:12:53
 //  Auto updated?
 //    Yes
 //
@@ -63,8 +63,6 @@ pub trait RationalAgent: Agent {
     type Statements<'s>: 's + Statements + Stating
     where
         Self: 's;
-    /// The interface type that allows the Agent to communicate with users.
-    type Interface;
 
 
     /// Runs the underlying Agent code for one run.
@@ -73,14 +71,13 @@ pub trait RationalAgent: Agent {
     ///
     /// # Arguments
     /// - `stmts`: Some [`Statements`] that the agent uses to learn of new messages and/or emits new messages on. Essentially, acts as a way for the agent to interact with other agents.
-    /// - `interface`: An [`Interface`] that the agent uses to show logs, receives user input and/or produces errors. Essentially, acts as a way for the agent to interact with users.
     ///
     /// # Returns
     /// An [`AgentPoll`]-type that determines what the runtime should do with this agent next.
     ///
     /// # Errors
     /// Only fatal errors that prevent the Agent from participating in the system should cause this function to error. Examples are failures to emit errors to the `interface`.
-    fn poll(&mut self, stmts: &mut Self::Statements<'_>, interface: &mut Self::Interface) -> Result<AgentPoll, Self::Error>;
+    fn poll(&mut self, stmts: &mut Self::Statements<'_>) -> Result<AgentPoll, Self::Error>;
 }
 
 /// Extends an [`Agent`] with the capacity to think, i.e., do something.
@@ -88,9 +85,9 @@ pub trait RationalAgent: Agent {
 /// This version does so **asynchronously**, i.e., `async`. See [`RationalAgent`] for a version that is not `async`.
 pub trait RationalAgentAsync: Agent {
     /// The pool that agents use to state messages / enact actions, and inspect what others did.
-    type StatementsAsync: Statements + StatingAsync;
-    /// The interface type that allows the Agent to communicate with users.
-    type InterfaceAsync;
+    type StatementsAsync<'s>: 's + Statements + StatingAsync
+    where
+        Self: 's;
 
 
     /// Runs the underlying Agent code for one run.
@@ -99,16 +96,11 @@ pub trait RationalAgentAsync: Agent {
     ///
     /// # Arguments
     /// - `pool`: Some [`MessagePool`] that the agent uses to learn of new messages and/or emits new messages on. Essentially, acts as a way for the agent to interact with other agents.
-    /// - `interface`: An [`Interface`] that the agent uses to show logs, receives user input and/or produces errors. Essentially, acts as a way for the agent to interact with users.
     ///
     /// # Returns
     /// An [`AgentPoll`]-type that determines what the runtime should do with this agent next.
     ///
     /// # Errors
     /// Only fatal errors that prevent the Agent from participating in the system should cause this function to error. Examples are failures to emit errors to the `interface`.
-    fn poll_async<'s>(
-        &'s mut self,
-        pool: Self::StatementsAsync,
-        interface: Self::InterfaceAsync,
-    ) -> impl 's + Future<Output = Result<AgentPoll, Self::Error>>;
+    fn poll_async<'s1, 's2>(&'s1 mut self, pool: Self::StatementsAsync<'s2>) -> impl 's1 + 's2 + Future<Output = Result<AgentPoll, Self::Error>>;
 }
