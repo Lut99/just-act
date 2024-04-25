@@ -4,7 +4,7 @@
 //  Created:
 //    18 Apr 2024, 11:37:12
 //  Last edited:
-//    18 Apr 2024, 16:58:17
+//    25 Apr 2024, 10:26:33
 //  Auto updated?
 //    Yes
 //
@@ -16,7 +16,6 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::hash::Hash;
-use std::mem::MaybeUninit;
 
 use justact_core::set::Set as _;
 use stackvec::StackVec;
@@ -99,6 +98,8 @@ impl<T> Iterator for IntoIter<T> {
 /// A common ancetor to both [`MessageSet`]s and [`ActionSet`]s.
 #[derive(Clone, Debug)]
 pub enum Set<T: Hash> {
+    /// No elements are in the set.
+    Empty,
     /// In case there's exactly one element, to prevent allocation.
     Singleton(T),
     /// In case there's zero _or_ multiple elements.
@@ -114,11 +115,12 @@ impl<T: Hash> Set<T> {
     /// # Returns
     /// A Set with not elements in it yet.
     #[inline]
-    pub fn empty() -> Self { Self::Multi(HashSet::new()) }
+    pub fn empty() -> Self { Self::Empty }
 
     /// Returns the number of elements in this set.
     pub fn len(&self) -> usize {
         match self {
+            Self::Empty => 0,
             Self::Singleton(_) => 1,
             Self::Multi(msgs) => msgs.len(),
         }
@@ -131,15 +133,16 @@ impl<T: Eq + Hash> Set<T> {
     /// - `other`: Some other Set to join.
     #[inline]
     pub fn join(&mut self, other: impl IntoIterator<Item = T>) {
-        // Get an owned version of self, leaving us temporarily muted
-        // SAFETY: We can cast the pointers here because `MaybeUninit` will have the same layout and alignment as `Self`
-        let this: &mut MaybeUninit<Self> = unsafe { &mut *((self as *mut Self) as *mut MaybeUninit<Self>) };
-        let mut temp: MaybeUninit<Self> = MaybeUninit::uninit();
-        std::mem::swap(&mut temp, this);
+        // Get an owned version of self
+        let mut temp: Self = Self::Empty;
+        std::mem::swap(&mut temp, self);
 
         // Create a new temp `self` that's potentially changed variant
-        // SAFETY: We know it's initialized because we constructed it through a pointer cast
-        let mut temp: MaybeUninit<Self> = match unsafe { temp.assume_init() } {
+        let mut temp: Self = match temp {
+            Self::Empty => {
+                // Create an allocation for other
+                Self::Multi(other.into_iter().collect())
+            },
             Self::Singleton(msg) => {
                 let iter = other.into_iter();
                 let size_hint: (usize, Option<usize>) = iter.size_hint();
@@ -150,7 +153,7 @@ impl<T: Eq + Hash> Set<T> {
                 elems.extend(iter);
 
                 // Return it. Even if the set is only 1 (i.e., the other was empty or duplicate), we still insert as multi to not waste the allocation.
-                MaybeUninit::new(Self::Multi(elems))
+                Self::Multi(elems)
             },
             Self::Multi(mut msgs) => {
                 if msgs.capacity() == 0 {
@@ -160,14 +163,12 @@ impl<T: Eq + Hash> Set<T> {
                     // Extend it instead. Even if the extension would result in a set of exactly 1, we still use this over Singleton to not waste the allocation.
                     msgs.extend(other);
                 }
-                MaybeUninit::new(Self::Multi(msgs))
+                Self::Multi(msgs)
             },
         };
 
         // Now we swap the temp back and put it in self
-        // SAFETY: We can cast the pointers here because `MaybeUninit` has the same layout and alignment as `Self`
-        // SAFETY: We can unwrap the MaybeUninit because all codepaths above initialize it
-        std::mem::swap(this, &mut temp);
+        std::mem::swap(self, &mut temp);
     }
 }
 impl<'a, T: Clone + Eq + Hash> Set<Cow<'a, T>> {
@@ -178,6 +179,7 @@ impl<'a, T: Clone + Eq + Hash> Set<Cow<'a, T>> {
     #[inline]
     pub fn reborrow<'s>(&'s self) -> Set<Cow<'s, T>> {
         match self {
+            Self::Empty => Self::Empty,
             Self::Singleton(elem) => Set::Singleton(Cow::Borrowed(elem.as_ref())),
             Self::Multi(elems) => Set::Multi(elems.iter().map(|e| Cow::Borrowed(e.as_ref())).collect()),
         }
@@ -204,8 +206,13 @@ impl<T: Eq + Hash> PartialEq for Set<T> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::Empty, Self::Empty) => true,
+            (Self::Empty, Self::Singleton(_)) => false,
+            (Self::Empty, Self::Multi(rhs)) => rhs.is_empty(),
+            (Self::Singleton(_), Self::Empty) => false,
             (Self::Singleton(lhs), Self::Singleton(rhs)) => lhs == rhs,
             (Self::Singleton(lhs), Self::Multi(rhs)) => rhs.len() == 1 && lhs == rhs.iter().next().unwrap(),
+            (Self::Multi(lhs), Self::Empty) => lhs.is_empty(),
             (Self::Multi(lhs), Self::Singleton(rhs)) => lhs.len() == 1 && lhs.iter().next().unwrap() == rhs,
             (Self::Multi(lhs), Self::Multi(rhs)) => lhs == rhs,
         }
@@ -220,6 +227,7 @@ impl<T: Eq + Hash> justact_core::set::Set for Set<T> {
     #[inline]
     fn iter<'s>(&'s self) -> Self::Iter<'s> {
         match self {
+            Self::Empty => Iter::Singleton(None),
             Self::Singleton(elem) => Iter::Singleton(Some(elem)),
             Self::Multi(elems) => Iter::Multi(elems.iter()),
         }
@@ -227,38 +235,37 @@ impl<T: Eq + Hash> justact_core::set::Set for Set<T> {
 
     #[inline]
     fn add(&mut self, new_elem: Self::Elem) -> bool {
-        // Get an owned version of self, leaving us temporarily muted
-        // SAFETY: We can cast the pointers here because `MaybeUninit` will have the same layout and alignment as `Self`
-        let this: &mut MaybeUninit<Self> = unsafe { &mut *((self as *mut Self) as *mut MaybeUninit<Self>) };
-        let mut temp: MaybeUninit<Self> = MaybeUninit::uninit();
-        std::mem::swap(&mut temp, this);
+        // Get an owned version of self
+        let mut temp: Self = Self::Empty;
+        std::mem::swap(&mut temp, self);
 
         // Incorporate the element, potentially mutating self
-        // SAFETY: We know it's initialized because we constructed it through a pointer cast
         let existed;
-        let mut temp: MaybeUninit<Self> = match unsafe { temp.assume_init() } {
+        let mut temp: Self = match temp {
+            Self::Empty => {
+                existed = false;
+                Self::Singleton(new_elem)
+            },
             Self::Singleton(elem) => {
                 existed = elem == new_elem;
-                MaybeUninit::new(Self::Multi(HashSet::from([elem, new_elem])))
+                Self::Multi(HashSet::from([elem, new_elem]))
             },
             Self::Multi(mut elems) => {
                 // If the `elems` are empty, we might avoid an allocation by creating a singleton instead
                 if elems.capacity() == 0 {
                     // Store as singleton instead
                     existed = false;
-                    MaybeUninit::new(Self::Singleton(new_elem))
+                    Self::Singleton(new_elem)
                 } else {
                     // There is already an alloc, use it
                     existed = elems.insert(new_elem);
-                    MaybeUninit::new(Self::Multi(elems))
+                    Self::Multi(elems)
                 }
             },
         };
 
         // Swap back, the exit with existed
-        // SAFETY: We can cast the pointers here because `MaybeUninit` has the same layout and alignment as `Self`
-        // SAFETY: We can unwrap the MaybeUninit because all codepaths above initialize it
-        std::mem::swap(this, &mut temp);
+        std::mem::swap(self, &mut temp);
         existed
     }
 }
@@ -270,6 +277,7 @@ impl<T: Hash> IntoIterator for Set<T> {
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         match self {
+            Self::Empty => IntoIter::Singleton(None),
             Self::Singleton(msg) => IntoIter::Singleton(Some(msg)),
             Self::Multi(msgs) => IntoIter::Multi(msgs.into_iter()),
         }

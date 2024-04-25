@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:00:44
 //  Last edited:
-//    19 Apr 2024, 14:14:11
+//    25 Apr 2024, 10:27:25
 //  Auto updated?
 //    Yes
 //
@@ -52,6 +52,7 @@ struct Arguments {
 
 /***** AGENTS *****/
 /// An agent abstracting over the other types.
+#[derive(Debug)]
 enum AbstractAgent {
     Administrator(Administrator),
     Amy(Amy),
@@ -102,6 +103,7 @@ impl From<Consortium> for AbstractAgent {
 }
 
 /// The consortium agent, authoring messages.
+#[derive(Debug)]
 struct Consortium {
     /// The [`Interface`] with which this agent communicates.
     interface: Interface,
@@ -147,6 +149,7 @@ impl RationalAgent for Consortium {
 }
 
 /// The administrator agent, holding all the power.
+#[derive(Debug)]
 struct Administrator {
     /// The [`Interface`] with which this agent communicates.
     interface: Interface,
@@ -193,7 +196,8 @@ impl RationalAgent for Administrator {
     }
 }
 
-/// The Amy agent, doing the data access
+/// The Amy agent, doing the data access.
+#[derive(Debug)]
 struct Amy {
     /// The [`Interface`] with which this agent communicates.
     interface: Interface,
@@ -260,6 +264,7 @@ impl RationalAgent for Amy {
 }
 
 /// The Anton agent, that wreaks havoc.
+#[derive(Debug)]
 struct Anton {
     /// The [`Interface`] with which this agent communicates.
     interface: Interface,

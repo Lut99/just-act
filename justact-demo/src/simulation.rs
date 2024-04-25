@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:06:51
 //  Last edited:
-//    19 Apr 2024, 14:13:15
+//    25 Apr 2024, 10:39:57
 //  Auto updated?
 //    Yes
 //
@@ -165,7 +165,7 @@ impl<A> Simulation<A> {
 }
 impl<A> Simulation<A>
 where
-    for<'s> A: 's + Agent<Identifier = &'static str> + RationalAgent<Statements<'s> = StatementsMut<'s>>,
+    for<'s> A: 's + Agent<Identifier = &'static str> + RationalAgent<Statements<'s> = StatementsMut<'s>> + std::fmt::Debug,
 {
     /// Polls all the agents in the simulation once.
     ///
