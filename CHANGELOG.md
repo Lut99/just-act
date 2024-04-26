@@ -4,7 +4,7 @@ This file tracks notable changes to the JustAct framework. This is tracked per c
 This project uses [semantic versioning](https://semver.org). As such, breaking changes are indicated as **\[breaking\]**.
 
 
-## v0.1.0 - 2024-04-17
+## v0.1.0 - 2024-04-26
 Initial release!
 
 ### General - Added
