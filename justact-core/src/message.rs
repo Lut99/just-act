@@ -4,14 +4,13 @@
 //  Created:
 //    15 Apr 2024, 14:59:05
 //  Last edited:
-//    18 Apr 2024, 17:23:38
+//    26 Apr 2024, 11:31:21
 //  Auto updated?
 //    Yes
 //
 //  Description:
 //!   Defines the [`Message`]-trait, which represents some piece of policy
-//!   information shared by agents. It also includes [`MessageSet`]s,
-//!   which represents a particular collection of them.
+//!   information shared by agents.
 //
 
 use std::borrow::Cow;

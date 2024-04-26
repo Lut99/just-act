@@ -4,6 +4,15 @@ This file tracks notable changes to the JustAct framework. This is tracked per c
 This project uses [semantic versioning](https://semver.org). As such, breaking changes are indicated as **\[breaking\]**.
 
 
+## v0.2.0 - TODO-TO-DO
+Update to include the up-to-date framework version.
+
+### Core - Added
+- Added the `Times`-trait to represent Agent's knowledge of current time.
+- Added the `Agreements`-trait, to represent the part of Agent's knowledge that is explicitly synchronized.
+
+
+
 ## v0.1.0 - 2024-04-26
 Initial release!
 
