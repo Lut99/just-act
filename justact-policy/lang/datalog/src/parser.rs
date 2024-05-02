@@ -4,7 +4,7 @@
 //  Created:
 //    18 Mar 2024, 12:04:42
 //  Last edited:
-//    18 Mar 2024, 13:10:47
+//    02 May 2024, 15:03:23
 //  Auto updated?
 //    Yes
 //
@@ -13,7 +13,7 @@
 //!   `snack`-library.
 //
 
-// use ast_toolkit_snack::utf8::tag;
+use ast_toolkit_snack::utf8::complete as utf8;
 
 
 /***** LIBRARY *****/
