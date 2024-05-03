@@ -1,10 +1,10 @@
-//  PARSER.rs
+//  MOD.rs
 //    by Lut99
 //
 //  Created:
-//    18 Mar 2024, 12:04:42
+//    03 May 2024, 13:42:38
 //  Last edited:
-//    02 May 2024, 15:03:23
+//    03 May 2024, 13:43:32
 //  Auto updated?
 //    Yes
 //
@@ -13,7 +13,5 @@
 //!   `snack`-library.
 //
 
-use ast_toolkit_snack::utf8::complete as utf8;
-
-
-/***** LIBRARY *****/
+// Declare appropriate submodules
+pub mod tokens;
