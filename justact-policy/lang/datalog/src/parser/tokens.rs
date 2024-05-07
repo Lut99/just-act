@@ -4,7 +4,7 @@
 //  Created:
 //    18 Mar 2024, 12:04:42
 //  Last edited:
-//    07 May 2024, 08:36:39
+//    07 May 2024, 10:28:54
 //  Auto updated?
 //    Yes
 //
@@ -14,10 +14,10 @@
 
 use std::convert::Infallible;
 use std::error::Error;
-use std::fmt::{Display, Formatter, Result as FResult};
+use std::fmt::Display;
 
 use ast_toolkit_snack::combinator::{self as comb, Map, MapErr};
-use ast_toolkit_snack::sequence::{self as seq, Tuple};
+use ast_toolkit_snack::sequence::{self as seq, Delim};
 use ast_toolkit_snack::utf8::complete::{self as utf8, Tag};
 use ast_toolkit_snack::Combinator;
 use ast_toolkit_span::Spanning as _;
@@ -204,23 +204,21 @@ pub const fn not() -> Map<&'static str, &'static str, Tag<'static, &'static str,
 /// let mut comb = parens(nop());
 /// assert_eq!(
 ///     comb.parse(span1).unwrap(),
-///     (span1.slice(2..), Parens { open: span1.slice(..1), close: span1.slice(1..2) })
+///     (span1.slice(2..), (Parens { open: span1.slice(..1), close: span1.slice(1..2) }, ()))
 /// );
-/// assert!(matches!(comb.parse(span2), SResult::Fail(Failure::Common(Common::Custom { .. }))));
+/// assert!(matches!(comb.parse(span2), SResult::Fail(Failure::Common(Common::DelimOpen { .. }))));
 /// ```
 pub const fn parens<'t, C>(
     comb: C,
 ) -> Map<
     &'static str,
     &'static str,
-    Tuple<
+    Delim<
         &'static str,
         &'static str,
-        (
-            MapErr<&'static str, &'static str, Tag<'static, &'static str, &'static str>, fn(Infallible) -> ParensParseError<C::Error>>,
-            MapErr<&'static str, &'static str, C, fn(C::Error) -> ParensParseError<C::Error>>,
-            MapErr<&'static str, &'static str, Tag<'static, &'static str, &'static str>, fn(Infallible) -> ParensParseError<C::Error>>,
-        ),
+        MapErr<&'static str, &'static str, Tag<'static, &'static str, &'static str>, fn(Infallible) -> ParensParseError<C::Error>>,
+        MapErr<&'static str, &'static str, C, fn(C::Error) -> ParensParseError<C::Error>>,
+        MapErr<&'static str, &'static str, Tag<'static, &'static str, &'static str>, fn(Infallible) -> ParensParseError<C::Error>>,
     >,
     fn((Span, C::Output, Span)) -> (Parens, C::Output),
 >
@@ -228,11 +226,11 @@ where
     C: Combinator<'t, &'static str, &'static str>,
 {
     comb::map(
-        seq::tuple((
+        seq::delim(
             comb::map_err(utf8::tag("("), |err| ParensParseError::Open { span: err.span() }),
             comb::map_err(comb, |err| ParensParseError::Middle { err }),
             comb::map_err(utf8::tag(")"), |err| ParensParseError::Close { span: err.span() }),
-        )),
+        ),
         |(open, middle, close)| (Parens { open, close }, middle),
     )
 }
