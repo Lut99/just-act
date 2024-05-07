@@ -4,7 +4,7 @@
 //  Created:
 //    18 Mar 2024, 12:04:42
 //  Last edited:
-//    03 May 2024, 16:55:11
+//    07 May 2024, 08:36:39
 //  Auto updated?
 //    Yes
 //
@@ -54,7 +54,7 @@ impl<E: Display> Display for ParensParseError<E> {
         }
     }
 }
-impl<E: Error> Error for ParensParseError<E> {
+impl<E: 'static + Error> Error for ParensParseError<E> {
     #[inline]
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
