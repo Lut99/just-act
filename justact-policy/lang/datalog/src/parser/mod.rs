@@ -4,7 +4,7 @@
 //  Created:
 //    03 May 2024, 13:42:38
 //  Last edited:
-//    07 May 2024, 16:32:46
+//    07 May 2024, 16:38:01
 //  Auto updated?
 //    Yes
 //
@@ -16,6 +16,7 @@
 // Declare appropriate submodules
 pub mod atoms;
 pub mod literals;
+pub mod rules;
 pub mod tokens;
 
 // Imports
