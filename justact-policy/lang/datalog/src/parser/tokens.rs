@@ -4,7 +4,7 @@
 //  Created:
 //    18 Mar 2024, 12:04:42
 //  Last edited:
-//    07 May 2024, 10:28:54
+//    07 May 2024, 11:49:09
 //  Auto updated?
 //    Yes
 //
@@ -12,58 +12,33 @@
 //!   Defines parsers for $Datalog^\neg$ keywords.
 //
 
-use std::convert::Infallible;
-use std::error::Error;
-use std::fmt::Display;
-
-use ast_toolkit_snack::combinator::{self as comb, Map, MapErr};
+use ast_toolkit_snack::combinator::{self as comb, Map, Transmute};
 use ast_toolkit_snack::sequence::{self as seq, Delim};
 use ast_toolkit_snack::utf8::complete::{self as utf8, Tag};
 use ast_toolkit_snack::Combinator;
-use ast_toolkit_span::Spanning as _;
 
-use crate::ast::{self, Parens};
+use crate::ast;
 
 
 /***** TYPE ALIASES *****/
+/// The returned type of the [`parens()`]-combinator.
+pub type Parens<'t, C> = Map<
+    &'static str,
+    &'static str,
+    Delim<
+        &'static str,
+        &'static str,
+        Transmute<&'static str, &'static str, Tag<'static, &'static str, &'static str>, <C as Combinator<'t, &'static str, &'static str>>::Error>,
+        C,
+        Transmute<&'static str, &'static str, Tag<'static, &'static str, &'static str>, <C as Combinator<'t, &'static str, &'static str>>::Error>,
+    >,
+    fn(
+        (Span, <C as Combinator<'t, &'static str, &'static str>>::Output, Span),
+    ) -> (ast::Parens, <C as Combinator<'t, &'static str, &'static str>>::Output),
+>;
+
 /// Convenience alias for a [`Span`](ast_toolkit_span::Span) over static strings.
 type Span = ast_toolkit_span::Span<&'static str, &'static str>;
-
-
-
-
-
-/***** ERRORS *****/
-/// Errors returned when parsing [`parens()`].
-#[derive(Debug)]
-pub enum ParensParseError<E> {
-    /// Failed to parse the opening parenthesis.
-    Open { span: Span },
-    /// Something went wrong in the middle.
-    Middle { err: E },
-    /// Failed to parse the closing parenthesis.
-    Close { span: Span },
-}
-impl<E: Display> Display for ParensParseError<E> {
-    #[inline]
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Open { .. } => write!(f, "Expected an opening parenthesis"),
-            Self::Middle { err } => write!(f, "{err}"),
-            Self::Close { .. } => write!(f, "Expected a closing parenthesis"),
-        }
-    }
-}
-impl<E: 'static + Error> Error for ParensParseError<E> {
-    #[inline]
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Open { .. } => None,
-            Self::Middle { err } => Some(err),
-            Self::Close { .. } => None,
-        }
-    }
-}
 
 
 
@@ -208,29 +183,11 @@ pub const fn not() -> Map<&'static str, &'static str, Tag<'static, &'static str,
 /// );
 /// assert!(matches!(comb.parse(span2), SResult::Fail(Failure::Common(Common::DelimOpen { .. }))));
 /// ```
-pub const fn parens<'t, C>(
-    comb: C,
-) -> Map<
-    &'static str,
-    &'static str,
-    Delim<
-        &'static str,
-        &'static str,
-        MapErr<&'static str, &'static str, Tag<'static, &'static str, &'static str>, fn(Infallible) -> ParensParseError<C::Error>>,
-        MapErr<&'static str, &'static str, C, fn(C::Error) -> ParensParseError<C::Error>>,
-        MapErr<&'static str, &'static str, Tag<'static, &'static str, &'static str>, fn(Infallible) -> ParensParseError<C::Error>>,
-    >,
-    fn((Span, C::Output, Span)) -> (Parens, C::Output),
->
+pub const fn parens<'t, C>(comb: C) -> Parens<'t, C>
 where
     C: Combinator<'t, &'static str, &'static str>,
 {
-    comb::map(
-        seq::delim(
-            comb::map_err(utf8::tag("("), |err| ParensParseError::Open { span: err.span() }),
-            comb::map_err(comb, |err| ParensParseError::Middle { err }),
-            comb::map_err(utf8::tag(")"), |err| ParensParseError::Close { span: err.span() }),
-        ),
-        |(open, middle, close)| (Parens { open, close }, middle),
-    )
+    comb::map(seq::delim(comb::transmute(utf8::tag("(")), comb, comb::transmute(utf8::tag(")"))), |(open, middle, close)| {
+        (ast::Parens { open, close }, middle)
+    })
 }
