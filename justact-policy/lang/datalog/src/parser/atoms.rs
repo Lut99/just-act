@@ -4,7 +4,7 @@
 //  Created:
 //    07 May 2024, 10:29:41
 //  Last edited:
-//    07 May 2024, 14:19:15
+//    07 May 2024, 16:25:40
 //  Auto updated?
 //    Yes
 //
@@ -14,65 +14,20 @@
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FResult};
+use std::marker::PhantomData;
 
-use ast_toolkit_punctuated::Punctuated;
-use ast_toolkit_snack::branch::{self, Alt};
-use ast_toolkit_snack::combinator::{self as comb, Map, Opt, Transmute};
 use ast_toolkit_snack::error::{Common, Failure};
-use ast_toolkit_snack::multi::{self, Punctuated0};
-use ast_toolkit_snack::sequence::{self as seq, Delimited, Tuple};
-use ast_toolkit_snack::utf8::complete::{while1, Tag};
-use ast_toolkit_snack::utf8::{self, Whitespace0};
-use ast_toolkit_snack::{Combinator, Expects, ExpectsFormatter, Result as SResult};
+use ast_toolkit_snack::utf8::complete::while1;
+use ast_toolkit_snack::{branch, combinator as comb, multi, sequence as seq, utf8, Combinator, Expects, ExpectsFormatter, Result as SResult};
 use ast_toolkit_span::Spanning;
 
-use super::tokens::{self, Parens};
+use super::tokens;
 use crate::ast;
 
 
 /***** TYPE ALIASES *****/
-/// Shorthand for the type returned by [`atom()`].
-pub type Atom = Map<
-    &'static str,
-    &'static str,
-    Tuple<&'static str, &'static str, (Ident, Opt<&'static str, &'static str, AtomArgs>)>,
-    fn((ast::Ident, Option<ast::AtomArgs>)) -> ast::Atom,
->;
-/// Shorthand for the type returned by [`atom_args()`].
-pub type AtomArgs = Map<
-    &'static str,
-    &'static str,
-    Parens<
-        'static,
-        Punctuated0<
-            &'static str,
-            &'static str,
-            Delimited<
-                &'static str,
-                &'static str,
-                Transmute<&'static str, &'static str, Whitespace0<&'static str, &'static str>, ParseError>,
-                AtomArg,
-                Transmute<&'static str, &'static str, Whitespace0<&'static str, &'static str>, ParseError>,
-            >,
-            Transmute<
-                &'static str,
-                &'static str,
-                Map<&'static str, &'static str, Tag<'static, &'static str, &'static str>, fn(Span) -> ast::Comma>,
-                ParseError,
-            >,
-        >,
-    >,
-    fn((ast::Parens, Punctuated<ast::AtomArg, ast::Comma>)) -> ast::AtomArgs,
->;
-/// Shorthand for the type returned by [`atom_arg()`].
-pub type AtomArg = Alt<
-    &'static str,
-    &'static str,
-    (Map<&'static str, &'static str, Ident, fn(ast::Ident) -> ast::AtomArg>, Map<&'static str, &'static str, Var, fn(ast::Ident) -> ast::AtomArg>),
->;
-
 /// Convenience alias for a [`Span`](ast_toolkit_span::Span) over static strings.
-type Span = ast_toolkit_span::Span<&'static str, &'static str>;
+type Span<'f, 's> = ast_toolkit_span::Span<&'f str, &'s str>;
 
 
 
@@ -81,15 +36,15 @@ type Span = ast_toolkit_span::Span<&'static str, &'static str>;
 /***** ERRORS *****/
 /// Errors returned when parsing atoms and related.
 #[derive(Debug)]
-pub enum ParseError {
+pub enum ParseError<'f, 's> {
     /// Failed to parse a comma.
-    Comma { span: Span },
+    Comma { span: Span<'f, 's> },
     /// Failed to parse an identifier.
-    Ident { span: Span },
+    Ident { span: Span<'f, 's> },
     /// Failed to parse a variable.
-    Var { span: Span },
+    Var { span: Span<'f, 's> },
 }
-impl Display for ParseError {
+impl<'f, 's> Display for ParseError<'f, 's> {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use ParseError::*;
@@ -100,10 +55,10 @@ impl Display for ParseError {
         }
     }
 }
-impl Error for ParseError {}
-impl Spanning<&'static str, &'static str> for ParseError {
+impl<'f, 's> Error for ParseError<'f, 's> {}
+impl<'f, 's> Spanning<&'f str, &'s str> for ParseError<'f, 's> {
     #[inline]
-    fn span(&self) -> Span {
+    fn span(&self) -> Span<'f, 's> {
         use ParseError::*;
         match self {
             Comma { span } => *span,
@@ -196,7 +151,7 @@ impl Spanning<&'static str, &'static str> for ParseError {
 /// ));
 /// ```
 #[inline]
-pub const fn atom() -> Atom { comb::map(seq::pair(ident(), comb::opt(atom_args())), |(ident, args)| ast::Atom { ident, args }) }
+pub const fn atom<'f, 's>() -> Atom<'f, 's> { Atom { _f: PhantomData, _s: PhantomData } }
 
 
 
@@ -264,15 +219,7 @@ pub const fn atom() -> Atom { comb::map(seq::pair(ident(), comb::opt(atom_args()
 /// ));
 /// ```
 #[inline]
-pub const fn atom_args() -> AtomArgs {
-    comb::map(
-        tokens::parens(multi::punctuated0(
-            seq::delimited(comb::transmute(utf8::whitespace0()), atom_arg(), comb::transmute(utf8::whitespace0())),
-            comb::transmute(tokens::comma()),
-        )),
-        |(parens, args): (ast::Parens, Punctuated<ast::AtomArg, ast::Comma>)| -> ast::AtomArgs { ast::AtomArgs { paren_tokens: parens, args } },
-    )
-}
+pub const fn atom_args<'f, 's>() -> AtomArgs<'f, 's> { AtomArgs { _f: PhantomData, _s: PhantomData } }
 
 /// Parses an argument to an atom.
 ///
@@ -308,7 +255,7 @@ pub const fn atom_args() -> AtomArgs {
 /// assert!(matches!(comb.parse(span3), SResult::Fail(Failure::Common(Common::Alt { .. }))));
 /// ```
 #[inline]
-pub const fn atom_arg() -> AtomArg { branch::alt((comb::map(ident(), ast::AtomArg::Atom), comb::map(var(), ast::AtomArg::Var))) }
+pub const fn atom_arg<'f, 's>() -> AtomArg<'f, 's> { AtomArg { _f: PhantomData, _s: PhantomData } }
 
 
 
@@ -346,7 +293,7 @@ pub const fn atom_arg() -> AtomArg { branch::alt((comb::map(ident(), ast::AtomAr
 /// ));
 /// ```
 #[inline]
-pub const fn ident() -> Ident { Ident }
+pub const fn ident<'f, 's>() -> Ident<'f, 's> { Ident { _f: PhantomData, _s: PhantomData } }
 
 /// Parses a $Datalog^\neg$ variable.
 ///
@@ -382,13 +329,62 @@ pub const fn ident() -> Ident { Ident }
 /// ));
 /// ```
 #[inline]
-pub const fn var() -> Var { Var }
+pub const fn var<'f, 's>() -> Var<'f, 's> { Var { _f: PhantomData, _s: PhantomData } }
 
 
 
 
 
 /***** EXPECTS FORMATTERS *****/
+/// ExpectsFormatter for the [`Atom`] combinator.
+#[derive(Debug)]
+pub struct AtomExpects;
+impl Display for AtomExpects {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        write!(f, "Expected ")?;
+        self.expects_fmt(f, 0)
+    }
+}
+impl ExpectsFormatter for AtomExpects {
+    #[inline]
+    fn expects_fmt(&self, f: &mut Formatter, _indent: usize) -> FResult { write!(f, "an atom") }
+}
+
+
+
+/// ExpectsFormatter for the [`AtomArgs`] combinator.
+#[derive(Debug)]
+pub struct AtomArgsExpects;
+impl Display for AtomArgsExpects {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        write!(f, "Expected ")?;
+        self.expects_fmt(f, 0)
+    }
+}
+impl ExpectsFormatter for AtomArgsExpects {
+    #[inline]
+    fn expects_fmt(&self, f: &mut Formatter, _indent: usize) -> FResult { write!(f, "zero or more arguments") }
+}
+
+/// ExpectsFormatter for the [`AtomArg`] combinator.
+#[derive(Debug)]
+pub struct AtomArgExpects;
+impl Display for AtomArgExpects {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        write!(f, "Expected ")?;
+        self.expects_fmt(f, 0)
+    }
+}
+impl ExpectsFormatter for AtomArgExpects {
+    #[inline]
+    fn expects_fmt(&self, f: &mut Formatter, _indent: usize) -> FResult { write!(f, "either a constant or a variable") }
+}
+
+
+
 /// ExpectsFormatter for the [`Ident`] combinator.
 #[derive(Debug)]
 pub struct IdentExpects;
@@ -428,20 +424,103 @@ impl ExpectsFormatter for VarExpects {
 
 
 /***** LIBRARY COMBINATORS *****/
+/// Combinator returned by [`atom()`].
+pub struct Atom<'f, 's> {
+    _f: PhantomData<&'f ()>,
+    _s: PhantomData<&'s ()>,
+}
+impl<'f, 's> Expects<'static> for Atom<'f, 's> {
+    type Formatter = AtomExpects;
+
+    #[inline]
+    fn expects(&self) -> Self::Formatter { AtomExpects }
+}
+impl<'f, 's> Combinator<'static, &'f str, &'s str> for Atom<'f, 's> {
+    type Output = ast::Atom<'f, 's>;
+    type Error = ParseError<'f, 's>;
+
+    #[inline]
+    fn parse(&mut self, input: ast_toolkit_span::Span<&'f str, &'s str>) -> SResult<'static, Self::Output, &'f str, &'s str, Self::Error> {
+        match seq::pair(ident(), comb::opt(atom_args())).parse(input) {
+            SResult::Ok(rem, (ident, args)) => SResult::Ok(rem, ast::Atom { ident, args }),
+            SResult::Fail(fail) => SResult::Fail(fail),
+            SResult::Error(err) => SResult::Error(err),
+        }
+    }
+}
+
+
+
+/// Combinator returned by [`atom_args()`].
+pub struct AtomArgs<'f, 's> {
+    _f: PhantomData<&'f ()>,
+    _s: PhantomData<&'s ()>,
+}
+impl<'f, 's> Expects<'static> for AtomArgs<'f, 's> {
+    type Formatter = AtomArgsExpects;
+
+    #[inline]
+    fn expects(&self) -> Self::Formatter { AtomArgsExpects }
+}
+impl<'f, 's> Combinator<'static, &'f str, &'s str> for AtomArgs<'f, 's> {
+    type Output = ast::AtomArgs<'f, 's>;
+    type Error = ParseError<'f, 's>;
+
+    #[inline]
+    fn parse(&mut self, input: ast_toolkit_span::Span<&'f str, &'s str>) -> SResult<'static, Self::Output, &'f str, &'s str, Self::Error> {
+        match tokens::parens(multi::punctuated0(
+            seq::delimited(comb::transmute(utf8::whitespace0()), atom_arg(), comb::transmute(utf8::whitespace0())),
+            comb::transmute(tokens::comma()),
+        ))
+        .parse(input)
+        {
+            SResult::Ok(rem, (parens, args)) => SResult::Ok(rem, ast::AtomArgs { paren_tokens: parens, args }),
+            SResult::Fail(fail) => SResult::Fail(fail),
+            SResult::Error(err) => SResult::Error(err),
+        }
+    }
+}
+
+/// Combinator returned by [`atom_arg()`].
+pub struct AtomArg<'f, 's> {
+    _f: PhantomData<&'f ()>,
+    _s: PhantomData<&'s ()>,
+}
+impl<'f, 's> Expects<'static> for AtomArg<'f, 's> {
+    type Formatter = AtomArgExpects;
+
+    #[inline]
+    fn expects(&self) -> Self::Formatter { AtomArgExpects }
+}
+impl<'f, 's> Combinator<'static, &'f str, &'s str> for AtomArg<'f, 's> {
+    type Output = ast::AtomArg<'f, 's>;
+    type Error = ParseError<'f, 's>;
+
+    #[inline]
+    fn parse(&mut self, input: ast_toolkit_span::Span<&'f str, &'s str>) -> SResult<'static, Self::Output, &'f str, &'s str, Self::Error> {
+        branch::alt((comb::map(ident(), ast::AtomArg::Atom), comb::map(var(), ast::AtomArg::Var))).parse(input)
+    }
+}
+
+
+
 /// Combinator returned by [`ident()`].
-pub struct Ident;
-impl Expects<'static> for Ident {
+pub struct Ident<'f, 's> {
+    _f: PhantomData<&'f ()>,
+    _s: PhantomData<&'s ()>,
+}
+impl<'f, 's> Expects<'static> for Ident<'f, 's> {
     type Formatter = IdentExpects;
 
     #[inline]
     fn expects(&self) -> Self::Formatter { IdentExpects }
 }
-impl Combinator<'static, &'static str, &'static str> for Ident {
-    type Output = ast::Ident;
-    type Error = ParseError;
+impl<'f, 's> Combinator<'static, &'f str, &'s str> for Ident<'f, 's> {
+    type Output = ast::Ident<'f, 's>;
+    type Error = ParseError<'f, 's>;
 
     #[inline]
-    fn parse(&mut self, input: Span) -> SResult<'static, Self::Output, &'static str, &'static str, Self::Error> {
+    fn parse(&mut self, input: Span<'f, 's>) -> SResult<'static, Self::Output, &'f str, &'s str, Self::Error> {
         let mut first: bool = true;
         match while1(|c: &str| -> bool {
             if c.len() != 1 {
@@ -465,19 +544,22 @@ impl Combinator<'static, &'static str, &'static str> for Ident {
 }
 
 /// Combinator returned by [`var()`].
-pub struct Var;
-impl Expects<'static> for Var {
+pub struct Var<'f, 's> {
+    _f: PhantomData<&'f ()>,
+    _s: PhantomData<&'s ()>,
+}
+impl<'f, 's> Expects<'static> for Var<'f, 's> {
     type Formatter = IdentExpects;
 
     #[inline]
     fn expects(&self) -> Self::Formatter { IdentExpects }
 }
-impl Combinator<'static, &'static str, &'static str> for Var {
-    type Output = ast::Ident;
-    type Error = ParseError;
+impl<'f, 's> Combinator<'static, &'f str, &'s str> for Var<'f, 's> {
+    type Output = ast::Ident<'f, 's>;
+    type Error = ParseError<'f, 's>;
 
     #[inline]
-    fn parse(&mut self, input: Span) -> SResult<'static, Self::Output, &'static str, &'static str, Self::Error> {
+    fn parse(&mut self, input: Span<'f, 's>) -> SResult<'static, Self::Output, &'f str, &'s str, Self::Error> {
         let mut first: bool = true;
         match while1(|c: &str| -> bool {
             if c.len() != 1 {

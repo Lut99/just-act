@@ -4,7 +4,7 @@
 //  Created:
 //    26 Mar 2024, 19:36:31
 //  Last edited:
-//    16 Apr 2024, 11:06:02
+//    07 May 2024, 16:15:14
 //  Auto updated?
 //    Yes
 //
@@ -326,10 +326,10 @@ mod tests {
 /***** ERRORS *****/
 /// Defines logic errors over the quantification in rules.
 #[derive(Debug)]
-pub enum Error {
-    QuantifyOverflow { rule: Rule, max: usize },
+pub enum Error<'f, 's> {
+    QuantifyOverflow { rule: Rule<'f, 's>, max: usize },
 }
-impl Display for Error {
+impl<'f, 's> Display for Error<'f, 's> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         use Error::*;
         match self {
@@ -339,7 +339,7 @@ impl Display for Error {
         }
     }
 }
-impl error::Error for Error {}
+impl<'f, 's> error::Error for Error<'f, 's> {}
 
 
 
@@ -476,16 +476,16 @@ fn format_atom_assign(atom: &crate::ast::Atom, assign: &HashMap<Ident, Ident>) -
 ///
 /// # Errors
 /// This function can error if the total number of arguments in a rule exceeds `LEN`,
-pub fn immediate_consequence<'r, 'i, I>(rules: I, int: &'i mut Interpretation) -> Result<bool, Error>
+pub fn immediate_consequence<'f: 'r, 's: 'r, 'r, 'i, I>(rules: I, int: &'i mut Interpretation<'f, 's>) -> Result<bool, Error<'f, 's>>
 where
-    I: IntoIterator<Item = &'r Rule>,
+    I: IntoIterator<Item = &'r Rule<'f, 's>>,
     I::IntoIter: Clone,
 {
     let rules = rules.into_iter();
     debug!("Running immediate consequent transformation");
 
     // Some buffer referring to all the constants in the interpretation.
-    let consts: IndexSet<Ident> = int.find_existing_consts();
+    let consts: IndexSet<Ident<'f, 's>> = int.find_existing_consts();
     // Some buffer for holding variable quantifiers
     let mut vars: HashMap<Ident, VarQuantifier> = HashMap::new();
     // Some buffer for holding variable assignments
@@ -517,7 +517,7 @@ where
                 if let AtomArg::Var(v) = arg {
                     let vars_len: usize = vars.len();
                     if !vars.contains_key(v) {
-                        vars.insert(*v, VarQuantifier::new(&consts, vars_len));
+                        vars.insert(*v, VarQuantifier::new(vars_len));
                     }
                 }
             }
@@ -529,7 +529,7 @@ where
                     // Get the next assignment
                     assign.clear();
                     for (v, i) in vars.iter_mut() {
-                        match i.next(n_vars) {
+                        match i.next(&consts, n_vars) {
                             Some(a) => {
                                 assign.insert(*v, a);
                             },
@@ -597,9 +597,9 @@ where
 ///
 /// # Errors
 /// This function can error if the total number of arguments in a rule exceeds `LEN`.
-pub fn alternating_fixpoint<'r, I>(rules: I) -> Result<Interpretation, Error>
+pub fn alternating_fixpoint<'f: 'r, 's: 'r, 'r, I>(rules: I) -> Result<Interpretation<'f, 's>, Error<'f, 's>>
 where
-    I: IntoIterator<Item = &'r Rule>,
+    I: IntoIterator<Item = &'r Rule<'f, 's>>,
     I::IntoIter: Clone,
 {
     let mut int: Interpretation = Interpretation::new();
@@ -621,9 +621,9 @@ where
 ///
 /// # Errors
 /// This function can error if the total number of arguments in a rule exceeds `LEN`.
-pub fn alternating_fixpoint_mut<'r, 'i, I>(rules: I, int: &'i mut Interpretation) -> Result<(), Error>
+pub fn alternating_fixpoint_mut<'f: 'r, 's: 'r, 'r, 'i, I>(rules: I, int: &'i mut Interpretation<'f, 's>) -> Result<(), Error<'f, 's>>
 where
-    I: IntoIterator<Item = &'r Rule>,
+    I: IntoIterator<Item = &'r Rule<'f, 's>>,
     I::IntoIter: Clone,
 {
     let rules = rules.into_iter();
@@ -676,7 +676,7 @@ where
 
 /***** LIBRARY *****/
 // Interpreter extensions for the [`Spec`].
-impl Spec {
+impl<'f, 's> Spec<'f, 's> {
     /// Performs forward derivation of the Spec.
     ///
     /// In the paper, this is called the _immediate consequence operator_. It is simply defined as
@@ -695,7 +695,7 @@ impl Spec {
     /// # Errors
     /// This function can error if the total number of arguments in a rule exceeds `LEN`,
     #[inline]
-    pub fn immediate_consequence(&self, int: &mut Interpretation) -> Result<bool, Error> { immediate_consequence(&self.rules, int) }
+    pub fn immediate_consequence(&self, int: &mut Interpretation<'f, 's>) -> Result<bool, Error> { immediate_consequence(&self.rules, int) }
 
     /// Performs a proper derivation using the full well-founded semantics.
     ///
@@ -712,7 +712,7 @@ impl Spec {
     /// # Errors
     /// This function can error if the total number of arguments in a rule exceeds `LEN`.
     #[inline]
-    pub fn alternating_fixpoint(&self) -> Result<Interpretation, Error> { alternating_fixpoint(&self.rules) }
+    pub fn alternating_fixpoint(&self) -> Result<Interpretation<'f, 's>, Error> { alternating_fixpoint(&self.rules) }
 
     /// Performs a proper derivation using the full well-founded semantics.
     ///
@@ -729,5 +729,5 @@ impl Spec {
     /// # Errors
     /// This function can error if the total number of arguments in a rule exceeds `LEN`.
     #[inline]
-    pub fn alternating_fixpoint_mut(&self, int: &mut Interpretation) -> Result<(), Error> { alternating_fixpoint_mut(&self.rules, int) }
+    pub fn alternating_fixpoint_mut(&self, int: &mut Interpretation<'f, 's>) -> Result<(), Error> { alternating_fixpoint_mut(&self.rules, int) }
 }

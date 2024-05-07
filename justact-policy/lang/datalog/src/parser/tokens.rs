@@ -4,7 +4,7 @@
 //  Created:
 //    18 Mar 2024, 12:04:42
 //  Last edited:
-//    07 May 2024, 11:49:09
+//    07 May 2024, 16:16:28
 //  Auto updated?
 //    Yes
 //
@@ -21,24 +21,27 @@ use crate::ast;
 
 
 /***** TYPE ALIASES *****/
+/// The returned type of various token combinators.
+pub type Token<'f, 's, T> = Map<&'f str, &'s str, Tag<'static, &'f str, &'s str>, fn(Span<'f, 's>) -> T>;
+
 /// The returned type of the [`parens()`]-combinator.
-pub type Parens<'t, C> = Map<
-    &'static str,
-    &'static str,
+pub type Parens<'t, 'f, 's, C> = Map<
+    &'f str,
+    &'s str,
     Delim<
-        &'static str,
-        &'static str,
-        Transmute<&'static str, &'static str, Tag<'static, &'static str, &'static str>, <C as Combinator<'t, &'static str, &'static str>>::Error>,
+        &'f str,
+        &'s str,
+        Transmute<&'f str, &'s str, Tag<'static, &'f str, &'s str>, <C as Combinator<'t, &'f str, &'s str>>::Error>,
         C,
-        Transmute<&'static str, &'static str, Tag<'static, &'static str, &'static str>, <C as Combinator<'t, &'static str, &'static str>>::Error>,
+        Transmute<&'f str, &'s str, Tag<'static, &'f str, &'s str>, <C as Combinator<'t, &'f str, &'s str>>::Error>,
     >,
     fn(
-        (Span, <C as Combinator<'t, &'static str, &'static str>>::Output, Span),
-    ) -> (ast::Parens, <C as Combinator<'t, &'static str, &'static str>>::Output),
+        (Span<'f, 's>, <C as Combinator<'t, &'f str, &'s str>>::Output, Span<'f, 's>),
+    ) -> (ast::Parens<'f, 's>, <C as Combinator<'t, &'f str, &'s str>>::Output),
 >;
 
 /// Convenience alias for a [`Span`](ast_toolkit_span::Span) over static strings.
-type Span = ast_toolkit_span::Span<&'static str, &'static str>;
+type Span<'f, 's> = ast_toolkit_span::Span<&'f str, &'s str>;
 
 
 
@@ -68,9 +71,7 @@ type Span = ast_toolkit_span::Span<&'static str, &'static str>;
 /// assert_eq!(comb.parse(span1).unwrap(), (span1.slice(2..), Arrow { span: span1.slice(..2) }));
 /// assert!(matches!(comb.parse(span2), SResult::Fail(Failure::Common(Common::TagUtf8 { .. }))));
 /// ```
-pub const fn arrow() -> Map<&'static str, &'static str, Tag<'static, &'static str, &'static str>, fn(Span) -> ast::Arrow> {
-    comb::map(utf8::tag(":-"), |span| ast::Arrow { span })
-}
+pub const fn arrow<'f, 's>() -> Token<'f, 's, ast::Arrow<'f, 's>> { comb::map(utf8::tag(":-"), |span| ast::Arrow { span }) }
 
 /// Combinator for parsing a `,`.
 ///
@@ -95,9 +96,7 @@ pub const fn arrow() -> Map<&'static str, &'static str, Tag<'static, &'static st
 /// assert_eq!(comb.parse(span1).unwrap(), (span1.slice(1..), Comma { span: span1.slice(..1) }));
 /// assert!(matches!(comb.parse(span2), SResult::Fail(Failure::Common(Common::TagUtf8 { .. }))));
 /// ```
-pub const fn comma() -> Map<&'static str, &'static str, Tag<'static, &'static str, &'static str>, fn(Span) -> ast::Comma> {
-    comb::map(utf8::tag(","), |span| ast::Comma { span })
-}
+pub const fn comma<'f, 's>() -> Token<'f, 's, ast::Comma<'f, 's>> { comb::map(utf8::tag(","), |span| ast::Comma { span }) }
 
 /// Combinator for parsing a `.`.
 ///
@@ -122,9 +121,7 @@ pub const fn comma() -> Map<&'static str, &'static str, Tag<'static, &'static st
 /// assert_eq!(comb.parse(span1).unwrap(), (span1.slice(1..), Dot { span: span1.slice(..1) }));
 /// assert!(matches!(comb.parse(span2), SResult::Fail(Failure::Common(Common::TagUtf8 { .. }))));
 /// ```
-pub const fn dot() -> Map<&'static str, &'static str, Tag<'static, &'static str, &'static str>, fn(Span) -> ast::Dot> {
-    comb::map(utf8::tag("."), |span| ast::Dot { span })
-}
+pub const fn dot<'f, 's>() -> Token<'f, 's, ast::Dot<'f, 's>> { comb::map(utf8::tag("."), |span| ast::Dot { span }) }
 
 /// Combinator for parsing a `not`-keyword.
 ///
@@ -149,9 +146,7 @@ pub const fn dot() -> Map<&'static str, &'static str, Tag<'static, &'static str,
 /// assert_eq!(comb.parse(span1).unwrap(), (span1.slice(3..), Not { span: span1.slice(..3) }));
 /// assert!(matches!(comb.parse(span2), SResult::Fail(Failure::Common(Common::TagUtf8 { .. }))));
 /// ```
-pub const fn not() -> Map<&'static str, &'static str, Tag<'static, &'static str, &'static str>, fn(Span) -> ast::Not> {
-    comb::map(utf8::tag("not"), |span| ast::Not { span })
-}
+pub const fn not<'f, 's>() -> Token<'f, 's, ast::Not<'f, 's>> { comb::map(utf8::tag("not"), |span| ast::Not { span }) }
 
 /// Combinator for parsing parenthesis with something else in between.
 ///
@@ -183,9 +178,9 @@ pub const fn not() -> Map<&'static str, &'static str, Tag<'static, &'static str,
 /// );
 /// assert!(matches!(comb.parse(span2), SResult::Fail(Failure::Common(Common::DelimOpen { .. }))));
 /// ```
-pub const fn parens<'t, C>(comb: C) -> Parens<'t, C>
+pub const fn parens<'t, 'f, 's, C>(comb: C) -> Parens<'t, 'f, 's, C>
 where
-    C: Combinator<'t, &'static str, &'static str>,
+    C: Combinator<'t, &'f str, &'s str>,
 {
     comb::map(seq::delim(comb::transmute(utf8::tag("(")), comb, comb::transmute(utf8::tag(")"))), |(open, middle, close)| {
         (ast::Parens { open, close }, middle)

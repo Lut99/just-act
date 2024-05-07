@@ -4,7 +4,7 @@
 //  Created:
 //    21 Mar 2024, 10:22:40
 //  Last edited:
-//    18 Apr 2024, 16:06:38
+//    07 May 2024, 16:14:39
 //  Auto updated?
 //    Yes
 //
@@ -193,15 +193,13 @@ pub const STACK_VEC_LEN: usize = 16;
 ///
 /// This isn't straightforward iteration, but rather repeats elements and the whole iterator in order to create a unique assignment for all (unique!) variables in a rule.
 #[derive(Clone, Copy, Debug)]
-pub struct VarQuantifier<'c> {
-    /// The constants to actually iterate over.
-    consts: &'c IndexSet<Ident>,
+pub struct VarQuantifier {
     /// The indices that we keep track of. Given in the order of: `inner_repeat_count`, `consts_idx`, `outer_repeat_count`.
-    idx:    (usize, usize, usize),
+    idx: (usize, usize, usize),
     /// The position of this variable in the total list of quantifiers, if you will.
-    i:      usize,
+    i:   usize,
 }
-impl<'c> VarQuantifier<'c> {
+impl VarQuantifier {
     /// Constructor for the VarQuantifier.
     ///
     /// # Arguments
@@ -211,17 +209,18 @@ impl<'c> VarQuantifier<'c> {
     /// # Returns
     /// A new VarQuantifier able to do stuff.
     #[inline]
-    pub fn new(consts: &'c IndexSet<Ident>, i: usize) -> Self { Self { consts, idx: (0, 0, 0), i } }
+    pub fn new(i: usize) -> Self { Self { idx: (0, 0, 0), i } }
 
     /// Returns the next [`Ident`] in this quantifier.
     ///
     /// # Arguments
+    /// - `consts`: The set of constants to actually quantify over.
     /// - `n_vars`: The total number of variables that this quantifier quantifies over. Determines amounts of repetitions.
     ///
     /// # Returns
     /// The next [`Ident`] in line.
     #[cfg_attr(debug_assertions, track_caller)]
-    pub fn next(&mut self, n_vars: usize) -> Option<Ident> {
+    pub fn next<'f, 's, 'c>(&mut self, consts: &'c IndexSet<Ident<'f, 's>>, n_vars: usize) -> Option<Ident<'f, 's>> {
         // Check if `i` isn't too large
         #[cfg(debug_assertions)]
         if self.i >= n_vars {
@@ -249,9 +248,9 @@ impl<'c> VarQuantifier<'c> {
         // 1234123412341234                 (outer = 4, inner = 1)
         // ```
         // From this we can observe that the outer grows exponentially over the Herbrand base size, whereas the inner grows inverse exponentially.
-        let consts_len: usize = self.consts.len();
-        let n_inner_repeats: usize = self.consts.len().pow((n_vars - 1 - self.i) as u32);
-        let n_outer_repeats: usize = self.consts.len().pow(self.i as u32);
+        let consts_len: usize = consts.len();
+        let n_inner_repeats: usize = consts.len().pow((n_vars - 1 - self.i) as u32);
+        let n_outer_repeats: usize = consts.len().pow(self.i as u32);
 
         // Consider whether to return the current element or advance any of the counters
         let (inner_idx, idx, outer_idx): (&mut usize, &mut usize, &mut usize) = (&mut self.idx.0, &mut self.idx.1, &mut self.idx.2);
@@ -259,7 +258,7 @@ impl<'c> VarQuantifier<'c> {
             if *inner_idx < n_inner_repeats && *idx < consts_len {
                 // We're in the inner-repeat loop
                 *inner_idx += 1;
-                break Some(self.consts[*idx]);
+                break Some(consts[*idx]);
             } else if *idx < consts_len {
                 // We're advancing to the next element
                 *inner_idx = 0;
@@ -306,7 +305,7 @@ impl<'c> VarQuantifier<'c> {
 ///
 /// The purpose of the immediate consequence operator is then to shuffle facts from unknown to known.
 #[derive(Debug, Clone)]
-pub struct Interpretation<R = RandomState> {
+pub struct Interpretation<'f, 's, R = RandomState> {
     /// The atoms stored in this set that we know (or assume!) to be _true_.
     tknown:  HashSet<u64>,
     /// The atoms stored in this set that we know (or assume!) to be _false_.
@@ -314,11 +313,11 @@ pub struct Interpretation<R = RandomState> {
     /// The elements in this set for which the truth value is ambigious or contradictory.
     unknown: HashSet<u64>,
     /// All definitions in the Interpretation.
-    defs:    HashMap<u64, Atom>,
+    defs:    HashMap<u64, Atom<'f, 's>>,
     /// The random state used to compute hashes.
     state:   R,
 }
-impl<R: Default> Interpretation<R> {
+impl<'f, 's, R: Default> Interpretation<'f, 's, R> {
     /// Constructor for the LogicalSet that initializes it as empty.
     ///
     /// # Returns
@@ -346,7 +345,7 @@ impl<R: Default> Interpretation<R> {
         }
     }
 }
-impl<R: BuildHasher + Default> Interpretation<R> {
+impl<'f, 's, R: BuildHasher + Default> Interpretation<'f, 's, R> {
     /// Constructor for the Interpretation that initializes it with a universe of possible atoms from a given [`Spec`].
     ///
     /// # Arguments
@@ -355,14 +354,14 @@ impl<R: BuildHasher + Default> Interpretation<R> {
     /// # Returns
     /// An Interpretation with a lot of unknown atoms in it.
     #[inline]
-    pub fn from_universe(spec: &Spec) -> Self {
+    pub fn from_universe(spec: &Spec<'f, 's>) -> Self {
         // Built an empty self first
         let mut res: Self = Self::new();
         res.extend_universe(&spec.rules);
         res
     }
 }
-impl<R: BuildHasher> Interpretation<R> {
+impl<'f, 's, R: BuildHasher> Interpretation<'f, 's, R> {
     /// Constructor for the Interpretation that initializes it with the given hash state.
     ///
     /// # Arguments
@@ -470,8 +469,8 @@ impl<R: BuildHasher> Interpretation<R> {
     /// # Returns
     /// An [`IndexSet`] that can be used to generate, say, [`VarQuantifier`]s.
     #[inline]
-    pub fn find_existing_consts(&self) -> IndexSet<Ident> {
-        let mut consts: IndexSet<Ident> = IndexSet::new();
+    pub fn find_existing_consts(&self) -> IndexSet<Ident<'f, 's>> {
+        let mut consts: IndexSet<Ident<'f, 's>> = IndexSet::new();
         for atom in self.defs.values() {
             if atom.args.as_ref().map(|a| a.args.len()).unwrap_or(0) == 0 {
                 consts.insert(atom.ident);
@@ -480,7 +479,7 @@ impl<R: BuildHasher> Interpretation<R> {
         consts
     }
 }
-impl<R: BuildHasher> Interpretation<R> {
+impl<'f, 's, R: BuildHasher> Interpretation<'f, 's, R> {
     /// Computes the hash of the given atom.
     ///
     /// This is used internally but exposed for completeness.
@@ -668,7 +667,7 @@ impl<R: BuildHasher> Interpretation<R> {
     /// # Returns
     /// True if we already considered this atom in the universe, or false otherwise.
     #[inline]
-    pub fn insert(&mut self, atom: Atom) -> bool {
+    pub fn insert(&mut self, atom: Atom<'f, 's>) -> bool {
         let hash: u64 = self.hash_atom(&atom);
 
         // Just to be sure, remove it from the true & false lists
@@ -690,13 +689,15 @@ impl<R: BuildHasher> Interpretation<R> {
     /// - `rules`: The [`Rule`]s to populate this interpretation with.
     pub fn extend_universe<'r, I>(&mut self, rules: I)
     where
-        I: IntoIterator<Item = &'r Rule>,
+        'f: 'r,
+        's: 'r,
+        I: IntoIterator<Item = &'r Rule<'f, 's>>,
         I::IntoIter: Clone,
     {
         let rules = rules.into_iter();
 
         // First, find the Herbrand 0-base of the spec (i.e., constants only)
-        let mut consts: IndexSet<Ident> = IndexSet::new();
+        let mut consts: IndexSet<Ident<'f, 's>> = IndexSet::new();
         for rule in rules.clone() {
             // Go over the consequences only (since these are the only ones that can be true)
             for cons in rule.consequences.values() {
@@ -709,8 +710,8 @@ impl<R: BuildHasher> Interpretation<R> {
 
         // Then, go over the rules to instantiate any variables in the rules with the assignment
         // NOTE: Is an IndexMap to have predictable assignment order, nice for testing
-        let mut vars: IndexMap<Ident, VarQuantifier> = IndexMap::new();
-        let mut assign: HashMap<Ident, Ident> = HashMap::new();
+        let mut vars: IndexMap<&str, VarQuantifier> = IndexMap::new();
+        let mut assign: HashMap<&str, Ident<'f, 's>> = HashMap::new();
         for rule in rules {
             // Build quantifiers over the variables in the rule
             vars.clear();
@@ -722,8 +723,8 @@ impl<R: BuildHasher> Interpretation<R> {
             {
                 if let AtomArg::Var(v) = arg {
                     let vars_len: usize = vars.len();
-                    if !vars.contains_key(v) {
-                        vars.insert(*v, VarQuantifier::new(&consts, vars_len));
+                    if !vars.contains_key(v.value.value()) {
+                        vars.insert(v.value.value(), VarQuantifier::new(vars_len));
                     }
                 }
             }
@@ -737,7 +738,7 @@ impl<R: BuildHasher> Interpretation<R> {
                     // Get the next assignment
                     assign.clear();
                     for (v, i) in vars.iter_mut() {
-                        match i.next(n_vars) {
+                        match i.next(&consts, n_vars) {
                             Some(a) => {
                                 assign.insert(*v, a);
                             },
@@ -754,7 +755,7 @@ impl<R: BuildHasher> Interpretation<R> {
                         })
                     })) {
                         // Turn this atom into a concrete instance, if it has variables
-                        let atom: Atom = if atom.has_vars() {
+                        let atom: Atom<'f, 's> = if atom.has_vars() {
                             // Apply that assignment to the variables
                             let mut atom: Atom = atom.clone();
                             for arg in atom.args.iter_mut().flat_map(|a| a.args.values_mut()) {
@@ -766,7 +767,7 @@ impl<R: BuildHasher> Interpretation<R> {
                                 };
 
                                 // Write the appropriate assignment value to it
-                                *arg = AtomArg::Atom(*assign.get(&v).expect("Got variable without assignment"));
+                                *arg = AtomArg::Atom(*assign.get(v.value.value()).expect("Got variable without assignment"));
                             }
                             atom
                         } else {
@@ -924,7 +925,7 @@ impl<R: BuildHasher> Interpretation<R> {
 }
 
 // Format
-impl<R: BuildHasher> Display for Interpretation<R> {
+impl<'f, 's, R: BuildHasher> Display for Interpretation<'f, 's, R> {
     fn fmt(&self, f: &mut Formatter) -> FResult {
         // Get a sorted list of both kinds of atoms
         let mut tknown: Vec<&Atom> = self.tknown.iter().map(|h| self.defs.get(h).unwrap()).collect();
