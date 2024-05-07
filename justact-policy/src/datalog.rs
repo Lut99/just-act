@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 15:56:10
 //  Last edited:
-//    18 Apr 2024, 14:33:18
+//    07 May 2024, 16:36:26
 //  Auto updated?
 //    Yes
 //
@@ -24,27 +24,27 @@ use justact_core::policy as justact;
 /***** LIBRARY *****/
 /// Wraps a $Datalog^\neg$-policy [`Spec`] into something usable by the framework.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Policy {
+pub struct Policy<'f, 's> {
     /// The spec that we wrap in this policy.
-    pub spec: Spec,
+    pub spec: Spec<'f, 's>,
 }
 
-impl Deref for Policy {
-    type Target = Spec;
+impl<'f, 's> Deref for Policy<'f, 's> {
+    type Target = Spec<'f, 's>;
 
     #[inline]
     fn deref(&self) -> &Self::Target { &self.spec }
 }
-impl DerefMut for Policy {
+impl<'f, 's> DerefMut for Policy<'f, 's> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target { &mut self.spec }
 }
-impl Display for Policy {
+impl<'f, 's> Display for Policy<'f, 's> {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult { write!(f, "{}", self.spec) }
 }
-impl justact::Policy for Policy {
-    type Explanation = Interpretation;
+impl<'f, 's> justact::Policy for Policy<'f, 's> {
+    type Explanation = Interpretation<'f, 's>;
 
     fn check_validity(&self) -> Result<(), Self::Explanation> {
         // Run the interpreter and see if we derive `error`.
@@ -59,9 +59,9 @@ impl justact::Policy for Policy {
     }
 }
 
-impl FromIterator<Policy> for Policy {
+impl<'f, 's> FromIterator<Policy<'f, 's>> for Policy<'f, 's> {
     #[inline]
-    fn from_iter<T: IntoIterator<Item = Policy>>(iter: T) -> Self {
+    fn from_iter<T: IntoIterator<Item = Policy<'f, 's>>>(iter: T) -> Self {
         let mut rules: Vec<Rule> = Vec::new();
         for policy in iter {
             rules.extend(policy.spec.rules);
@@ -69,11 +69,11 @@ impl FromIterator<Policy> for Policy {
         Policy { spec: Spec { rules } }
     }
 }
-impl From<Spec> for Policy {
+impl<'f, 's> From<Spec<'f, 's>> for Policy<'f, 's> {
     #[inline]
-    fn from(value: Spec) -> Self { Self { spec: value } }
+    fn from(value: Spec<'f, 's>) -> Self { Self { spec: value } }
 }
-impl From<Policy> for Spec {
+impl<'f, 's> From<Policy<'f, 's>> for Spec<'f, 's> {
     #[inline]
-    fn from(value: Policy) -> Self { value.spec }
+    fn from(value: Policy<'f, 's>) -> Self { value.spec }
 }

@@ -4,7 +4,7 @@
 //  Created:
 //    18 Apr 2024, 13:50:56
 //  Last edited:
-//    18 Apr 2024, 17:24:09
+//    07 May 2024, 16:37:16
 //  Auto updated?
 //    Yes
 //
@@ -32,7 +32,7 @@ pub enum Explanation {
     /// One of the messages embedded in the action was not stated.
     NotStated { message: &'static str },
     /// 'Error' was actually derived from the audit.
-    Error { int: Interpretation },
+    Error { int: Interpretation<'static, 'static> },
 }
 
 
@@ -48,7 +48,7 @@ pub struct Message {
     /// The author of this message.
     pub author: &'static str,
     /// Some policy that is emitted here.
-    pub policy: datalog::Policy,
+    pub policy: datalog::Policy<'static, 'static>,
 }
 impl Message {
     /// Constructor for a Message.
@@ -61,7 +61,7 @@ impl Message {
     /// # Returns
     /// A new Message.
     #[inline]
-    pub fn new(id: &'static str, author: &'static str, policy: datalog::Policy) -> Self { Self { id, author, policy } }
+    pub fn new(id: &'static str, author: &'static str, policy: datalog::Policy<'static, 'static>) -> Self { Self { id, author, policy } }
 }
 
 impl Display for Message {

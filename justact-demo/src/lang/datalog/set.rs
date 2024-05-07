@@ -4,7 +4,7 @@
 //  Created:
 //    18 Apr 2024, 13:36:28
 //  Last edited:
-//    18 Apr 2024, 16:56:01
+//    07 May 2024, 16:37:10
 //  Auto updated?
 //    Yes
 //
@@ -101,7 +101,7 @@ impl<'m> justact_core::set::Set for MessageSet<'m> {
 }
 impl<'m> justact_core::set::MessageSet for MessageSet<'m> {
     type Message = Cow<'m, Message>;
-    type Policy<'s> = datalog::Policy where Self: 's;
+    type Policy<'s> = datalog::Policy<'static, 'static> where Self: 's;
 
     fn extract<'s>(&'s self) -> Self::Policy<'s> {
         // Collect the rules of all the messages
