@@ -4,7 +4,7 @@
 //  Created:
 //    03 May 2024, 13:42:38
 //  Last edited:
-//    08 May 2024, 11:13:09
+//    08 May 2024, 11:43:02
 //  Auto updated?
 //    Yes
 //
@@ -24,12 +24,12 @@ pub mod tokens;
 use ast_toolkit_snack::{Combinator as _, Result as SResult};
 use ast_toolkit_span::Span;
 
-use crate::ast::Literal;
+use crate::ast::Spec;
 
 
 /***** ERRORS *****/
 /// The concrete error type returned by the [`parse()`] function.
-pub type Error<'f, 's> = ast_toolkit_snack::error::Error<'static, &'f str, &'s str, literals::ParseError<'f, 's>>;
+pub type Error<'f, 's> = ast_toolkit_snack::error::Error<'static, &'f str, &'s str, specs::ParseError<'f, 's>>;
 
 
 
@@ -48,9 +48,9 @@ pub type Error<'f, 's> = ast_toolkit_snack::error::Error<'static, &'f str, &'s s
 /// # Errors
 /// This function returns an [`Error`] if the given `input` was not a valid $Datalog^\neg$-program.
 #[inline]
-pub fn parse<'f, 's>(what: &'f str, source: &'s str) -> Result<Literal<'f, 's>, Error<'f, 's>> {
+pub fn parse<'f, 's>(what: &'f str, source: &'s str) -> Result<Spec<'f, 's>, Error<'f, 's>> {
     // Simply parse as a literal
-    match literals::literal().parse(Span::new(what, source)) {
+    match specs::spec().parse(Span::new(what, source)) {
         SResult::Ok(_, res) => Ok(res),
         SResult::Fail(fail) => Err(fail.try_into().unwrap()),
         SResult::Error(err) => Err(err),

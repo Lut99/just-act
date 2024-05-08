@@ -1,3 +1,5 @@
 
-amy
-not bob
+amy.
+bob.
+friends(amy, bob).
+friends(X, Y) :- friends(Y, X).
