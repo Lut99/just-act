@@ -4,7 +4,7 @@
 //  Created:
 //    07 May 2024, 14:20:04
 //  Last edited:
-//    07 May 2024, 16:33:45
+//    08 May 2024, 10:22:50
 //  Auto updated?
 //    Yes
 //
@@ -197,6 +197,7 @@ pub const fn literal<'f, 's>() -> Literal<'f, 's> { Literal { _f: PhantomData, _
 ///     comb.parse(span4),
 ///     SResult::Fail(Failure::Common(Common::TagUtf8 { .. })),
 /// ));
+/// println!("{:?}", comb.parse(span5));
 /// assert!(matches!(
 ///     comb.parse(span5),
 ///     SResult::Fail(Failure::Common(Common::TagUtf8 { .. })),

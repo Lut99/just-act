@@ -4,7 +4,7 @@
 //  Created:
 //    07 May 2024, 16:38:16
 //  Last edited:
-//    07 May 2024, 18:14:25
+//    08 May 2024, 10:51:56
 //  Auto updated?
 //    Yes
 //
@@ -131,13 +131,13 @@ pub const fn rule<'f, 's>() -> Rule<'f, 's> { Rule { _f: PhantomData, _s: Phanto
 /// );
 /// assert_eq!(
 ///     comb.parse(span2).unwrap(),
-///     (span2.slice(6..), RuleAntecedents {
+///     (span2.slice(22..), RuleAntecedents {
 ///         arrow_token: Arrow { span: span2.slice(..2) },
 ///         antecedents: punct![
 ///             v => Literal::NegAtom(NegAtom {
 ///                 not_token: Not { span: span2.slice(3..6) },
 ///                 atom: Atom {
-///                     ident: Ident { value: span2.slice(3..6) },
+///                     ident: Ident { value: span2.slice(7..10) },
 ///                     args: Some(AtomArgs {
 ///                         paren_tokens: Parens { open: span2.slice(10..11), close: span2.slice(11..12) },
 ///                         args: punct![],
@@ -252,13 +252,23 @@ impl<'f, 's> Combinator<'static, &'f str, &'s str> for RuleAntecedents<'f, 's> {
 
     #[inline]
     fn parse(&mut self, input: Span<'f, 's>) -> SResult<'static, Self::Output, &'f str, &'s str, Self::Error> {
-        match seq::separated_pair(
+        match seq::pair(
             comb::transmute(tokens::arrow()),
-            comb::transmute(utf8::whitespace0()),
             error::cut(multi::punctuated1(
-                comb::map_err(seq::terminated(literals::literal(), comb::transmute(utf8::complete::whitespace1())), |err| ParseError::Literal {
-                    span: err.span(),
-                }),
+                comb::map_err(
+                    seq::delimited(
+                        comb::transmute(utf8::whitespace0()),
+                        literals::literal(),
+                        comb::transmute(comb::not(utf8::complete::while1(|c| {
+                            if c.len() != 1 {
+                                return false;
+                            }
+                            let c: char = c.chars().next().unwrap();
+                            (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_'
+                        }))),
+                    ),
+                    |err| ParseError::Literal { span: err.span() },
+                ),
                 comb::transmute(tokens::comma()),
             )),
         )
