@@ -4,7 +4,7 @@
 //  Created:
 //    07 May 2024, 14:20:04
 //  Last edited:
-//    08 May 2024, 10:22:50
+//    08 May 2024, 11:25:47
 //  Auto updated?
 //    Yes
 //
@@ -17,7 +17,7 @@ use std::fmt::{Display, Formatter, Result as FResult};
 use std::marker::PhantomData;
 
 use ast_toolkit_snack::utf8::complete as utf8;
-use ast_toolkit_snack::{branch, combinator as comb, sequence as seq, Combinator, Expects, ExpectsFormatter, Result as SResult};
+use ast_toolkit_snack::{branch, combinator as comb, error, sequence as seq, Combinator, Expects, ExpectsFormatter, Result as SResult};
 use ast_toolkit_span::Spanning;
 
 use super::{atoms, tokens};
@@ -289,8 +289,8 @@ impl<'f, 's> Combinator<'static, &'f str, &'s str> for NegAtom<'f, 's> {
     #[inline]
     fn parse(&mut self, input: Span<'f, 's>) -> SResult<'static, Self::Output, &'f str, &'s str, Self::Error> {
         match seq::separated_pair(
-            comb::transmute(tokens::not()),
-            comb::transmute(utf8::whitespace1()),
+            error::transmute(tokens::not()),
+            error::transmute(utf8::whitespace1()),
             comb::map_err(atoms::atom(), |err| ParseError::Atom { span: err.span() }),
         )
         .parse(input)

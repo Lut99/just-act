@@ -4,7 +4,7 @@
 //  Created:
 //    07 May 2024, 16:38:16
 //  Last edited:
-//    08 May 2024, 11:11:41
+//    08 May 2024, 11:26:08
 //  Auto updated?
 //    Yes
 //
@@ -281,9 +281,9 @@ impl<'f, 's> Combinator<'static, &'f str, &'s str> for Rule<'f, 's> {
         match seq::tuple((
             multi::punctuated1(
                 seq::delimited(
-                    comb::transmute(utf8::whitespace0()),
+                    error::transmute(utf8::whitespace0()),
                     map_err(atoms::atom(), |err| ParseError::Atom { span: err.span() }),
-                    comb::transmute(comb::not(utf8::complete::while1(|c| {
+                    error::transmute(comb::not(utf8::complete::while1(|c| {
                         if c.len() != 1 {
                             return false;
                         }
@@ -291,12 +291,12 @@ impl<'f, 's> Combinator<'static, &'f str, &'s str> for Rule<'f, 's> {
                         (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_'
                     }))),
                 ),
-                comb::transmute(tokens::comma()),
+                error::transmute(tokens::comma()),
             ),
-            comb::transmute(utf8::whitespace0()),
+            error::transmute(utf8::whitespace0()),
             comb::opt(rule_antecedents()),
-            comb::transmute(utf8::whitespace0()),
-            comb::transmute(tokens::dot()),
+            error::transmute(utf8::whitespace0()),
+            error::transmute(tokens::dot()),
         ))
         .parse(input)
         {
@@ -325,13 +325,13 @@ impl<'f, 's> Combinator<'static, &'f str, &'s str> for RuleAntecedents<'f, 's> {
     #[inline]
     fn parse(&mut self, input: Span<'f, 's>) -> SResult<'static, Self::Output, &'f str, &'s str, Self::Error> {
         match seq::pair(
-            comb::transmute(tokens::arrow()),
+            error::transmute(tokens::arrow()),
             error::cut(multi::punctuated1(
                 comb::map_err(
                     seq::delimited(
-                        comb::transmute(utf8::whitespace0()),
+                        error::transmute(utf8::whitespace0()),
                         literals::literal(),
-                        comb::transmute(comb::not(utf8::complete::while1(|c| {
+                        error::transmute(comb::not(utf8::complete::while1(|c| {
                             if c.len() != 1 {
                                 return false;
                             }
@@ -341,7 +341,7 @@ impl<'f, 's> Combinator<'static, &'f str, &'s str> for RuleAntecedents<'f, 's> {
                     ),
                     |err| ParseError::Literal { span: err.span() },
                 ),
-                comb::transmute(tokens::comma()),
+                error::transmute(tokens::comma()),
             )),
         )
         .parse(input)

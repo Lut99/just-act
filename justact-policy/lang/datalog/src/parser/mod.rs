@@ -4,7 +4,7 @@
 //  Created:
 //    03 May 2024, 13:42:38
 //  Last edited:
-//    07 May 2024, 16:38:01
+//    08 May 2024, 11:13:09
 //  Auto updated?
 //    Yes
 //
@@ -17,6 +17,7 @@
 pub mod atoms;
 pub mod literals;
 pub mod rules;
+pub mod specs;
 pub mod tokens;
 
 // Imports

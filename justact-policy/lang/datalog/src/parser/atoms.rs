@@ -4,7 +4,7 @@
 //  Created:
 //    07 May 2024, 10:29:41
 //  Last edited:
-//    07 May 2024, 16:25:40
+//    08 May 2024, 11:25:38
 //  Auto updated?
 //    Yes
 //
@@ -18,7 +18,7 @@ use std::marker::PhantomData;
 
 use ast_toolkit_snack::error::{Common, Failure};
 use ast_toolkit_snack::utf8::complete::while1;
-use ast_toolkit_snack::{branch, combinator as comb, multi, sequence as seq, utf8, Combinator, Expects, ExpectsFormatter, Result as SResult};
+use ast_toolkit_snack::{branch, combinator as comb, error, multi, sequence as seq, utf8, Combinator, Expects, ExpectsFormatter, Result as SResult};
 use ast_toolkit_span::Spanning;
 
 use super::tokens;
@@ -469,8 +469,8 @@ impl<'f, 's> Combinator<'static, &'f str, &'s str> for AtomArgs<'f, 's> {
     #[inline]
     fn parse(&mut self, input: ast_toolkit_span::Span<&'f str, &'s str>) -> SResult<'static, Self::Output, &'f str, &'s str, Self::Error> {
         match tokens::parens(multi::punctuated0(
-            seq::delimited(comb::transmute(utf8::whitespace0()), atom_arg(), comb::transmute(utf8::whitespace0())),
-            comb::transmute(tokens::comma()),
+            seq::delimited(error::transmute(utf8::whitespace0()), atom_arg(), error::transmute(utf8::whitespace0())),
+            error::transmute(tokens::comma()),
         ))
         .parse(input)
         {

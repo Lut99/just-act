@@ -4,7 +4,7 @@
 //  Created:
 //    18 Mar 2024, 12:04:42
 //  Last edited:
-//    07 May 2024, 16:16:28
+//    08 May 2024, 11:25:19
 //  Auto updated?
 //    Yes
 //
@@ -12,7 +12,8 @@
 //!   Defines parsers for $Datalog^\neg$ keywords.
 //
 
-use ast_toolkit_snack::combinator::{self as comb, Map, Transmute};
+use ast_toolkit_snack::combinator::{self as comb, Map};
+use ast_toolkit_snack::error::{self, Transmute};
 use ast_toolkit_snack::sequence::{self as seq, Delim};
 use ast_toolkit_snack::utf8::complete::{self as utf8, Tag};
 use ast_toolkit_snack::Combinator;
@@ -182,7 +183,7 @@ pub const fn parens<'t, 'f, 's, C>(comb: C) -> Parens<'t, 'f, 's, C>
 where
     C: Combinator<'t, &'f str, &'s str>,
 {
-    comb::map(seq::delim(comb::transmute(utf8::tag("(")), comb, comb::transmute(utf8::tag(")"))), |(open, middle, close)| {
+    comb::map(seq::delim(error::transmute(utf8::tag("(")), comb, error::transmute(utf8::tag(")"))), |(open, middle, close)| {
         (ast::Parens { open, close }, middle)
     })
 }
