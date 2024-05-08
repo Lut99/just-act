@@ -4,7 +4,7 @@
 //  Created:
 //    07 May 2024, 16:38:16
 //  Last edited:
-//    08 May 2024, 10:51:56
+//    08 May 2024, 11:11:41
 //  Auto updated?
 //    Yes
 //
@@ -36,6 +36,8 @@ type Span<'f, 's> = ast_toolkit_span::Span<&'f str, &'s str>;
 /// Errors returned when parsing literals and related.
 #[derive(Debug)]
 pub enum ParseError<'f, 's> {
+    /// Failed to parse an atom.
+    Atom { span: Span<'f, 's> },
     /// Failed to parse a literal.
     Literal { span: Span<'f, 's> },
 }
@@ -44,6 +46,7 @@ impl<'f, 's> Display for ParseError<'f, 's> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         use ParseError::*;
         match self {
+            Atom { .. } => write!(f, "Expected an atom"),
             Literal { .. } => write!(f, "Expected a literal"),
         }
     }
@@ -54,6 +57,7 @@ impl<'f, 's> Spanning<&'f str, &'s str> for ParseError<'f, 's> {
     fn span(&self) -> Span<'f, 's> {
         use ParseError::*;
         match self {
+            Atom { span } => *span,
             Literal { span } => *span,
         }
     }
@@ -64,37 +68,87 @@ impl<'f, 's> Spanning<&'f str, &'s str> for ParseError<'f, 's> {
 
 
 /***** LIBRARY *****/
-// /// Parses $Datalog^\neg$ rules.
-// ///
-// /// # Returns
-// /// A combinator that parses `:-`, then a punctuated list of atoms.
-// ///
-// /// # Fails
-// /// This combinator fails if the input was not an arrow followed by comma-separated atoms.
-// ///
-// /// # Example
-// /// ```rust
-// /// use ast_toolkit_punctuated::punct;
-// /// use ast_toolkit_snack::error::{Common, Error, Failure};
-// /// use ast_toolkit_snack::{Combinator as _, Result as SResult};
-// /// use ast_toolkit_span::Span;
-// /// use datalog::ast::{
-// ///     Arrow, Atom, AtomArg, AtomArgs, Comma, Ident, Literal, NegAtom, Not, Parens, RuleAntecedents,
-// /// };
-// /// use datalog::parser::rules::{rule, ParseError};
-// ///
-// /// let span1 = Span::new("<example>", "foo :- bar.");
-// /// let span2 = Span::new("<example>", "foo, bar.");
-// /// let span3 = Span::new("<example>", "bar(foo) :- baz(Qux)");
-// /// let span4 = Span::new("<example>", ":-");
-// ///
-// /// let mut comb = rule();
-// /// assert_eq!(
-// ///     comb.parse(span1).unwrap(),
-// ///     (span1.slice(6..), todo!()),
-// /// );
-// /// ```
-// #[inline]
+/// Parses $Datalog^\neg$ rules.
+///
+/// # Returns
+/// A combinator that parses a punctuated list of consequences, then `:-`, and then a punctuated list of antecedents, finalized by a dot.
+///
+/// # Fails
+/// This combinator fails if the input was not an arrow followed by comma-separated atoms.
+///
+/// # Example
+/// ```rust
+/// use ast_toolkit_punctuated::punct;
+/// use ast_toolkit_snack::error::{Common, Error, Failure};
+/// use ast_toolkit_snack::{Combinator as _, Result as SResult};
+/// use ast_toolkit_span::Span;
+/// use datalog::ast::{
+///     Arrow, Atom, AtomArg, AtomArgs, Dot, Comma, Ident, Literal, NegAtom, Not, Parens, Rule,
+///     RuleAntecedents,
+/// };
+/// use datalog::parser::rules::{rule, ParseError};
+///
+/// let span1 = Span::new("<example>", "foo :- bar.");
+/// let span2 = Span::new("<example>", "foo, bar.");
+/// let span3 = Span::new("<example>", "bar(foo) :- baz(Qux).");
+/// let span4 = Span::new("<example>", ".");
+/// let span5 = Span::new("<example>", ":-");
+///
+/// let mut comb = rule();
+/// assert_eq!(comb.parse(span1).unwrap(), (span1.slice(11..), Rule {
+///     consequences: punct![
+///         v => Atom {
+///             ident: Ident { value: span1.slice(..3) },
+///             args: None,
+///         }
+///     ],
+///     tail: Some(RuleAntecedents {
+///         arrow_token: Arrow { span: span1.slice(4..6) },
+///         antecedents: punct![v => Literal::Atom(Atom { ident: Ident { value: span1.slice(7..10) }, args: None })],
+///     }),
+///     dot: Dot { span: span1.slice(10..11) },
+/// }));
+/// assert_eq!(comb.parse(span2).unwrap(), (span2.slice(9..), Rule {
+///     consequences: punct![
+///         v => Atom {
+///             ident: Ident { value: span2.slice(..3) },
+///             args: None,
+///         },
+///         p => Comma { span: span2.slice(3..4) },
+///         v => Atom {
+///             ident: Ident { value: span2.slice(5..8) },
+///             args: None,
+///         }
+///     ],
+///     tail: None,
+///     dot: Dot { span: span2.slice(8..9) },
+/// }));
+/// assert_eq!(comb.parse(span3).unwrap(), (span3.slice(21..), Rule {
+///     consequences: punct![
+///         v => Atom {
+///             ident: Ident { value: span3.slice(..3) },
+///             args: Some(AtomArgs {
+///                 paren_tokens: Parens { open: span3.slice(3..4), close: span3.slice(7..8) },
+///                 args: punct![v => AtomArg::Atom(Ident { value: span3.slice(4..7) })],
+///             }),
+///         }
+///     ],
+///     tail: Some(RuleAntecedents {
+///         arrow_token: Arrow { span: span3.slice(9..11) },
+///         antecedents: punct![v => Literal::Atom(Atom {
+///             ident: Ident { value: span3.slice(12..15) },
+///             args: Some(AtomArgs {
+///                 paren_tokens: Parens { open: span3.slice(15..16), close: span3.slice(19..20) },
+///                 args: punct![v => AtomArg::Var(Ident { value: span3.slice(16..19) })],
+///             }),
+///         })],
+///     }),
+///     dot: Dot { span: span3.slice(20..21) },
+/// }));
+/// assert!(matches!(comb.parse(span4), SResult::Fail(Failure::Common(Common::PunctuatedList1 { .. }))));
+/// assert!(matches!(comb.parse(span5), SResult::Fail(Failure::Common(Common::PunctuatedList1 { .. }))));
+/// ```
+#[inline]
 pub const fn rule<'f, 's>() -> Rule<'f, 's> { Rule { _f: PhantomData, _s: PhantomData } }
 
 /// Parses the antecedent-part of a rule.
@@ -155,6 +209,14 @@ pub const fn rule<'f, 's>() -> Rule<'f, 's> { Rule { _f: PhantomData, _s: Phanto
 ///         ],
 ///     }),
 /// );
+/// assert!(matches!(
+///     comb.parse(span3),
+///     SResult::Fail(Failure::Common(Common::TagUtf8 { tag: ":-", .. })),
+/// ));
+/// assert!(matches!(
+///     comb.parse(span4),
+///     SResult::Error(Error::Common(Common::PunctuatedList1 { .. })),
+/// ));
 /// ```
 #[inline]
 pub const fn rule_antecedents<'f, 's>() -> RuleAntecedents<'f, 's> { RuleAntecedents { _f: PhantomData, _s: PhantomData } }
@@ -217,10 +279,20 @@ impl<'f, 's> Combinator<'static, &'f str, &'s str> for Rule<'f, 's> {
     #[inline]
     fn parse(&mut self, input: Span<'f, 's>) -> SResult<'static, Self::Output, &'f str, &'s str, Self::Error> {
         match seq::tuple((
-            comb::transmute(multi::punctuated0(
-                map_err(atoms::atom(), |err| ParseError::Literal { span: err.span() }),
+            multi::punctuated1(
+                seq::delimited(
+                    comb::transmute(utf8::whitespace0()),
+                    map_err(atoms::atom(), |err| ParseError::Atom { span: err.span() }),
+                    comb::transmute(comb::not(utf8::complete::while1(|c| {
+                        if c.len() != 1 {
+                            return false;
+                        }
+                        let c: char = c.chars().next().unwrap();
+                        (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_'
+                    }))),
+                ),
                 comb::transmute(tokens::comma()),
-            )),
+            ),
             comb::transmute(utf8::whitespace0()),
             comb::opt(rule_antecedents()),
             comb::transmute(utf8::whitespace0()),
