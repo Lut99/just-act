@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     # Simulation implementations
-    "justact-demo",
+    "justact-proto",
 
     # Policy languages
     "policy-langs/datalog",

@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:59:05
 //  Last edited:
-//    13 May 2024, 15:42:01
+//    13 May 2024, 19:34:14
 //  Auto updated?
 //    Yes
 //
@@ -86,10 +86,21 @@ where
 
 
 /// Defines an agreed-upon message.
-pub trait Agreement: Message {
+pub trait Agreement {
+    /// The set returned by this agreement that represents what is agreed upon.
+    type MessageSet<'s>: MessageSet
+    where
+        Self: 's;
+
     /// The type of the time at which this Action can be taken.
     type Time: Ord;
 
+
+    /// Returns the set of statements that was agreed upon by all of the agents.
+    ///
+    /// # Returns
+    /// Some `Self::MessageSet` that represents the set of messages.
+    fn statements<'s>(&'s self) -> Self::MessageSet<'s>;
 
     /// Returns some time at which this agreement can be used to enact actions.
     ///

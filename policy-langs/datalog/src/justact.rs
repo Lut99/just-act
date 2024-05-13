@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 18:39:10
 //  Last edited:
-//    13 May 2024, 19:02:07
+//    13 May 2024, 19:18:57
 //  Auto updated?
 //    Yes
 //
@@ -17,7 +17,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FResult};
 
 use ast_toolkit_punctuated::Punctuated;
-use justact_core::auxillary::{Authored, Identifiable};
+use justact_core::auxillary::Authored;
 use justact_core::policy::{ExtractablePolicy, Policy};
 use justact_core::wire::Message;
 
@@ -85,8 +85,7 @@ impl<'f, 's> Policy for Spec<'f, 's> {
 impl<'f, 's, 'a, I, M> ExtractablePolicy<I> for Spec<'f, 's>
 where
     I: Iterator<Item = &'s M>,
-    M: 's + Message<Id = &'f str>,
-    <M as Authored>::Author: Identifiable<Id = &'a str>,
+    M: 's + Authored<AuthorId = &'a str> + Message<Id = &'f str>,
 {
     type ExtractError = ParseError<'f, 's>;
 

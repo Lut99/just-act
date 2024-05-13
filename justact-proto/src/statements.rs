@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:16:19
 //  Last edited:
-//    13 May 2024, 16:07:41
+//    13 May 2024, 19:14:42
 //  Auto updated?
 //    Yes
 //
@@ -20,10 +20,8 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use justact_core::local as justact;
+use justact_core::policy::{ExtractablePolicy, Policy};
 use justact_core::wire::{Action as _, Message as _};
-
-#[cfg(feature = "datalog")]
-use crate::lang::datalog;
 
 
 /***** ITERATORS *****/

@@ -1,5 +1,5 @@
 [package]
-name = "justact-demo"
+name = "justact-prototype"
 version = "0.1.0"
 edition.workspace = true
 authors = ["Tim Müller"]

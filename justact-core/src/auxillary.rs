@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 14:16:11
 //  Last edited:
-//    13 May 2024, 14:21:34
+//    13 May 2024, 19:18:21
 //  Auto updated?
 //    Yes
 //
@@ -14,6 +14,7 @@
 //
 
 use std::borrow::Cow;
+use std::hash::Hash;
 
 
 /***** LIBRARY *****/
@@ -21,8 +22,8 @@ use std::borrow::Cow;
 ///
 /// Note, however, that the namespace of uniqueness is only for things of the same type (e.g., across messages or across agents).
 pub trait Identifiable {
-    /// The thing used as identifier.
-    type Id;
+    /// The thing used as identifier. For convenience, we require it to [`Eq`] and [`Hash`].
+    type Id: Eq + Hash;
 
     /// Returns the identifier for this thing.
     ///
@@ -51,26 +52,26 @@ impl<'a, T: Clone + Identifiable> Identifiable for Cow<'a, T> {
 
 /// Something is authored by some agent.
 pub trait Authored {
-    /// The agent type by which this thing is authored.
-    type Author: Identifiable;
+    /// The thing used as identifier of the agent. For convenience, we require it to [`Eq`] and [`Hash`].
+    type AuthorId: Eq + Hash;
 
     /// Returns the unique identifier of the author of this object.
     ///
     /// # Returns
     /// A `Self::Author::Id` that represents the author of this object.
-    fn author(&self) -> <Self::Author as Identifiable>::Id;
+    fn author(&self) -> Self::AuthorId;
 }
 
 // Implement over some pointer-like types
 impl<'a, T: Authored> Authored for &'a T {
-    type Author = T::Author;
+    type AuthorId = T::AuthorId;
 
     #[inline]
-    fn author(&self) -> <Self::Author as Identifiable>::Id { T::author(self) }
+    fn author(&self) -> Self::AuthorId { T::author(self) }
 }
 impl<'a, T: Clone + Authored> Authored for Cow<'a, T> {
-    type Author = T::Author;
+    type AuthorId = T::AuthorId;
 
     #[inline]
-    fn author(&self) -> <Self::Author as Identifiable>::Id { T::author(self) }
+    fn author(&self) -> Self::AuthorId { T::author(self) }
 }

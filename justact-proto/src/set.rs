@@ -4,7 +4,7 @@
 //  Created:
 //    18 Apr 2024, 11:37:12
 //  Last edited:
-//    25 Apr 2024, 10:26:33
+//    13 May 2024, 19:13:38
 //  Auto updated?
 //    Yes
 //
@@ -17,6 +17,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::hash::Hash;
 
+use justact_core::auxillary::Identifiable;
 use justact_core::set::Set as _;
 use stackvec::StackVec;
 
@@ -219,22 +220,12 @@ impl<T: Eq + Hash> PartialEq for Set<T> {
     }
 }
 
-impl<T: Eq + Hash> justact_core::set::Set for Set<T> {
-    type Elem = T;
+impl<T: Eq + Hash> justact_core::set::Set<T> for Set<T> {
     type Item<'s> = &'s T where Self: 's;
     type Iter<'s> = Iter<'s, T> where Self: 's;
 
     #[inline]
-    fn iter<'s>(&'s self) -> Self::Iter<'s> {
-        match self {
-            Self::Empty => Iter::Singleton(None),
-            Self::Singleton(elem) => Iter::Singleton(Some(elem)),
-            Self::Multi(elems) => Iter::Multi(elems.iter()),
-        }
-    }
-
-    #[inline]
-    fn add(&mut self, new_elem: Self::Elem) -> bool {
+    fn add(&mut self, new_elem: T) -> bool {
         // Get an owned version of self
         let mut temp: Self = Self::Empty;
         std::mem::swap(&mut temp, self);
@@ -267,6 +258,50 @@ impl<T: Eq + Hash> justact_core::set::Set for Set<T> {
         // Swap back, the exit with existed
         std::mem::swap(self, &mut temp);
         existed
+    }
+
+    #[inline]
+    fn get(&self, id: T::Id) -> Option<&T>
+    where
+        T: Identifiable,
+    {
+        // We have to do iterative search
+        match self {
+            Self::Empty => None,
+            Self::Singleton(msg) => {
+                if msg.id() == id {
+                    Some(msg)
+                } else {
+                    None
+                }
+            },
+            Self::Multi(msgs) => {
+                for msg in msgs {
+                    if msg.id() == id {
+                        return Some(msg);
+                    }
+                }
+                None
+            },
+        }
+    }
+
+    #[inline]
+    fn iter<'s>(&'s self) -> Self::Iter<'s> {
+        match self {
+            Self::Empty => Iter::Singleton(None),
+            Self::Singleton(elem) => Iter::Singleton(Some(elem)),
+            Self::Multi(elems) => Iter::Multi(elems.iter()),
+        }
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        match self {
+            Self::Empty => 0,
+            Self::Singleton(_) => 1,
+            Self::Multi(msgs) => msgs.len(),
+        }
     }
 }
 
