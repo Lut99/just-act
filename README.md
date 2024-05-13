@@ -9,9 +9,9 @@ This repository is structured as follows.
 
 The core ontology, and therefore the root crate of the project, is defined in the [`justact-core`](./justact-core/)-crate. It is a little more detailled than the paper, as it aims to provide the ontology as a set of interfaces (Rust traits) that, when implemented, allow one to emulate the relations presented.
 
-As the paper does not specify policy languages, some languages are implemented in the [`justact-policy`](./justact-policy/)-crate. Specifically, this project hosts a small $Datalog^\neg$ interpreter, which is the example language used in the paper. The code can be found in the [`datalog`](./justact-policy/lang/datalog/)-crate.
+As the paper does not specify policy languages, some languages are implemented in the [`policy-langs/`](./policy-langs/)-folder. Specifically, this project hosts a small $Datalog^\neg$ interpreter, which is the example language used in the paper. The code can be found in the [`datalog`](./policy-langs/datalog/)-crate.
 
-Finally, the repository aims to support multiple demo environments. Currently, only the [`justact-demo`](./justact-demo/)-crate implements a simple, purely in-memory simulator that runs agents step-by-step. Actual implementations of scripts for agents is given in that crate's [examples](./justact-demo/examples/) directory.
+Finally, the repository aims to support multiple demo environments. Currently, only the [`justact-prototype`](./justact-proto/)-crate implements a simple, purely in-memory simulator that runs agents step-by-step. Actual implementations of scripts for agents is given in that crate's [examples](./justact-proto/examples/) directory.
 
 
 ## Installation
@@ -35,9 +35,9 @@ rustup update
 ## Usage
 To run the examples in the repository, use the `cargo run --example`-command. First, choose a simulator crate to use as backend and select that as the package; then, run examples for that simulator by giving the name of the example you'd like to run without `.rs`.
 
-For example, to run [`paper1.rs`](./justact-demo/examples/paper1.rs) from the [`justact-demo`](./justact-demo/)-crate, type:
+For example, to run [`paper1.rs`](./justact-proto/examples/paper1.rs) from the [`justact-prototype`](./justact-proto/)-crate, type:
 ```bash
-cargo run --package justact-demo --example paper1
+cargo run --package justact-prototype --example paper1
 ```
 
 Some examples require specific features to be enabled, e.g., use a specific language. See the README-file in the examples folder for an overview, or simply check the topmost error if compiling the file fails.

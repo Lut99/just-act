@@ -11,8 +11,6 @@ The paper [1] uses Datalog with negation as example policy language for showcasi
 
 As such, a small interpreter is included that can reason about this language.
 
-As it stands, though, does the interpreter not yet have any parser. Instead, use the `datalog!{}`-macro to write Datalog as an embedded DSL in Rust.
-
 For more information on the language, see its own [README](./lang/datalog/README.md).
 
 

@@ -18,7 +18,8 @@ itertools = "0.12"
 log = { version = "0.4", optional = true }
 paste = "1.0"
 
-datalog-derive = { path = "../../../derive/datalog-derive", optional = true }
+datalog-derive = { path = "../../derive/datalog-derive", optional = true }
+justact-core = { path = "../../justact-core", optional = true }
 
 
 [dev-dependencies]
@@ -31,6 +32,8 @@ log = "0.4"
 
 [features]
 default = []
+
+justact = ["dep:justact-core", "interpreter", "parser"]
 
 interpreter = []
 parser = ["dep:ast-toolkit-snack"]

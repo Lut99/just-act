@@ -4,9 +4,8 @@ members = [
     # Simulation implementations
     "justact-demo",
 
-    # Policy-related
-    "justact-policy/lang/datalog",
-    "justact-policy",
+    # Policy languages
+    "policy-langs/datalog",
 
     # The main framework library
     "justact-core",

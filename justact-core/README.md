@@ -12,14 +12,27 @@ Most notably, the implemented specification differs from the diagram in the pape
 - authorship has a layer of indirection through identifiers, for performance reasons; and
 - _agreements_ and _actions_ do not contain statements, but rather messages. As such, an explicit additional check is necessary at audit time to ensure these are stated.
 
-Specifically, the following objects are present to represent various traits:
+Specifically, the following traits directly correlate to sets mentioned in the framework figure:
 - `Message`s represents the policy-on-the-wire, i.e., information exchanged between agents.
-- `Policy` is the thing carried by `Message`s.
 - `MessageSet`s represents combinations of `Message`s that one forms a composed `Policy`. Not necessarily a _valid_ policy, just a policy.
+- `Policy` is the thing carried by `MessageSet`s.
+    - `ExtractablePolicy` extends `Policy`s with the ability to be extracted from a `MessageSet`.
+- `Agreement`s are special (stated) `MessageSet`s that are confirmed to be synchronized between agents.
 - `Action`s are a collection of `Message`(`Set`)s (basis, justification, enactment) that gives justification to some statements.
-- `Statements` is an interface to all the `Message`s that are stated and/or `Actions` that are enacted. Depending on the implementation, this can be a fully-public pool or offer agents asymmetric views.
+    - `AuditableAction`s extend `Action`s with the ability to audit them.
+- `Statements` is a local interface to all the `Message`s that are stated and known by the agent in question.
+- `Actions` is a local interface to all the `Action`s that are stated and known by the agent in question.
+- `Times` is a global interface to the known timesteps that are synchronized between all agents.
+- `Agreements` is a global interface to the known `Agreement`s that are synchronized between all agents.
 - `Agent`s represent the agents in the system.
-- `RationalAgent`s represent an agent that reasons over stated `Messages`/enacted `Actions` in a `Statements` and might push either of those.
+- `RationalAgent`s represent an agent that reasons over `Statements`, `Actions`, `Times` and `Agreements` and publishes new ones as necessary.
+
+There are also some more implementation-oriented traits:
+- `Set`s abstract over different types of sets (`MessageSet`, `Statements`, `Actions`, `Times` and `Agreements` are all sets).
+- `Identifiable` represents some object that has unique identifiers (`Message`, `Agent`).
+- `Authored` represents some object that has an author (`Message`).
+- `LocalView` is a shorthand trait for something that implements both `Statements` and `Actions`.
+- `GlobalView` is a shorthand trait for something that implements both `Times` and `Agreements`.
 
 
 ## Features
