@@ -4,7 +4,7 @@
 //  Created:
 //    18 Apr 2024, 13:50:56
 //  Last edited:
-//    07 May 2024, 16:37:16
+//    13 May 2024, 15:39:56
 //  Auto updated?
 //    Yes
 //
@@ -16,9 +16,9 @@ use std::borrow::Cow;
 use std::fmt::{Display, Formatter, Result as FResult};
 use std::hash::Hash;
 
-use justact_core::message::{self as justact, Message as _};
 use justact_core::policy::Policy as _;
 use justact_core::set::{MessageSet as _, Set as _};
+use justact_core::wire::{self as justact, Message as _};
 use justact_policy::datalog::interpreter::interpretation::Interpretation;
 use justact_policy::datalog::{self, Policy};
 
@@ -161,7 +161,7 @@ impl<'m> justact::Action for Action<'m> {
     #[inline]
     fn audit<'s, S>(&'s self, stmts: &S) -> Result<(), Self::Explanation>
     where
-        S: justact_core::statements::Statements<Id = <Self::Message<'s> as justact::Message>::Identifier>,
+        S: justact_core::local::Statements<Id = <Self::Message<'s> as justact::Message>::Identifier>,
     {
         let just: MessageSet = self.justification();
 

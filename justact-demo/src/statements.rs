@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:16:19
 //  Last edited:
-//    19 Apr 2024, 12:00:14
+//    13 May 2024, 16:07:41
 //  Auto updated?
 //    Yes
 //
@@ -19,8 +19,8 @@ compile_error!("Please enable the 'datalog'-feature.");
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
-use justact_core::message::{Action as _, Message as _};
-use justact_core::statements as justact;
+use justact_core::local as justact;
+use justact_core::wire::{Action as _, Message as _};
 
 #[cfg(feature = "datalog")]
 use crate::lang::datalog;

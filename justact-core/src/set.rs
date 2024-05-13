@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 10:14:23
 //  Last edited:
-//    19 Apr 2024, 14:02:20
+//    13 May 2024, 14:26:09
 //  Auto updated?
 //    Yes
 //
@@ -13,20 +13,14 @@
 //!   unordered set of messages or actions.
 //
 
-use std::borrow::Cow;
-
-use crate::message::Message;
-use crate::policy::Policy;
+use crate::auxillary::Identifiable;
 
 
 /***** LIBRARY *****/
 /// Defines an abstract collection of messages or actions.
 ///
-/// The collection is conceptually unordered. Depending on implementations, though, it may be practically ordered, but this should be ignored for correct implementations.
-pub trait Set {
-    /// The type contained in the Set.
-    type Elem;
-
+/// The collection is conceptually unordered. That's not to stop implementations for being practically ordered, but there should be no reliance on that in the general case.
+pub trait Set<Elem> {
     /// The type returned by [`Set::iter()`]'s iterator.
     type Item<'s>
     where
@@ -37,12 +31,6 @@ pub trait Set {
         Self: 's;
 
 
-    /// Returns some iterator over references to the internal element.
-    ///
-    /// # Returns
-    /// Something of type `Self::Iter` that returns `&T`.
-    fn iter<'s>(&'s self) -> Self::Iter<'s>;
-
     /// Inserts a new element into this collection.
     ///
     /// # Arguments
@@ -50,40 +38,52 @@ pub trait Set {
     ///
     /// # Returns
     /// True if this element already existed, or false otherwise.
-    fn add(&mut self, new_elem: Self::Elem) -> bool;
-}
+    fn add(&mut self, new_elem: Elem) -> bool;
 
-
-
-/// Defines a collection of messages.
-///
-/// This is a particular set of messages that can be interpreted as a [`Policy`].
-pub trait MessageSet: From<Self::Message> + Set<Elem = Self::Message> {
-    /// The type of messages which are contained in this MessageSet.
-    type Message: Message;
-    /// The type of policy extracted from this message.
-    type Policy<'s>: 's + Policy
-    where
-        Self: 's;
-
-
-    /// Returns some policy from the fragments contained in the messages of this set.
+    /// Returns an item by its unique identifier.
+    ///
+    /// # Arguments
+    /// - `id`: Something of type `Elem::Id` that identifies the targeted object.
     ///
     /// # Returns
-    /// A new policy of type [`Self::Policy`](MessageSet::Policy) that is the extracted policy.
-    fn extract<'s>(&'s self) -> Self::Policy<'s>;
-}
+    /// A reference to the internal `Elem` that was identified by `id`, or [`None`] if no such item could be found.
+    fn get(&self, id: Elem::Id) -> Option<&Elem>
+    where
+        Elem: Identifiable;
 
-// Implement the `MessageSet` for pointer-like types.
-impl<'a, T> MessageSet for Cow<'a, T>
-where
-    T: Clone + MessageSet,
-    Cow<'a, T>: Set<Elem = T::Message>,
-    Cow<'a, T>: From<T::Message>,
-{
-    type Message = T::Message;
-    type Policy<'s> = T::Policy<'s> where Self: 's;
-
+    /// Checks if an item with a given unique identifier is in this set.
+    ///
+    /// # Arguments
+    /// - `id`: Something of type `Elem::Id` that identifies the targeted object.
+    ///
+    /// # Returns
+    /// True if such an item existed, or false otherwise.
     #[inline]
-    fn extract<'s>(&'s self) -> Self::Policy<'s> { T::extract(self) }
+    fn contains(&self, id: Elem::Id) -> bool
+    where
+        Elem: Identifiable,
+    {
+        self.get(id).is_some()
+    }
+
+
+    /// Returns some iterator over references to the internal element.
+    ///
+    /// # Returns
+    /// Something of type `Self::Iter` that returns `&T`.
+    fn iter<'s>(&'s self) -> Self::Iter<'s>;
+
+
+    /// Returns whether there are any elements in this set.
+    ///
+    /// # Returns
+    /// True if there aren't, or false if there are.
+    #[inline]
+    fn is_empty(&self) -> bool { self.len() == 0 }
+
+    /// Returns the count of elements in this set.
+    ///
+    /// # Returns
+    /// A [`usize`] denoting how many elements are in this set.
+    fn len(&self) -> usize;
 }

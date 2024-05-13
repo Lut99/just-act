@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 10:58:56
 //  Last edited:
-//    19 Apr 2024, 14:08:40
+//    13 May 2024, 15:39:53
 //  Auto updated?
 //    Yes
 //
@@ -17,8 +17,8 @@ use std::borrow::Cow;
 use std::fmt::Display;
 
 use console::{style, Style};
-use justact_core::message::{Action as _, Message as _};
 use justact_core::set::{MessageSet as _, Set as _};
+use justact_core::wire::{Action as _, Message as _};
 
 #[cfg(feature = "datalog")]
 use crate::lang::datalog;

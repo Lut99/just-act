@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:00:44
 //  Last edited:
-//    25 Apr 2024, 10:27:25
+//    13 May 2024, 14:45:38
 //  Auto updated?
 //    Yes
 //
@@ -25,7 +25,7 @@ use console::Style;
 use error_trace::trace;
 use humanlog::{DebugMode, HumanLogger};
 use justact_core::agent::{Agent, AgentPoll, RationalAgent};
-use justact_core::statements::{Statements as _, Stating};
+use justact_core::local::{Statements as _, Stating};
 use justact_demo::interface::Interface;
 use justact_demo::lang::datalog::{Action, Message};
 use justact_demo::statements::{Scope, StatementsMut};

@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:06:51
 //  Last edited:
-//    25 Apr 2024, 10:39:57
+//    13 May 2024, 16:07:42
 //  Auto updated?
 //    Yes
 //
@@ -19,8 +19,8 @@ use std::hash::{BuildHasher as _, Hash as _, Hasher, RandomState};
 
 use console::Style;
 use justact_core::agent::{Agent, AgentPoll, RationalAgent};
-use justact_core::message::{Action as _, Message as _};
-use justact_core::statements::Statements as _;
+use justact_core::local::Statements as _;
+use justact_core::wire::{Action as _, Message as _};
 use log::{debug, info};
 use stackvec::StackVec;
 

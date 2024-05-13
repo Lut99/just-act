@@ -4,7 +4,7 @@
 //  Created:
 //    18 Apr 2024, 13:36:28
 //  Last edited:
-//    07 May 2024, 16:37:10
+//    13 May 2024, 15:39:59
 //  Auto updated?
 //    Yes
 //
@@ -17,8 +17,8 @@ use std::borrow::Cow;
 use std::fmt::{Display, Formatter, Result as FResult};
 use std::hash::Hash;
 
-use justact_core::message::Message as _;
 use justact_core::set::Set as _;
+use justact_core::wire::Message as _;
 use justact_policy::datalog;
 use justact_policy::datalog::ast::{datalog, AtomArg, Rule, Spec};
 
