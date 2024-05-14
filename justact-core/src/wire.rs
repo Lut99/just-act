@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:59:05
 //  Last edited:
-//    13 May 2024, 19:34:14
+//    14 May 2024, 10:05:35
 //  Auto updated?
 //    Yes
 //
@@ -48,7 +48,9 @@ impl<'a, T: Clone + Message> Message for Cow<'a, T> {
 /// Defines a collection of messages.
 ///
 /// This is a particular set of messages that can be interpreted as a [`Policy`].
-pub trait MessageSet: From<Self::Message> + Set<Self::Message> {
+///
+/// Typically, MessageSets will want to implement something akin to [`From<Self::Message>`] in order to be kind to single messages.
+pub trait MessageSet: Set<Self::Message> {
     /// The type of messages which are contained in this MessageSet.
     type Message: Message;
 
@@ -68,17 +70,23 @@ pub trait MessageSet: From<Self::Message> + Set<Self::Message> {
     where
         P: ExtractablePolicy<Self::Iter<'s>>,
     {
-        // Default impl: just wrap `self.extract_payload()`
+        // Default impl: just wrap the given policy's `extract_from()`
         P::extract_from(self.iter())
     }
 }
 
 // Implement the `MessageSet` for pointer-like types.
+impl<'a, T> MessageSet for &'a T
+where
+    T: MessageSet,
+    &'a T: Set<T::Message>,
+{
+    type Message = T::Message;
+}
 impl<'a, T> MessageSet for Cow<'a, T>
 where
     T: Clone + MessageSet,
     Cow<'a, T>: Set<T::Message>,
-    Cow<'a, T>: From<T::Message>,
 {
     type Message = T::Message;
 }
@@ -109,6 +117,17 @@ pub trait Agreement {
     /// # Returns
     /// Some `Self::Time` noting when the action was enacted.
     fn applies_at(&self) -> Self::Time;
+}
+
+// Implement `Agreement` for some pointer-like types
+impl<'a, T: Agreement> Agreement for &'a T {
+    type MessageSet<'s> = T::MessageSet<'s> where Self: 's;
+    type Time = T::Time;
+
+    #[inline]
+    fn statements<'s>(&'s self) -> Self::MessageSet<'s> { T::statements(self) }
+    #[inline]
+    fn applies_at(&self) -> Self::Time { T::applies_at(self) }
 }
 
 /// Defines a justified enactment.

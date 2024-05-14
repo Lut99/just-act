@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 10:14:23
 //  Last edited:
-//    13 May 2024, 14:26:09
+//    14 May 2024, 10:03:11
 //  Auto updated?
 //    Yes
 //
@@ -12,6 +12,8 @@
 //!   Defines an abstract [`Set`] that can hold a (potentially!)
 //!   unordered set of messages or actions.
 //
+
+use std::borrow::Cow;
 
 use crate::auxillary::Identifiable;
 
@@ -86,4 +88,68 @@ pub trait Set<Elem> {
     /// # Returns
     /// A [`usize`] denoting how many elements are in this set.
     fn len(&self) -> usize;
+}
+
+// Default impls for pointer-like types
+impl<'a, Elem, T: Clone + Set<Elem>> Set<Elem> for &'a T {
+    type Item<'s> = T::Item<'s> where Self: 's;
+    type Iter<'s> = T::Iter<'s> where Self: 's;
+
+    /// This function is not implemented, as it is unreachable on non-mutable pointers.
+    #[inline]
+    fn add(&mut self, _new_elem: Elem) -> bool { unimplemented!() }
+    #[inline]
+    fn get(&self, id: <Elem>::Id) -> Option<&Elem>
+    where
+        Elem: Identifiable,
+    {
+        T::get(self, id)
+    }
+
+    #[inline]
+    fn iter<'s>(&'s self) -> Self::Iter<'s> { T::iter(self) }
+
+    #[inline]
+    fn len(&self) -> usize { T::len(self) }
+}
+impl<'a, Elem, T: Clone + Set<Elem>> Set<Elem> for &'a mut T {
+    type Item<'s> = T::Item<'s> where Self: 's;
+    type Iter<'s> = T::Iter<'s> where Self: 's;
+
+    /// This function is not implemented, as it is unreachable on non-mutable pointers.
+    #[inline]
+    fn add(&mut self, new_elem: Elem) -> bool { T::add(self, new_elem) }
+    #[inline]
+    fn get(&self, id: <Elem>::Id) -> Option<&Elem>
+    where
+        Elem: Identifiable,
+    {
+        T::get(self, id)
+    }
+
+    #[inline]
+    fn iter<'s>(&'s self) -> Self::Iter<'s> { T::iter(self) }
+
+    #[inline]
+    fn len(&self) -> usize { T::len(self) }
+}
+impl<'a, Elem, T: Clone + Set<Elem>> Set<Elem> for Cow<'a, T> {
+    type Item<'s> = T::Item<'s> where Self: 's;
+    type Iter<'s> = T::Iter<'s> where Self: 's;
+
+    #[inline]
+    fn add(&mut self, new_elem: Elem) -> bool { T::add(self.to_mut(), new_elem) }
+    #[inline]
+    fn get(&self, id: <Elem>::Id) -> Option<&Elem>
+    where
+        Elem: Identifiable,
+    {
+        T::get(self, id)
+    }
+
+    #[inline]
+    fn iter<'s>(&'s self) -> Self::Iter<'s> { T::iter(self) }
+
+    #[inline]
+    fn len(&self) -> usize { T::len(self) }
 }

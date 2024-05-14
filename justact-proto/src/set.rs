@@ -4,7 +4,7 @@
 //  Created:
 //    18 Apr 2024, 11:37:12
 //  Last edited:
-//    13 May 2024, 19:13:38
+//    14 May 2024, 10:16:53
 //  Auto updated?
 //    Yes
 //
@@ -98,7 +98,7 @@ impl<T> Iterator for IntoIter<T> {
 /***** LIBRARY *****/
 /// A common ancetor to both [`MessageSet`]s and [`ActionSet`]s.
 #[derive(Clone, Debug)]
-pub enum Set<T: Hash> {
+pub enum Set<T> {
     /// No elements are in the set.
     Empty,
     /// In case there's exactly one element, to prevent allocation.
@@ -106,17 +106,26 @@ pub enum Set<T: Hash> {
     /// In case there's zero _or_ multiple elements.
     Multi(HashSet<T>),
 }
-impl<T: Hash> Default for Set<T> {
+impl<T> Default for Set<T> {
     #[inline]
     fn default() -> Self { Self::empty() }
 }
-impl<T: Hash> Set<T> {
+impl<T> Set<T> {
     /// Creates an empty Set.
     ///
     /// # Returns
     /// A Set with not elements in it yet.
     #[inline]
     pub fn empty() -> Self { Self::Empty }
+    /// Creates a Set with space for at least the given number of elements.
+    ///
+    /// # Arguments
+    /// - `capacity`: The minimum number of elements this Set can store without re-allocation. Might be more, depending on what the allocator deems efficient.
+    ///
+    /// # Returns
+    /// A Set with not elements in it yet, but with capacity for at least `capacity` elements.
+    #[inline]
+    pub fn with_capacity(capacity: usize) -> Self { Self::Multi(HashSet::with_capacity(capacity)) }
 
     /// Returns the number of elements in this set.
     pub fn len(&self) -> usize {
@@ -305,7 +314,7 @@ impl<T: Eq + Hash> justact_core::set::Set<T> for Set<T> {
     }
 }
 
-impl<T: Hash> IntoIterator for Set<T> {
+impl<T> IntoIterator for Set<T> {
     type IntoIter = IntoIter<T>;
     type Item = T;
 
@@ -326,7 +335,7 @@ impl<'s, T: Eq + Hash> IntoIterator for &'s Set<T> {
     fn into_iter(self) -> Self::IntoIter { self.iter() }
 }
 
-impl<T: Hash> From<T> for Set<T> {
+impl<T> From<T> for Set<T> {
     #[inline]
     fn from(value: T) -> Self { Set::Singleton(value) }
 }
