@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:59:05
 //  Last edited:
-//    14 May 2024, 10:05:35
+//    15 May 2024, 10:38:12
 //  Auto updated?
 //    Yes
 //
@@ -16,8 +16,6 @@
 use std::borrow::Cow;
 
 use crate::auxillary::{Authored, Identifiable};
-use crate::global::GlobalView;
-use crate::local::Statements;
 use crate::policy::ExtractablePolicy;
 use crate::set::Set;
 
@@ -183,25 +181,4 @@ pub trait Action {
     /// # Returns
     /// A `Self::Message` describing the enacted effects of the action.
     fn enacts<'s>(&'s self) -> Self::Message<'s>;
-}
-
-/// Defines an extension to [`Action`]s that allows them to be audited.
-pub trait AuditableAction: Action {
-    /// Something that explains why this Action did not succeed an audit.
-    type Explanation;
-
-    /// Audits this action.
-    ///
-    /// In particular, will check if the [justification](Action::justification()) is valid according to the policy language and all of its embedded messages have been stated.
-    ///
-    /// # Arguments
-    /// - `global`: Some [`GlobalView`] that can be used to check which statements are agreements and what the current time is.
-    /// - `stmts`: Some [`Statements`] that can be used to check which messages are stated.
-    ///
-    /// # Errors
-    /// If this action did not match the requirements of the audit, then an [`Action::Explanation`] is returned with why this is the case.
-    fn audit<G, S>(&self, global: &G, stmts: &S) -> Result<(), Self::Explanation>
-    where
-        G: GlobalView,
-        S: Statements;
 }

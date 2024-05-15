@@ -4,7 +4,7 @@
 //  Created:
 //    18 Apr 2024, 15:27:35
 //  Last edited:
-//    13 May 2024, 15:42:11
+//    15 May 2024, 10:38:25
 //  Auto updated?
 //    Yes
 //
@@ -22,9 +22,8 @@
 
 use std::error::Error;
 
-use crate::global::GlobalView;
 use crate::set::Set;
-use crate::wire::{Action, AuditableAction, Message};
+use crate::wire::{Action, Message};
 
 
 /***** LIBRARY *****/
@@ -61,30 +60,6 @@ pub trait Actions: Set<Self::Enactment> {
     /// # Errors
     /// This function is allowed to fail if the broadcasting of the statement failed.
     fn enact(&mut self, target: Self::Target, msg: Self::Action) -> Result<(), Self::Error>;
-}
-
-/// Defines an extension to [`Actions`] that make them auditable.
-pub trait AuditableActions: Actions
-where
-    Self::Enactment: AuditableAction,
-{
-    /// Something that explains why this Action did not succeed an audit.
-    type Explanation;
-
-    /// Audits all actions in this set.
-    ///
-    /// In particular, will check if all [justification](Action::justification())a are valid according to the policy language and all of its embedded messages have been stated.
-    ///
-    /// # Arguments
-    /// - `global`: Some [`GlobalView`] that can be used to check which statements are agreements and what the current time is.
-    /// - `stmts`: Some [`Statements`] that can be used to check which messages are stated.
-    ///
-    /// # Errors
-    /// If one of the actions did not match the requirements of the audit, then an [`Action::Explanation`] is returned with why this is the case.
-    fn audit<G, S>(&self, global: &G, stmts: &S) -> Result<(), Self::Explanation>
-    where
-        G: GlobalView,
-        S: Statements;
 }
 
 /// Defines the interface that agents use to inspect- and create statements.

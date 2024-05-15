@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 19:28:04
 //  Last edited:
-//    13 May 2024, 19:29:10
+//    15 May 2024, 08:53:21
 //  Auto updated?
 //    Yes
 //
@@ -14,6 +14,6 @@
 
 
 /***** LIBRARY *****/
-/// Represents a single time in the simulation.
+/// Represents a single timestep in the simulation.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Timestamp(pub u128);

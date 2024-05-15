@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 15:36:47
 //  Last edited:
-//    13 May 2024, 15:40:43
+//    15 May 2024, 10:38:30
 //  Auto updated?
 //    Yes
 //
@@ -26,7 +26,7 @@ pub mod wire;
 // Bring it into this namespace
 pub use agent::{Agent, AgentPoll, RationalAgent};
 pub use global::{Agreements, GlobalView, Times};
-pub use local::{Actions, AuditableActions, LocalView, Statements};
+pub use local::{Actions, LocalView, Statements};
 pub use policy::{ExtractablePolicy, Policy};
 pub use set::Set;
-pub use wire::{Action, Agreement, AuditableAction, Message, MessageSet};
+pub use wire::{Action, Agreement, Message, MessageSet};

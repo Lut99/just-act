@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 19:15:18
 //  Last edited:
-//    14 May 2024, 10:20:11
+//    15 May 2024, 10:41:38
 //  Auto updated?
 //    Yes
 //
@@ -18,11 +18,30 @@ use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 
 use justact_core::auxillary::{Authored, Identifiable};
+use justact_core::policy::ExtractablePolicy;
 use justact_core::set::Set as _;
 use justact_core::wire as justact;
+use justact_core::wire::Action as _;
 
 use crate::global::Timestamp;
+use crate::local::StatementsMut;
 use crate::set::Set;
+
+
+/***** AUXILLARY *****/
+/// Explains why the [`Action`] failed an audit.
+#[derive(Debug)]
+pub enum AuditExplanation<E1, E2> {
+    /// One of the messages in the action was not stated (property 3).
+    Stated { stmt: &'static str },
+    /// Failed to extract the policy from the justification (property 4).
+    Extract { err: E1 },
+    /// The policy was not valid (property 4).
+    Valid { expl: E2 },
+}
+
+
+
 
 
 /***** LIBRARY *****/
@@ -118,9 +137,16 @@ impl<'m> justact::MessageSet for MessageSet<'m> {
     type Message = Cow<'m, Message>;
 }
 
+impl<'m> IntoIterator for MessageSet<'m> {
+    type Item = <Set<<Self as justact::MessageSet>::Message> as IntoIterator>::Item;
+    type IntoIter = <Set<<Self as justact::MessageSet>::Message> as IntoIterator>::IntoIter;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter { self.msgs.into_iter() }
+}
 impl<'s, 'm> IntoIterator for &'s MessageSet<'m> {
-    type Item = <Set<<Self as justact::MessageSet>::Message> as justact_core::set::Set<<Self as justact::MessageSet>::Message>>::Item<'s>;
-    type IntoIter = <Set<<Self as justact::MessageSet>::Message> as justact_core::set::Set<<Self as justact::MessageSet>::Message>>::Iter<'s>;
+    type Item = <&'s Set<<Self as justact::MessageSet>::Message> as IntoIterator>::Item;
+    type IntoIter = <&'s Set<<Self as justact::MessageSet>::Message> as IntoIterator>::IntoIter;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter { self.msgs.iter() }
@@ -202,4 +228,43 @@ impl justact::Action for Action {
 
     #[inline]
     fn enacts<'s>(&'s self) -> Self::Message<'s> { &self.enactment }
+}
+
+impl Action {
+    #[inline]
+    fn audit<'s, P>(&'s self, global: &'_ (), stmts: &'_ StatementsMut) -> Result<(), AuditExplanation<P::ExtractError, P::Explanation>>
+    where
+        P: ExtractablePolicy<<MessageSet<'s> as IntoIterator>::IntoIter>,
+    {
+        let just: MessageSet = self.justification();
+
+        /* Property 3 */
+        // Checks if the policy is stated correctly.
+        for stmt in &just {
+            if !stmts.contains(stmt.id()) {
+                return Err(AuditExplanation::Stated { stmt: stmt.id() });
+            }
+        }
+
+
+
+        /* Property 4 */
+        // Checks if the basis and enactment are included in the justification
+        // Trivial due to how we created the action
+
+
+
+        /* Property 5 */
+        // Attempt to extract the policy
+        let policy: P = match P::extract_from(just.into_iter()) {
+            Ok(policy) => policy,
+            Err(err) => return Err(AuditExplanation::Extract { err }),
+        };
+
+        // Check if the policy is valid
+        match policy.check_validity() {
+            Ok(_) => Ok(()),
+            Err(expl) => return Err(AuditExplanation::Valid { expl }),
+        }
+    }
 }
