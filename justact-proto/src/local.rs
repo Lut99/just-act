@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:16:19
 //  Last edited:
-//    15 May 2024, 14:05:57
+//    15 May 2024, 17:37:32
 //  Auto updated?
 //    Yes
 //
@@ -19,8 +19,8 @@ use std::convert::Infallible;
 
 use bit_vec::BitVec;
 use justact_core::auxillary::Identifiable;
-use justact_core::local::Statements as _;
 use justact_core::local as justact;
+use justact_core::local::Statements as _;
 
 use crate::set::Set;
 use crate::wire::{Action, AuditExplanation, Message};
@@ -32,16 +32,29 @@ use crate::wire::{Action, AuditExplanation, Message};
 pub struct StatementsIter<'s1, 's2> {
     /// The [`StatementsMut`] we're iterating over.
     stmts: &'s1 StatementsMut<'s2>,
+    /// The current index.
+    i:     usize,
 }
 impl<'s1, 's2> Iterator for StatementsIter<'s1, 's2> {
     type Item = &'s1 Message;
 
     fn next(&mut self) -> Option<Self::Item> {
-        
+        while self.i < self.stmts.stmts.msgs.len() {
+            self.i += 1;
+
+            // Check if should return this one
+            if self.stmts.stmts.masks.get(self.stmts.agent).map(|m| m.get(self.i - 1).unwrap_or(false)).unwrap_or(false) {
+                return Some(&self.stmts.stmts.msgs[self.i - 1]);
+            }
+        }
+
+        // There are no more statements left
+        None
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        
+        let count: usize = self.stmts.stmts.masks.get(self.stmts.agent).map(|m| m.iter().filter(|b| *b).count()).unwrap_or(0);
+        (count, Some(count))
     }
 }
 
@@ -60,10 +73,10 @@ pub enum Target {
 }
 impl Target {
     /// Checks if the given agent is targeted by this Target.
-    /// 
+    ///
     /// # Arguments
     /// - `agent`: The agent to check for a match.
-    /// 
+    ///
     /// # Returns
     /// True if this Target targets the given `agent`, else false.
     #[inline]
@@ -135,7 +148,7 @@ pub struct StatementsMut<'s> {
 }
 impl<'s> justact_core::Set<Cow<'s, Message>> for StatementsMut<'s> {
     type Item<'s2> = &'s2 Message where Self: 's2;
-    type Iter<'s2> = StatementsIter<'s2> where Self: 's2;
+    type Iter<'s2> = StatementsIter<'s2, 's> where Self: 's2;
 
     #[inline]
     fn add(&mut self, new_elem: Cow<'s, Message>) -> bool {
@@ -145,10 +158,7 @@ impl<'s> justact_core::Set<Cow<'s, Message>> for StatementsMut<'s> {
     }
 
     #[inline]
-    fn get(&self, id: <Cow<'s, Message> as Identifiable>::Id) -> Option<&Cow<'s, Message>>
-    where
-        Cow<'s, Message>: justact_core::auxillary::Identifiable,
-    {
+    fn get(&self, id: <Cow<'s, Message> as Identifiable>::Id) -> Option<&Cow<'s, Message>> {
         let Statements { msgs, masks } = &self.stmts;
 
         // See if it exists
@@ -162,12 +172,17 @@ impl<'s> justact_core::Set<Cow<'s, Message>> for StatementsMut<'s> {
     }
 
     #[inline]
-    fn iter<'s>(&'s self) -> Self::Iter<'s> { StatementsIter { self } }
+    fn iter<'s2>(&'s2 self) -> Self::Iter<'s2> { StatementsIter { stmts: self, i: 0 } }
 
     #[inline]
     fn len(&self) -> usize {
         let msgs_len: usize = self.stmts.msgs.len();
-        self.stmts.msgs.iter().zip(self.stmts.masks.get(self.agent).unwrap_or_else(|| &BitVec::from_elem(msgs_len, false)).iter()).filter(|(_, msk)| *msk).count()
+        self.stmts
+            .msgs
+            .iter()
+            .zip(self.stmts.masks.get(self.agent).map(Cow::Borrowed).unwrap_or_else(|| Cow::Owned(BitVec::from_elem(msgs_len, false))).iter())
+            .filter(|(_, msk)| *msk)
+            .count()
     }
 }
 impl<'s> justact_core::Statements for StatementsMut<'s> {
