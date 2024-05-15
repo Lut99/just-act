@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:16:19
 //  Last edited:
-//    15 May 2024, 10:51:30
+//    15 May 2024, 13:12:13
 //  Auto updated?
 //    Yes
 //
@@ -100,7 +100,8 @@ impl<'s> justact_core::Set<Cow<'s, Message>> for StatementsMut<'s> {
     #[inline]
     fn add(&mut self, new_elem: Cow<'s, Message>) -> bool {
         // Same as stating only to yourself
-        todo!()
+        self.state(Target::Agent(self.agent), new_elem.into_owned()).unwrap();
+        false
     }
 
     #[inline]
@@ -114,9 +115,18 @@ impl<'s> justact_core::Set<Cow<'s, Message>> for StatementsMut<'s> {
         for (i, stmt) in msgs.iter().enumerate() {
             if stmt.id() == id && masks.get(self.agent).map(|m| m[i]).unwrap_or(false) {
                 // Found it
-                return Ok(&Cow::Borrowed(stmt));
+                return Some(&Cow::Borrowed(stmt));
             }
         }
+        None
+    }
+
+    #[inline]
+    fn iter<'s>(&'s self) -> Self::Iter<'s> { StatementsIter { self } }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.stmts.msgs.iter().zip(self.stmts.masks.iter()).filter(|(_, msk)| msk).count()
     }
 }
 impl<'s> justact_core::Statements for StatementsMut<'s> {
@@ -126,5 +136,18 @@ impl<'s> justact_core::Statements for StatementsMut<'s> {
     type Error = Infallible;
 
     #[inline]
-    fn state(&mut self, target: Self::Target, msg: Self::Message) -> Result<(), Self::Error> {}
+    fn state(&mut self, target: Self::Target, msg: Self::Message) -> Result<(), Self::Error> {
+        let Statements { msgs, masks } = &mut self.stmts;
+
+        // First, insert the message
+        msgs.push(msg);
+
+        // Then push the appropriate masks
+        for (agent, masks) in masks {
+            masks.push(target.matches(agent));
+        }
+
+        // aaaaand then we can return
+        Ok(())
+    }
 }
