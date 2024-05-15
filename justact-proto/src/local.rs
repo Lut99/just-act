@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:16:19
 //  Last edited:
-//    15 May 2024, 13:12:13
+//    15 May 2024, 14:05:57
 //  Auto updated?
 //    Yes
 //
@@ -19,13 +19,37 @@ use std::convert::Infallible;
 
 use bit_vec::BitVec;
 use justact_core::auxillary::Identifiable;
+use justact_core::local::Statements as _;
 use justact_core::local as justact;
 
 use crate::set::Set;
 use crate::wire::{Action, AuditExplanation, Message};
 
 
-/***** Auxillary *****/
+/***** ITERATORS *****/
+/// Iterates over the agent-specific statements in a [`StatementsMut`].
+#[derive(Debug)]
+pub struct StatementsIter<'s1, 's2> {
+    /// The [`StatementsMut`] we're iterating over.
+    stmts: &'s1 StatementsMut<'s2>,
+}
+impl<'s1, 's2> Iterator for StatementsIter<'s1, 's2> {
+    type Item = &'s1 Message;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        
+    }
+}
+
+
+
+
+
+/***** AUXILLARY *****/
 /// Determines the possible targets that agents can send messages to for this [`Statements`].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Target {
@@ -33,6 +57,22 @@ pub enum Target {
     All,
     /// Send it to a particular agent with this ID.
     Agent(&'static str),
+}
+impl Target {
+    /// Checks if the given agent is targeted by this Target.
+    /// 
+    /// # Arguments
+    /// - `agent`: The agent to check for a match.
+    /// 
+    /// # Returns
+    /// True if this Target targets the given `agent`, else false.
+    #[inline]
+    pub fn matches(&self, agent: &'static str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Agent(a) => *a == agent,
+        }
+    }
 }
 
 /// Explains why an audit of all [`Action`]s in a [`Statements`] failed.
@@ -126,7 +166,8 @@ impl<'s> justact_core::Set<Cow<'s, Message>> for StatementsMut<'s> {
 
     #[inline]
     fn len(&self) -> usize {
-        self.stmts.msgs.iter().zip(self.stmts.masks.iter()).filter(|(_, msk)| msk).count()
+        let msgs_len: usize = self.stmts.msgs.len();
+        self.stmts.msgs.iter().zip(self.stmts.masks.get(self.agent).unwrap_or_else(|| &BitVec::from_elem(msgs_len, false)).iter()).filter(|(_, msk)| *msk).count()
     }
 }
 impl<'s> justact_core::Statements for StatementsMut<'s> {
