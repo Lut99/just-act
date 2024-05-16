@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 14:43:47
 //  Last edited:
-//    13 May 2024, 15:32:03
+//    16 May 2024, 16:54:01
 //  Auto updated?
 //    Yes
 //
@@ -23,7 +23,7 @@
 use std::error::Error;
 
 use crate::set::Set;
-use crate::Message;
+use crate::{Agreement, MessageSet};
 
 
 /***** LIBRARY *****/
@@ -40,9 +40,11 @@ pub trait GlobalView: Agreements + Times {}
 /// ```
 pub trait Agreements: Set<Self::Agreement> {
     /// The type of agreements stored in this set.
-    type Agreement: Message;
+    type Agreement: Agreement;
+    /// The common notion of Time in the framework.
+    type Time: Ord;
     /// The type of messages that can become agreements.
-    type Message: Message;
+    type MessageSet: MessageSet;
     /// The type of error emitted by `agree`.
     type Error: Error;
 
@@ -57,11 +59,11 @@ pub trait Agreements: Set<Self::Agreement> {
     /// insofar the underlying consensus mechanism guarantees this.
     ///
     /// # Arguments
-    /// - `msg`: Some `Message` that will be agreed upon.
+    /// - `msgs`: Some `MessageSet` that will be agreed upon.
     ///
     /// # Errors
     /// This function is allowed to fail if no consensus was reached.
-    fn agree(&mut self, msg: Self::Message) -> Result<(), Self::Error>;
+    fn agree(&mut self, when: Self::Time, msgs: Self::MessageSet) -> Result<(), Self::Error>;
 }
 
 /// Defines the interface that agents use to inspect- and create times.

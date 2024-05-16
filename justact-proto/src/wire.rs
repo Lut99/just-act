@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 19:15:18
 //  Last edited:
-//    16 May 2024, 16:37:55
+//    16 May 2024, 17:46:25
 //  Auto updated?
 //    Yes
 //
@@ -23,9 +23,10 @@ use justact_core::set::{Map as _, Set as _};
 use justact_core::wire as justact;
 use justact_core::wire::Action as _;
 
-use crate::global::Timestamp;
+use crate::global::{AgreementsView, Timestamp};
 use crate::local::StatementsView;
 use crate::set::Set;
+use crate::sync::Synchronizer;
 
 
 /***** AUXILLARY *****/
@@ -255,8 +256,14 @@ impl Action {
     /// # Errors
     /// This function errors if the audit failed. Which property is violated, and how, is explained by the returned [`AuditExplanation`].
     #[inline]
-    pub fn audit<'s, P>(&'s self, argmnts: &'_ (), stmts: &'_ StatementsView) -> Result<(), AuditExplanation<P::ExtractError, P::Explanation>>
+    pub fn audit<'s, S, P>(
+        &'s self,
+        agrmnts: &AgreementsView<S>,
+        stmts: &StatementsView,
+    ) -> Result<(), AuditExplanation<P::ExtractError, P::Explanation>>
     where
+        S: Synchronizer<Agreement>,
+        S::Error: 'static,
         P: ExtractablePolicy<<MessageSet<'s> as IntoIterator>::IntoIter>,
     {
         let just: MessageSet = self.justification();
@@ -285,9 +292,19 @@ impl Action {
         };
 
         // Check if the policy is valid
-        match policy.check_validity() {
-            Ok(_) => Ok(()),
-            Err(expl) => return Err(AuditExplanation::Valid { expl }),
+        if let Err(expl) = policy.check_validity() {
+            return Err(AuditExplanation::Valid { expl });
         }
+
+
+
+        /* Property 6 */
+        // Assert that the basis is an agreement
+        for agrmnt in agrmnts.iter() {}
+
+
+
+        // Done
+        Ok(())
     }
 }
