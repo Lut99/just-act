@@ -4,7 +4,7 @@
 //  Created:
 //    18 Apr 2024, 11:37:12
 //  Last edited:
-//    15 May 2024, 09:19:38
+//    16 May 2024, 16:27:44
 //  Auto updated?
 //    Yes
 //
@@ -299,7 +299,7 @@ impl<T: Eq + Hash> PartialEq for Set<T> {
     }
 }
 
-impl<T: Eq + Hash> justact_core::set::Set<T> for Set<T> {
+impl<T: Eq + Hash> justact_core::Set<T> for Set<T> {
     type Item<'s> = &'s T where Self: 's;
     type Iter<'s> = SetIter<'s, T> where Self: 's;
 
@@ -340,10 +340,26 @@ impl<T: Eq + Hash> justact_core::set::Set<T> for Set<T> {
     }
 
     #[inline]
-    fn get(&self, id: T::Id) -> Option<&T>
-    where
-        T: Identifiable,
-    {
+    fn iter<'s>(&'s self) -> Self::Iter<'s> {
+        match self {
+            Self::Empty => SetIter::Singleton(None),
+            Self::Singleton(elem) => SetIter::Singleton(Some(elem)),
+            Self::Multi(elems) => SetIter::Multi(elems.iter()),
+        }
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        match self {
+            Self::Empty => 0,
+            Self::Singleton(_) => 1,
+            Self::Multi(msgs) => msgs.len(),
+        }
+    }
+}
+impl<T: Eq + Hash + Identifiable> justact_core::Map<T> for Set<T> {
+    #[inline]
+    fn get(&self, id: T::Id) -> Option<&T> {
         // We have to do iterative search
         match self {
             Self::Empty => None,
@@ -362,24 +378,6 @@ impl<T: Eq + Hash> justact_core::set::Set<T> for Set<T> {
                 }
                 None
             },
-        }
-    }
-
-    #[inline]
-    fn iter<'s>(&'s self) -> Self::Iter<'s> {
-        match self {
-            Self::Empty => SetIter::Singleton(None),
-            Self::Singleton(elem) => SetIter::Singleton(Some(elem)),
-            Self::Multi(elems) => SetIter::Multi(elems.iter()),
-        }
-    }
-
-    #[inline]
-    fn len(&self) -> usize {
-        match self {
-            Self::Empty => 0,
-            Self::Singleton(_) => 1,
-            Self::Multi(msgs) => msgs.len(),
         }
     }
 }
@@ -560,7 +558,7 @@ where
     }
 }
 
-impl<T> justact_core::set::Set<T> for Map<T>
+impl<T> justact_core::Set<T> for Map<T>
 where
     T: Identifiable,
     T::Id: Eq + Hash,
@@ -605,22 +603,6 @@ where
     }
 
     #[inline]
-    fn get(&self, id: T::Id) -> Option<&T> {
-        // We can do fast search
-        match self {
-            Self::Empty => None,
-            Self::Singleton(msg) => {
-                if msg.id() == id {
-                    Some(msg)
-                } else {
-                    None
-                }
-            },
-            Self::Multi(msgs) => msgs.get(&id),
-        }
-    }
-
-    #[inline]
     fn iter<'s>(&'s self) -> Self::Iter<'s> {
         match self {
             Self::Empty => MapIter::Singleton(None),
@@ -635,6 +617,23 @@ where
             Self::Empty => 0,
             Self::Singleton(_) => 1,
             Self::Multi(msgs) => msgs.len(),
+        }
+    }
+}
+impl<T: Identifiable> justact_core::Map<T> for Map<T> {
+    #[inline]
+    fn get(&self, id: T::Id) -> Option<&T> {
+        // We can do fast search
+        match self {
+            Self::Empty => None,
+            Self::Singleton(msg) => {
+                if msg.id() == id {
+                    Some(msg)
+                } else {
+                    None
+                }
+            },
+            Self::Multi(msgs) => msgs.get(&id),
         }
     }
 }

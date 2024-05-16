@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 15:36:47
 //  Last edited:
-//    15 May 2024, 10:38:30
+//    16 May 2024, 16:25:37
 //  Auto updated?
 //    Yes
 //
@@ -28,5 +28,5 @@ pub use agent::{Agent, AgentPoll, RationalAgent};
 pub use global::{Agreements, GlobalView, Times};
 pub use local::{Actions, LocalView, Statements};
 pub use policy::{ExtractablePolicy, Policy};
-pub use set::Set;
+pub use set::{Map, Set};
 pub use wire::{Action, Agreement, Message, MessageSet};

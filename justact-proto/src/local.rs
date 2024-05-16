@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:16:19
 //  Last edited:
-//    15 May 2024, 17:37:32
+//    16 May 2024, 16:37:38
 //  Auto updated?
 //    Yes
 //
@@ -19,19 +19,48 @@ use std::convert::Infallible;
 
 use bit_vec::BitVec;
 use justact_core::auxillary::Identifiable;
-use justact_core::local as justact;
-use justact_core::local::Statements as _;
+use justact_core::local::{Actions as _, Statements as _};
 
-use crate::set::Set;
 use crate::wire::{Action, AuditExplanation, Message};
 
 
 /***** ITERATORS *****/
-/// Iterates over the agent-specific statements in a [`StatementsMut`].
+/// Iterates over the agent-specific actions in an [`ActionsView`].
+#[derive(Debug)]
+pub struct ActionsIter<'s, 'a> {
+    /// The [`ActionsView`] we're iterating over.
+    acts: &'s ActionsView<'a>,
+    /// The current index.
+    i:    usize,
+}
+impl<'s, 'a> Iterator for ActionsIter<'s, 'a> {
+    type Item = &'s Action;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.i < self.acts.acts.acts.len() {
+            self.i += 1;
+
+            // Check if should return this one
+            if self.acts.acts.masks.get(self.acts.agent).map(|m| m.get(self.i - 1).unwrap_or(false)).unwrap_or(false) {
+                return Some(&self.acts.acts.acts[self.i - 1]);
+            }
+        }
+
+        // There are no more statements left
+        None
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let count: usize = self.acts.acts.masks.get(self.acts.agent).map(|m| m.iter().filter(|b| *b).count()).unwrap_or(0);
+        (count, Some(count))
+    }
+}
+
+/// Iterates over the agent-specific statements in a [`StatementsView`].
 #[derive(Debug)]
 pub struct StatementsIter<'s1, 's2> {
-    /// The [`StatementsMut`] we're iterating over.
-    stmts: &'s1 StatementsMut<'s2>,
+    /// The [`StatementsView`] we're iterating over.
+    stmts: &'s1 StatementsView<'s2>,
     /// The current index.
     i:     usize,
 }
@@ -102,6 +131,210 @@ pub struct Explanation<E1, E2> {
 
 
 /***** LIBRARY *****/
+/// Implements a unification of [`Actions`] and [`Statements`].
+#[derive(Clone, Debug)]
+pub struct LocalState {
+    /// The actions-part.
+    acts:  Actions,
+    /// The statements-part.
+    stmts: Statements,
+}
+impl Default for LocalState {
+    #[inline]
+    fn default() -> Self { Self::new() }
+}
+impl LocalState {
+    /// Constructor for the LocalState.
+    ///
+    /// # Returns
+    /// A new LocalState ready for use in the simulation.
+    #[inline]
+    pub fn new() -> Self { Self { acts: Actions::new(), stmts: Statements::new() } }
+
+    /// Returns a new LocalState that is scoped to the given agent.
+    ///
+    /// # Arguments
+    /// - `agent`: The identifier of the agent to scope to.
+    ///
+    /// # Returns
+    /// A new [`LocalView`] that will only returns messages for the given scope.
+    ///
+    /// Note that, if the given `agent` is unknown, the resulting `LocalView` will not return any statements.
+    #[inline]
+    pub fn scope<'s>(&'s mut self, agent: &'static str) -> LocalView<'s> {
+        LocalView { acts: self.acts.scope(agent), stmts: self.stmts.scope(agent) }
+    }
+}
+
+/// Implements a per-agent view on the [`LocalState`].
+#[derive(Debug)]
+pub struct LocalView<'s> {
+    /// All actions in the universe.
+    acts:  ActionsView<'s>,
+    /// All statements in the universe.
+    stmts: StatementsView<'s>,
+}
+impl<'s> justact_core::Set<Action> for LocalView<'s> {
+    type Item<'s2> = <ActionsView<'s> as justact_core::Set<Action>>::Item<'s2> where Self: 's2;
+    type Iter<'s2> = <ActionsView<'s> as justact_core::Set<Action>>::Iter<'s2> where Self: 's2;
+
+    #[inline]
+    fn add(&mut self, new_elem: Action) -> bool { self.acts.add(new_elem) }
+
+    #[inline]
+    fn iter<'s2>(&'s2 self) -> Self::Iter<'s2> { self.acts.iter() }
+
+    #[inline]
+    fn len(&self) -> usize { self.acts.len() }
+}
+impl<'s> justact_core::Map<Action> for LocalView<'s> {
+    #[inline]
+    fn get(&self, id: <Action as Identifiable>::Id) -> Option<&Action> { self.acts.get(id) }
+}
+impl<'s> justact_core::Actions for LocalView<'s> {
+    type Enactment = <ActionsView<'s> as justact_core::Actions>::Enactment;
+    type Action = <ActionsView<'s> as justact_core::Actions>::Action;
+    type Target = <ActionsView<'s> as justact_core::Actions>::Target;
+    type Error = <ActionsView<'s> as justact_core::Actions>::Error;
+
+    #[inline]
+    fn enact(&mut self, target: Self::Target, msg: Self::Action) -> Result<(), Self::Error> { self.acts.enact(target, msg) }
+}
+impl<'s> justact_core::Set<Message> for LocalView<'s> {
+    type Item<'s2> = <StatementsView<'s> as justact_core::Set<Message>>::Item<'s2> where Self: 's2;
+    type Iter<'s2> = <StatementsView<'s> as justact_core::Set<Message>>::Iter<'s2> where Self: 's2;
+
+    #[inline]
+    fn add(&mut self, new_elem: Message) -> bool { self.stmts.add(new_elem) }
+
+    #[inline]
+    fn iter<'s2>(&'s2 self) -> Self::Iter<'s2> { self.stmts.iter() }
+
+    #[inline]
+    fn len(&self) -> usize { self.stmts.len() }
+}
+impl<'s> justact_core::Map<Message> for LocalView<'s> {
+    #[inline]
+    fn get(&self, id: <Message as Identifiable>::Id) -> Option<&Message> { self.stmts.get(id) }
+}
+impl<'s> justact_core::Statements for LocalView<'s> {
+    type Statement = <StatementsView<'s> as justact_core::Statements>::Statement;
+    type Message = <StatementsView<'s> as justact_core::Statements>::Message;
+    type Target = <StatementsView<'s> as justact_core::Statements>::Target;
+    type Error = <StatementsView<'s> as justact_core::Statements>::Error;
+
+    #[inline]
+    fn state(&mut self, target: Self::Target, msg: Self::Message) -> Result<(), Self::Error> { self.stmts.state(target, msg) }
+}
+
+
+
+/// Implements an [`Actions`](justact_core::Actions) with a potentially partial view on actions.
+#[derive(Clone, Debug)]
+pub struct Actions {
+    /// All enacted statements in the system.
+    acts:  Vec<Action>,
+    /// Per-agent bitmaps that mask the msgs to find their own.
+    masks: HashMap<&'static str, BitVec>,
+}
+impl Default for Actions {
+    #[inline]
+    fn default() -> Self { Self::new() }
+}
+impl Actions {
+    /// Constructor for the Actions.
+    ///
+    /// # Returns
+    /// A new Actions ready for use in the simulation.
+    #[inline]
+    pub fn new() -> Self { Self { acts: Vec::new(), masks: HashMap::new() } }
+
+    /// Returns a new Actions that is scoped to the given agent.
+    ///
+    /// # Arguments
+    /// - `agent`: The identifier of the agent to scope to.
+    ///
+    /// # Returns
+    /// A new [`ActionsView`] that will only returns messages for the given scope.
+    ///
+    /// Note that, if the given `agent` is unknown, the resulting `ActionsView` will not return any statements.
+    #[inline]
+    pub fn scope<'s>(&'s mut self, agent: &'static str) -> ActionsView<'s> { ActionsView { acts: self, agent } }
+}
+
+/// Implements a per-agent view on [`Actions`].
+#[derive(Debug)]
+pub struct ActionsView<'s> {
+    /// All actions in the universe.
+    acts:  &'s mut Actions,
+    /// The agent for which this view behaves.
+    agent: &'static str,
+}
+impl<'s> justact_core::Set<Action> for ActionsView<'s> {
+    type Item<'s2> = &'s2 Action where Self: 's2;
+    type Iter<'s2> = ActionsIter<'s2, 's> where Self: 's2;
+
+    #[inline]
+    fn add(&mut self, new_elem: Action) -> bool {
+        // Same as enacting only to yourself
+        self.enact(Target::Agent(self.agent), new_elem).unwrap();
+        false
+    }
+
+    #[inline]
+    fn iter<'s2>(&'s2 self) -> Self::Iter<'s2> { ActionsIter { acts: self, i: 0 } }
+
+    #[inline]
+    fn len(&self) -> usize {
+        let msgs_len: usize = self.acts.acts.len();
+        self.acts
+            .acts
+            .iter()
+            .zip(self.acts.masks.get(self.agent).map(Cow::Borrowed).unwrap_or_else(|| Cow::Owned(BitVec::from_elem(msgs_len, false))).iter())
+            .filter(|(_, msk)| *msk)
+            .count()
+    }
+}
+impl<'s> justact_core::Map<Action> for ActionsView<'s> {
+    #[inline]
+    fn get(&self, id: <Action as Identifiable>::Id) -> Option<&Action> {
+        let Actions { acts, masks } = &self.acts;
+
+        // See if it exists, which is if there's one with an ID that is not masked out
+        for (i, stmt) in acts.iter().enumerate() {
+            if stmt.id() == id && masks.get(self.agent).map(|m| m[i]).unwrap_or(false) {
+                // Found it
+                return Some(stmt);
+            }
+        }
+        None
+    }
+}
+impl<'s> justact_core::Actions for ActionsView<'s> {
+    type Enactment = Action;
+    type Action = Action;
+    type Target = Target;
+    type Error = Infallible;
+
+    #[inline]
+    fn enact(&mut self, target: Self::Target, msg: Self::Action) -> Result<(), Self::Error> {
+        let Actions { acts, masks } = &mut self.acts;
+
+        // First, insert the act
+        acts.push(msg);
+
+        // Then push the appropriate masks
+        for (agent, masks) in masks {
+            masks.push(target.matches(agent));
+        }
+
+        // aaaaand then we can return
+        Ok(())
+    }
+}
+
+
+
 /// Implements a [`Statements`](justact_core::statements::Statements) with a potentially partial view on messages.
 #[derive(Clone, Debug)]
 pub struct Statements {
@@ -110,7 +343,6 @@ pub struct Statements {
     /// Per-agent bitmaps that mask the msgs to find their own.
     masks: HashMap<&'static str, BitVec>,
 }
-
 impl Default for Statements {
     #[inline]
     fn default() -> Self { Self::new() }
@@ -129,46 +361,30 @@ impl Statements {
     /// - `agent`: The identifier of the agent to scope to.
     ///
     /// # Returns
-    /// A new [`StatementsMut`] that will only returns messages for the given scope.
+    /// A new [`StatementsView`] that will only returns messages for the given scope.
     ///
-    /// Note that, if the given `agent` is unknown, the resulting `StatementsMut` will not return any statements.
+    /// Note that, if the given `agent` is unknown, the resulting `StatementsView` will not return any statements.
     #[inline]
-    pub fn scope<'s>(&'s mut self, agent: &'static str) -> StatementsMut<'s> { StatementsMut { stmts: self, agent } }
+    pub fn scope<'s>(&'s mut self, agent: &'static str) -> StatementsView<'s> { StatementsView { stmts: self, agent } }
 }
-
-
 
 /// Implements a per-agent view on [`Statements`].
 #[derive(Debug)]
-pub struct StatementsMut<'s> {
+pub struct StatementsView<'s> {
     /// All statements in the universe.
     stmts: &'s mut Statements,
     /// The agent for which this view behaves.
     agent: &'static str,
 }
-impl<'s> justact_core::Set<Cow<'s, Message>> for StatementsMut<'s> {
+impl<'s> justact_core::Set<Message> for StatementsView<'s> {
     type Item<'s2> = &'s2 Message where Self: 's2;
     type Iter<'s2> = StatementsIter<'s2, 's> where Self: 's2;
 
     #[inline]
-    fn add(&mut self, new_elem: Cow<'s, Message>) -> bool {
+    fn add(&mut self, new_elem: Message) -> bool {
         // Same as stating only to yourself
-        self.state(Target::Agent(self.agent), new_elem.into_owned()).unwrap();
+        self.state(Target::Agent(self.agent), new_elem).unwrap();
         false
-    }
-
-    #[inline]
-    fn get(&self, id: <Cow<'s, Message> as Identifiable>::Id) -> Option<&Cow<'s, Message>> {
-        let Statements { msgs, masks } = &self.stmts;
-
-        // See if it exists
-        for (i, stmt) in msgs.iter().enumerate() {
-            if stmt.id() == id && masks.get(self.agent).map(|m| m[i]).unwrap_or(false) {
-                // Found it
-                return Some(&Cow::Borrowed(stmt));
-            }
-        }
-        None
     }
 
     #[inline]
@@ -185,8 +401,23 @@ impl<'s> justact_core::Set<Cow<'s, Message>> for StatementsMut<'s> {
             .count()
     }
 }
-impl<'s> justact_core::Statements for StatementsMut<'s> {
-    type Statement = Cow<'s, Message>;
+impl<'s> justact_core::Map<Message> for StatementsView<'s> {
+    #[inline]
+    fn get(&self, id: <Message as Identifiable>::Id) -> Option<&Message> {
+        let Statements { msgs, masks } = &self.stmts;
+
+        // See if it exists, which is if there's one with an ID that is not masked out
+        for (i, stmt) in msgs.iter().enumerate() {
+            if stmt.id() == id && masks.get(self.agent).map(|m| m[i]).unwrap_or(false) {
+                // Found it
+                return Some(stmt);
+            }
+        }
+        None
+    }
+}
+impl<'s> justact_core::Statements for StatementsView<'s> {
+    type Statement = Message;
     type Message = Message;
     type Target = Target;
     type Error = Infallible;

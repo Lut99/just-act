@@ -10,6 +10,7 @@ description = "Provides an implementation of a simple demo environment that simu
 [dependencies]
 bit-vec = "0.6"
 console = "0.15"
+error-trace = { git = "https://github.com/Lut99/error-trace-rs" }
 justact-core = { path = "../justact-core" }
 log = "0.4"
 stackvec = { git = "https://github.com/Lut99/stackvec-rs" }
@@ -17,7 +18,6 @@ stackvec = { git = "https://github.com/Lut99/stackvec-rs" }
 
 [dev-dependencies]
 clap = { version = "4.5", features = ["derive"] }
-error-trace = { git = "https://github.com/Lut99/error-trace-rs" }
 humanlog = { git = "https://github.com/Lut99/humanlog-rs" }
 
 

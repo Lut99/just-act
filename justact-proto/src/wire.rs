@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 19:15:18
 //  Last edited:
-//    15 May 2024, 10:41:38
+//    16 May 2024, 16:37:55
 //  Auto updated?
 //    Yes
 //
@@ -19,12 +19,12 @@ use std::hash::{Hash, Hasher};
 
 use justact_core::auxillary::{Authored, Identifiable};
 use justact_core::policy::ExtractablePolicy;
-use justact_core::set::Set as _;
+use justact_core::set::{Map as _, Set as _};
 use justact_core::wire as justact;
 use justact_core::wire::Action as _;
 
 use crate::global::Timestamp;
-use crate::local::StatementsMut;
+use crate::local::StatementsView;
 use crate::set::Set;
 
 
@@ -113,12 +113,20 @@ impl<'m> MessageSet<'m> {
     }
 }
 
-impl<'m> justact_core::set::Set<Cow<'m, Message>> for MessageSet<'m> {
+impl<'m> justact_core::Set<Cow<'m, Message>> for MessageSet<'m> {
     type Item<'s> = <Set<Cow<'m, Message>> as justact_core::set::Set<Cow<'m, Message>>>::Item<'s> where Self: 's;
     type Iter<'s> = <Set<Cow<'m, Message>> as justact_core::set::Set<Cow<'m, Message>>>::Iter<'s> where Self: 's;
 
     #[inline]
     fn add(&mut self, new_elem: Cow<'m, Message>) -> bool { self.msgs.add(new_elem) }
+
+    #[inline]
+    fn iter<'s>(&'s self) -> Self::Iter<'s> { self.msgs.iter() }
+
+    #[inline]
+    fn len(&self) -> usize { self.msgs.len() }
+}
+impl<'m> justact_core::Map<Cow<'m, Message>> for MessageSet<'m> {
     #[inline]
     fn get(&self, id: <Cow<'m, Message> as Identifiable>::Id) -> Option<&Cow<'m, Message>>
     where
@@ -126,12 +134,6 @@ impl<'m> justact_core::set::Set<Cow<'m, Message>> for MessageSet<'m> {
     {
         self.msgs.get(id)
     }
-
-    #[inline]
-    fn iter<'s>(&'s self) -> Self::Iter<'s> { self.msgs.iter() }
-
-    #[inline]
-    fn len(&self) -> usize { self.msgs.len() }
 }
 impl<'m> justact::MessageSet for MessageSet<'m> {
     type Message = Cow<'m, Message>;
@@ -200,6 +202,12 @@ pub struct Action {
     /// The enacted statement that is justified by this action.
     pub enactment: Message,
 }
+impl Identifiable for Action {
+    type Id = &'static str;
+
+    #[inline]
+    fn id(&self) -> Self::Id { self.enactment.id }
+}
 impl justact::Action for Action {
     type Time = Timestamp;
     type Agreement<'s> = &'s Agreement;
@@ -231,8 +239,23 @@ impl justact::Action for Action {
 }
 
 impl Action {
+    /// Audits this action.
+    ///
+    /// This will check whether this action meets all the properties specified in the framework paper:
+    /// - Property 3: Stated (all messages must be stated);
+    /// - Property 5: Valid (the extracted policy of the justification must be valid); and
+    /// - Property 6: Based (the basis of the action was an agreement valid at the time it was taken).
+    ///
+    /// Note that Property 4, relevant (the basis and enactment are in the justification) is trivially guaranteed by the implementation of [`Action::justification()`].
+    ///
+    /// # Arguments
+    /// - `agrmnts`: An [`AgreementsView`] that provides access to the globally synchronized agreements.
+    /// - `stmts`: A [`StatementsView`] that provides access to the messages this agent knows are stated.
+    ///
+    /// # Errors
+    /// This function errors if the audit failed. Which property is violated, and how, is explained by the returned [`AuditExplanation`].
     #[inline]
-    fn audit<'s, P>(&'s self, global: &'_ (), stmts: &'_ StatementsMut) -> Result<(), AuditExplanation<P::ExtractError, P::Explanation>>
+    pub fn audit<'s, P>(&'s self, argmnts: &'_ (), stmts: &'_ StatementsView) -> Result<(), AuditExplanation<P::ExtractError, P::Explanation>>
     where
         P: ExtractablePolicy<<MessageSet<'s> as IntoIterator>::IntoIter>,
     {

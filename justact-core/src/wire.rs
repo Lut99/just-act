@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:59:05
 //  Last edited:
-//    15 May 2024, 10:38:12
+//    16 May 2024, 14:31:19
 //  Auto updated?
 //    Yes
 //
@@ -131,7 +131,7 @@ impl<'a, T: Agreement> Agreement for &'a T {
 /// Defines a justified enactment.
 ///
 /// This is simply a stand-in for a tuple of a _basis_ (agreement), _justification_ and _enactment_, all three [`MessageSet`]s.
-pub trait Action {
+pub trait Action: Identifiable {
     /// The type of the time at which this Action can be taken.
     type Time: Ord;
     /// The type of Agreement which forms the `Self::basis()` of the agreement.

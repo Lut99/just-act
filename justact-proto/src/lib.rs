@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:13:37
 //  Last edited:
-//    15 May 2024, 08:54:06
+//    16 May 2024, 14:42:13
 //  Auto updated?
 //    Yes
 //
@@ -17,6 +17,7 @@
 pub mod global;
 pub mod local;
 pub mod set;
+pub mod sync;
 pub mod wire;
 // pub mod simulation;
 
