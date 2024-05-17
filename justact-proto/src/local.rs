@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:16:19
 //  Last edited:
-//    17 May 2024, 10:35:07
+//    17 May 2024, 14:06:32
 //  Auto updated?
 //    Yes
 //
@@ -14,8 +14,10 @@
 //
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
+use std::rc::Rc;
 
 use bit_vec::BitVec;
 use justact_core::auxillary::Identifiable;
@@ -23,6 +25,7 @@ use justact_core::local::{Actions as _, Statements as _};
 use justact_core::ExtractablePolicy;
 
 use crate::global::AgreementsView;
+use crate::interface::Interface;
 use crate::set::set_passthrough_impl;
 use crate::sync::Synchronizer;
 use crate::wire::{Action, Agreement, Message, MessageSet};
@@ -45,7 +48,7 @@ impl<'s, 'a> Iterator for ActionsIter<'s, 'a> {
             self.i += 1;
 
             // Check if should return this one
-            if self.acts.acts.masks.get(self.acts.agent).map(|m| m.get(self.i - 1).unwrap_or(false)).unwrap_or(false) {
+            if self.acts.agent.map(|a| self.acts.acts.masks.get(a).map(|m| m.get(self.i - 1).unwrap_or(false)).unwrap_or(false)).unwrap_or(true) {
                 return Some(&self.acts.acts.acts[self.i - 1]);
             }
         }
@@ -55,7 +58,11 @@ impl<'s, 'a> Iterator for ActionsIter<'s, 'a> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let count: usize = self.acts.acts.masks.get(self.acts.agent).map(|m| m.iter().filter(|b| *b).count()).unwrap_or(0);
+        let count: usize = self
+            .acts
+            .agent
+            .map(|a| self.acts.acts.masks.get(a).map(|m| m.iter().filter(|b| *b).count()).unwrap_or(0))
+            .unwrap_or(self.acts.acts.acts.len());
         (count, Some(count))
     }
 }
@@ -76,7 +83,7 @@ impl<'s1, 's2> Iterator for StatementsIter<'s1, 's2> {
             self.i += 1;
 
             // Check if should return this one
-            if self.stmts.stmts.masks.get(self.stmts.agent).map(|m| m.get(self.i - 1).unwrap_or(false)).unwrap_or(false) {
+            if self.stmts.agent.map(|a| self.stmts.stmts.masks.get(a).map(|m| m.get(self.i - 1).unwrap_or(false)).unwrap_or(false)).unwrap_or(true) {
                 return Some(&self.stmts.stmts.msgs[self.i - 1]);
             }
         }
@@ -86,7 +93,11 @@ impl<'s1, 's2> Iterator for StatementsIter<'s1, 's2> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let count: usize = self.stmts.stmts.masks.get(self.stmts.agent).map(|m| m.iter().filter(|b| *b).count()).unwrap_or(0);
+        let count: usize = self
+            .stmts
+            .agent
+            .map(|a| self.stmts.stmts.masks.get(a).map(|m| m.iter().filter(|b| *b).count()).unwrap_or(0))
+            .unwrap_or(self.stmts.stmts.msgs.len());
         (count, Some(count))
     }
 }
@@ -139,21 +150,20 @@ pub struct AuditExplanation<E1, E2> {
 #[derive(Clone, Debug)]
 pub struct LocalState {
     /// The actions-part.
-    acts:  Actions,
+    pub acts:  Actions,
     /// The statements-part.
-    stmts: Statements,
-}
-impl Default for LocalState {
-    #[inline]
-    fn default() -> Self { Self::new() }
+    pub stmts: Statements,
 }
 impl LocalState {
     /// Constructor for the LocalState.
     ///
+    /// # Arguments
+    /// - `interface`: Some shared [`Interface`] that we use to log nice messages about when agents publish actions.
+    ///
     /// # Returns
     /// A new LocalState ready for use in the simulation.
     #[inline]
-    pub fn new() -> Self { Self { acts: Actions::new(), stmts: Statements::new() } }
+    pub fn new(interface: Rc<RefCell<Interface>>) -> Self { Self { acts: Actions::new(interface.clone()), stmts: Statements::new(interface) } }
 
     /// Returns a new LocalState that is scoped to the given agent.
     ///
@@ -204,6 +214,7 @@ impl<'s> justact_core::Statements for LocalView<'s> {
     #[inline]
     fn state(&mut self, target: Self::Target, msg: Self::Message) -> Result<(), Self::Error> { self.stmts.state(target, msg) }
 }
+impl<'s> justact_core::LocalView for LocalView<'s> {}
 
 
 
@@ -211,21 +222,22 @@ impl<'s> justact_core::Statements for LocalView<'s> {
 #[derive(Clone, Debug)]
 pub struct Actions {
     /// All enacted statements in the system.
-    acts:  Vec<Action>,
+    pub acts:      Vec<Action>,
     /// Per-agent bitmaps that mask the msgs to find their own.
-    masks: HashMap<&'static str, BitVec>,
-}
-impl Default for Actions {
-    #[inline]
-    fn default() -> Self { Self::new() }
+    pub masks:     HashMap<&'static str, BitVec>,
+    /// The interface we're using to log things nicely.
+    pub interface: Rc<RefCell<Interface>>,
 }
 impl Actions {
     /// Constructor for the Actions.
     ///
+    /// # Arguments
+    /// - `interface`: Some shared [`Interface`] that we use to log nice messages about when agents publish actions.
+    ///
     /// # Returns
     /// A new Actions ready for use in the simulation.
     #[inline]
-    pub fn new() -> Self { Self { acts: Vec::new(), masks: HashMap::new() } }
+    pub fn new(interface: Rc<RefCell<Interface>>) -> Self { Self { acts: Vec::new(), masks: HashMap::new(), interface } }
 
     /// Returns a new Actions that is scoped to the given agent.
     ///
@@ -237,7 +249,18 @@ impl Actions {
     ///
     /// Note that, if the given `agent` is unknown, the resulting `ActionsView` will not return any statements.
     #[inline]
-    pub fn scope<'s>(&'s mut self, agent: &'static str) -> ActionsView<'s> { ActionsView { acts: self, agent } }
+    pub fn scope<'s>(&'s mut self, agent: &'static str) -> ActionsView<'s> { ActionsView { acts: self, agent: Some(agent) } }
+
+    /// Returns a special scope that reflects _all_ agents.
+    ///
+    /// Kind of like a view for the system as a whole.
+    ///
+    /// # Returns
+    /// A new [`ActionsView`] that returns all actions all agents enacted together.
+    #[inline]
+    pub fn full(&mut self) -> ActionsView { ActionsView { acts: self, agent: None } }
+
+
 
     /// Audits all actions.
     ///
@@ -285,8 +308,8 @@ impl Actions {
 pub struct ActionsView<'s> {
     /// All actions in the universe.
     acts:  &'s mut Actions,
-    /// The agent for which this view behaves.
-    agent: &'static str,
+    /// The agent for which this view behaves. If it's [`None`], that means a special view that has the full overview (pun intended).
+    agent: Option<&'static str>,
 }
 impl<'s> justact_core::Set<Action> for ActionsView<'s> {
     type Item<'s2> = &'s2 Action where Self: 's2;
@@ -295,7 +318,7 @@ impl<'s> justact_core::Set<Action> for ActionsView<'s> {
     #[inline]
     fn add(&mut self, new_elem: Action) -> bool {
         // Same as enacting only to yourself
-        self.enact(Target::Agent(self.agent), new_elem).unwrap();
+        self.enact(self.agent.map(|a| Target::Agent(a)).unwrap_or(Target::All), new_elem).unwrap();
         false
     }
 
@@ -308,7 +331,12 @@ impl<'s> justact_core::Set<Action> for ActionsView<'s> {
         self.acts
             .acts
             .iter()
-            .zip(self.acts.masks.get(self.agent).map(Cow::Borrowed).unwrap_or_else(|| Cow::Owned(BitVec::from_elem(msgs_len, false))).iter())
+            .zip(
+                self.agent
+                    .map(|a| self.acts.masks.get(a).map(Cow::Borrowed).unwrap_or_else(|| Cow::Owned(BitVec::from_elem(msgs_len, false))))
+                    .unwrap_or_else(|| Cow::Owned(BitVec::from_elem(msgs_len, true)))
+                    .iter(),
+            )
             .filter(|(_, msk)| *msk)
             .count()
     }
@@ -316,11 +344,9 @@ impl<'s> justact_core::Set<Action> for ActionsView<'s> {
 impl<'s> justact_core::Map<Action> for ActionsView<'s> {
     #[inline]
     fn get(&self, id: &<Action as Identifiable>::Id) -> Option<&Action> {
-        let Actions { acts, masks } = &self.acts;
-
         // See if it exists, which is if there's one with an ID that is not masked out
-        for (i, stmt) in acts.iter().enumerate() {
-            if stmt.id() == id && masks.get(self.agent).map(|m| m[i]).unwrap_or(false) {
+        for (i, stmt) in self.acts.acts.iter().enumerate() {
+            if stmt.id() == id && self.agent.map(|a| self.acts.masks.get(a).map(|m| m[i]).unwrap_or(false)).unwrap_or(true) {
                 // Found it
                 return Some(stmt);
             }
@@ -335,11 +361,12 @@ impl<'s> justact_core::Actions for ActionsView<'s> {
     type Error = Infallible;
 
     #[inline]
-    fn enact(&mut self, target: Self::Target, msg: Self::Action) -> Result<(), Self::Error> {
-        let Actions { acts, masks } = &mut self.acts;
+    fn enact(&mut self, target: Self::Target, act: Self::Action) -> Result<(), Self::Error> {
+        let Actions { acts, masks, interface } = &mut self.acts;
 
         // First, insert the act
-        acts.push(msg);
+        interface.borrow().log_enact(self.agent.unwrap_or("<system>"), &act);
+        acts.push(act);
 
         // Then push the appropriate masks
         for (agent, masks) in masks {
@@ -357,21 +384,22 @@ impl<'s> justact_core::Actions for ActionsView<'s> {
 #[derive(Clone, Debug)]
 pub struct Statements {
     /// All stated messages in the system.
-    msgs:  Vec<Message>,
+    pub msgs:      Vec<Message>,
     /// Per-agent bitmaps that mask the msgs to find their own.
-    masks: HashMap<&'static str, BitVec>,
-}
-impl Default for Statements {
-    #[inline]
-    fn default() -> Self { Self::new() }
+    pub masks:     HashMap<&'static str, BitVec>,
+    /// The interface we're using to log things nicely.
+    pub interface: Rc<RefCell<Interface>>,
 }
 impl Statements {
     /// Constructor for the Statements.
     ///
+    /// # Arguments
+    /// - `interface`: Some shared [`Interface`] that we use to log nice messages about when agents publish actions.
+    ///
     /// # Returns
     /// A new Statements ready for use in the simulation.
     #[inline]
-    pub fn new() -> Self { Self { msgs: Vec::new(), masks: HashMap::new() } }
+    pub fn new(interface: Rc<RefCell<Interface>>) -> Self { Self { msgs: Vec::new(), masks: HashMap::new(), interface } }
 
     /// Returns a new Statements that is scoped to the given agent.
     ///
@@ -383,7 +411,16 @@ impl Statements {
     ///
     /// Note that, if the given `agent` is unknown, the resulting `StatementsView` will not return any statements.
     #[inline]
-    pub fn scope<'s>(&'s mut self, agent: &'static str) -> StatementsView<'s> { StatementsView { stmts: self, agent } }
+    pub fn scope<'s>(&'s mut self, agent: &'static str) -> StatementsView<'s> { StatementsView { stmts: self, agent: Some(agent) } }
+
+    /// Returns a special scope that reflects _all_ agents.
+    ///
+    /// Kind of like a view for the system as a whole.
+    ///
+    /// # Returns
+    /// A new [`StatementsView`] that returns all messages all agents stated together.
+    #[inline]
+    pub fn full(&mut self) -> StatementsView { StatementsView { stmts: self, agent: None } }
 }
 
 /// Implements a per-agent view on [`Statements`].
@@ -391,8 +428,8 @@ impl Statements {
 pub struct StatementsView<'s> {
     /// All statements in the universe.
     stmts: &'s mut Statements,
-    /// The agent for which this view behaves.
-    agent: &'static str,
+    /// The agent for which this view behaves. If it's [`None`], that means a special view that has the full overview (pun intended).
+    agent: Option<&'static str>,
 }
 impl<'s> justact_core::Set<Message> for StatementsView<'s> {
     type Item<'s2> = &'s2 Message where Self: 's2;
@@ -401,7 +438,7 @@ impl<'s> justact_core::Set<Message> for StatementsView<'s> {
     #[inline]
     fn add(&mut self, new_elem: Message) -> bool {
         // Same as stating only to yourself
-        self.state(Target::Agent(self.agent), new_elem).unwrap();
+        self.state(self.agent.map(Target::Agent).unwrap_or(Target::All), new_elem).unwrap();
         false
     }
 
@@ -414,7 +451,12 @@ impl<'s> justact_core::Set<Message> for StatementsView<'s> {
         self.stmts
             .msgs
             .iter()
-            .zip(self.stmts.masks.get(self.agent).map(Cow::Borrowed).unwrap_or_else(|| Cow::Owned(BitVec::from_elem(msgs_len, false))).iter())
+            .zip(
+                self.agent
+                    .map(|a| self.stmts.masks.get(a).map(Cow::Borrowed).unwrap_or_else(|| Cow::Owned(BitVec::from_elem(msgs_len, false))))
+                    .unwrap_or_else(|| Cow::Owned(BitVec::from_elem(msgs_len, true)))
+                    .iter(),
+            )
             .filter(|(_, msk)| *msk)
             .count()
     }
@@ -422,11 +464,9 @@ impl<'s> justact_core::Set<Message> for StatementsView<'s> {
 impl<'s> justact_core::Map<Message> for StatementsView<'s> {
     #[inline]
     fn get(&self, id: &<Message as Identifiable>::Id) -> Option<&Message> {
-        let Statements { msgs, masks } = &self.stmts;
-
         // See if it exists, which is if there's one with an ID that is not masked out
-        for (i, stmt) in msgs.iter().enumerate() {
-            if stmt.id() == id && masks.get(self.agent).map(|m| m[i]).unwrap_or(false) {
+        for (i, stmt) in self.stmts.msgs.iter().enumerate() {
+            if stmt.id() == id && self.agent.map(|a| self.stmts.masks.get(a).map(|m| m[i]).unwrap_or(false)).unwrap_or(true) {
                 // Found it
                 return Some(stmt);
             }
@@ -442,9 +482,10 @@ impl<'s> justact_core::Statements for StatementsView<'s> {
 
     #[inline]
     fn state(&mut self, target: Self::Target, msg: Self::Message) -> Result<(), Self::Error> {
-        let Statements { msgs, masks } = &mut self.stmts;
+        let Statements { msgs, masks, interface } = &mut self.stmts;
 
         // First, insert the message
+        interface.borrow().log_state(self.agent.unwrap_or("<system>"), &msg);
         msgs.push(msg);
 
         // Then push the appropriate masks

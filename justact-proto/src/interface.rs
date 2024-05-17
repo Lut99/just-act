@@ -4,44 +4,52 @@
 //  Created:
 //    16 Apr 2024, 10:58:56
 //  Last edited:
-//    13 May 2024, 15:39:53
+//    17 May 2024, 14:17:51
 //  Auto updated?
 //    Yes
 //
 //  Description:
-//!   Implements a [`justact::Interface`] that allows agents to
-//!   communicate with the simulation environment's end user.
+//!   Implements a collection of users to format messages nicesly.
 //
 
-use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt::Display;
 
 use console::{style, Style};
-use justact_core::set::{MessageSet as _, Set as _};
-use justact_core::wire::{Action as _, Message as _};
+use justact_core::auxillary::Identifiable as _;
+use justact_core::{Action as _, Set as _};
 
-#[cfg(feature = "datalog")]
-use crate::lang::datalog;
+use crate::global::Timestamp;
+use crate::wire::{Action, Agreement, AuditExplanation, Message};
 
 
 /***** LIBRARY *****/
 /// Implements a [`justact::Interface`] that allows agents to communicate with the simulation environment's end user.
 #[derive(Clone, Debug)]
 pub struct Interface {
-    /// The style for this agent's interface.
-    style: Style,
+    /// The mapping of agents to their styles.
+    styles: HashMap<&'static str, Style>,
 }
 
 impl Interface {
     /// Constructor for the Interface.
     ///
-    /// # Arguments
-    /// - `style`: The [`Style`] to initialize this interface logger for.
-    ///
     /// # Returns
     /// A new Interface ready for use in the simulation.
     #[inline]
-    pub fn new(style: Style) -> Self { Self { style } }
+    pub fn new() -> Self { Self { styles: HashMap::new() } }
+
+    /// Registers the style for a new agent.
+    ///
+    /// Note that all other functions panic if you call it for an agent that hasn't been registered yet.
+    ///
+    /// # Arguments
+    /// - `id`: The identifier of the agent to register.
+    /// - `style`: The style to use when formatting the agent's `id`entifier.
+    #[inline]
+    pub fn register(&mut self, id: &'static str, style: Style) { self.styles.insert(id, style); }
+
+
 
     /// Logs an arbitrary message to stdout.
     ///
@@ -49,39 +57,31 @@ impl Interface {
     /// - `id`: The identifier of the agent who is logging.
     /// - `msg`: Some message (retrieved as [`Display`]) to show.
     pub fn log(&self, id: &str, msg: impl Display) {
-        println!("{}{}{} {}\n", style("[INFO] [").bold(), self.style.apply_to(id), style("]").bold(), msg);
+        println!("{}{}{} {}\n", style("[INFO] [").bold(), self.styles.get(id).unwrap().apply_to(id), style("]").bold(), msg);
     }
 
-    /// Logs the statement of a datalog [`Message`] to stdout.
+    /// Logs the statement of a [`Message`] to stdout.
     ///
     /// # Arguments
     /// - `id`: The identifier of the agent who is logging.
-    /// - `msg`: Some [`datalog::Message`] to emit.
-    #[cfg(feature = "datalog")]
-    pub fn log_state_datalog(&self, id: &str, msg: &datalog::Message) {
+    /// - `msg`: Some [`Message`] to emit.
+    pub fn log_state(&self, id: &str, msg: &Message) {
         // Write the main log-line
-        println!("{}{}{} Emitted message '{}'", style("[INFO] [").bold(), self.style.apply_to(id), style("]").bold(), msg.id());
-
-        // Generate a serialized message
-        let smsg: String = msg.to_string().replace('\n', "\n        ");
-        let smsg: &str = smsg.trim_end();
+        println!("{}{}{} Emitted message '{}'", style("[INFO] [").bold(), self.styles.get(id).unwrap().apply_to(id), style("]").bold(), msg.id());
 
         // Write the message
-        println!(" └> Message '{}' {{", style(msg.id()).bold());
-        println!("        {smsg}");
-        println!("    }}");
+        println!(" └> {}", msg.display("Message", "    "));
         println!();
 
         // Done
     }
 
-    /// Logs the enactment of a datalog [`Action`] to stdout.
+    /// Logs the enactment of a [`Action`] to stdout.
     ///
     /// # Arguments
     /// - `id`: The identifier of the agent who is logging.
-    /// - `act`: Some [`datalog::Action`] to emit.
-    #[cfg(feature = "datalog")]
-    pub fn log_enact_datalog(&self, id: &str, act: &datalog::Action) {
+    /// - `act`: Some [`Action`] to emit.
+    pub fn log_enact(&self, id: &str, act: &Action) {
         // Retrieve the message IDs for the justication
         let mut just_ids: String = String::new();
         for msg in act.justification.iter() {
@@ -95,37 +95,97 @@ impl Interface {
         println!(
             "{}{}{} Enacted message '{}' using '{}' (basis '{}')",
             style("[INFO] [").bold(),
-            self.style.apply_to(id),
+            self.styles.get(id).unwrap().apply_to(id),
             style("]").bold(),
-            act.enactment().id(),
+            act.enacts().id(),
             just_ids,
             act.basis().id(),
         );
 
-        // Generate serialized messages
-        let sbasis: String = datalog::MessageSet::from(Cow::Borrowed(act.basis())).extract().to_string().replace('\n', "\n |      ");
-        let sbasis: &str = &sbasis[..sbasis.len() - if sbasis.ends_with("\n |      ") { 9 } else { 0 }];
-
-        let sjust: String = act.justification.extract().to_string().replace('\n', "\n |      ");
-        let sjust: &str = &sjust[..sjust.len() - if sjust.ends_with("\n |      ") { 9 } else { 0 }];
-
-        let senact: String = datalog::MessageSet::from(Cow::Borrowed(act.enactment())).extract().to_string().replace('\n', "\n        ");
-        let senact: &str = senact.trim_end();
-
         // Write the sets
-        println!(" ├> Basis '{}' {{", style(act.basis().id()).bold());
-        println!(" |      {sbasis}");
-        println!(" |  }}");
-        println!(" ├> Justification '{}' {{", style(just_ids).bold());
-        println!(" |      {sjust}");
-        println!(" |  }}");
-        println!(" └> Enactment '{}' {{", style(act.enactment().id()).bold());
-        println!("        {senact}");
-        println!("    }}");
+        println!(" ├> {}", act.basis().display("Basis", " |  "));
+        println!(" ├> {}", act.justification().display("Justification", " |  "));
+        println!(" └> {}", act.enacts().display("Enacts", "    "));
         println!();
 
         // Done
     }
+
+
+
+    /// Logs that an agent started synchronizing a new time.
+    ///
+    /// # Arguments
+    /// - `id`: The identifier of the agent who is logging.
+    /// - `time`: The [`Timestamp`] that will be advanced if synchronized.
+    pub fn log_advance_start(&self, id: &str, time: Timestamp) {
+        // Write the main log-line
+        println!(
+            "{}{}{} Initiated synchronization to advance time to {}",
+            style("[INFO] [").bold(),
+            self.styles.get(id).unwrap().apply_to(id),
+            style("]").bold(),
+            style(time).bold()
+        );
+        println!();
+    }
+
+    /// Logs that all agents agreed to synchronize time.
+    ///
+    /// # Arguments
+    /// - `time`: The [`Timestamp`] that will be advanced if synchronized.
+    pub fn log_advance(&self, time: Timestamp) {
+        // Write the main log-line
+        println!(
+            "{}{}{} Time advanced to {}",
+            style("[INFO] [").bold(),
+            self.styles.get("<system>").unwrap().apply_to("<system>"),
+            style("]").bold(),
+            style(time).bold()
+        );
+        println!();
+    }
+
+    /// Logs that an agent started synchronizing a new agreement.
+    ///
+    /// # Arguments
+    /// - `id`: The identifier of the agent who is logging.
+    /// - `agrmnt`: The [`Agreement`] that will be added to the pool of agreements when synchronized.
+    pub fn log_agree_start(&self, id: &str, agrmnt: &Agreement) {
+        // Write the main log-line
+        println!(
+            "{}{}{} Initiated synchronization to agree on message '{}'",
+            style("[INFO] [").bold(),
+            self.styles.get(id).unwrap().apply_to(id),
+            style("]").bold(),
+            style(agrmnt.id()).bold()
+        );
+
+        // Write the set
+        println!(" └> {}", agrmnt.display("Agreement", "    "));
+        println!();
+    }
+
+    /// Logs that all agents agreed to synchronize time.
+    ///
+    /// # Arguments
+    /// - `agrmnt`: The [`Agreement`] that will be added to the pool of agreements when synchronized.
+    pub fn log_agree(&self, agrmnt: &Agreement) {
+        // Write the main log-line
+        println!(
+            "{}{}{} New agreement '{}' created",
+            style("[INFO] [").bold(),
+            self.styles.get("<system>").unwrap().apply_to("<system>"),
+            style("]").bold(),
+            style(agrmnt.id()).bold()
+        );
+
+        // Write the set
+        println!(" └> {}", agrmnt.display("Agreement", "    "));
+        println!();
+    }
+
+
 
     /// Logs an error message to stdout.
     ///
@@ -138,7 +198,7 @@ impl Interface {
             style("[").bold(),
             style("ERROR").bold().red(),
             style("] [").bold(),
-            self.style.apply_to(id),
+            self.styles.get(id).unwrap().apply_to(id),
             style("]").bold(),
             msg
         );
@@ -148,58 +208,48 @@ impl Interface {
     ///
     /// # Arguments
     /// - `id`: The identifier of the agent who is logging.
-    /// - `act`: The [`datalog::Action`] that failed the audit.
-    /// - `expl`: The [`datalog::Explanation`] of why the audit failed.
-    #[cfg(feature = "datalog")]
-    pub fn error_audit_datalog(&self, id: &str, act: &datalog::Action<'_>, expl: datalog::Explanation) {
+    /// - `expl`: The [`Explanation`] of why the audit failed.
+    pub fn error_audit<E1, E2>(&self, id: &str, expl: crate::local::AuditExplanation<E1, E2>) {
         // Write for that agent
         println!(
             "{}{}{}{}{} Action that enacts '{}' did not succeed audit",
             style("[").bold(),
             style("ERROR").bold().red(),
             style("] [").bold(),
-            self.style.apply_to(id),
+            self.styles.get(id).unwrap().apply_to(id),
             style("]").bold(),
-            act.enactment().id(),
+            expl.act.enacts().id(),
         );
 
         // Retrieve the message IDs for the justication
         let mut just_ids: String = String::new();
-        for msg in act.justification.iter() {
+        for msg in expl.act.justification.iter() {
             if !just_ids.is_empty() {
                 just_ids.push_str(", ");
             }
             just_ids.push_str(&msg.id().to_string());
         }
 
-        // Generate serialized messages
-        let sbasis: String = datalog::MessageSet::from(Cow::Borrowed(act.basis())).extract().to_string().replace('\n', "\n |      ");
-        let sbasis: &str = &sbasis[..sbasis.len() - if sbasis.ends_with("\n |      ") { 9 } else { 0 }];
-
-        let sjust: String = act.justification.extract().to_string().replace('\n', "\n |      ");
-        let sjust: &str = &sjust[..sjust.len() - if sjust.ends_with("\n |      ") { 9 } else { 0 }];
-
-        let senact: String = datalog::MessageSet::from(Cow::Borrowed(act.enactment())).extract().to_string().replace('\n', "\n        ");
-        let senact: &str = senact.trim_end();
-
-        let sint: String = match expl {
-            datalog::Explanation::NotStated { message } => format!("Message '{}' is not stated", style(message).bold()),
-            datalog::Explanation::Error { int } => format!("{}", int.to_string().replace('\n', "\n    ")),
+        // Generate serialized explanation
+        let sexpl: String = match expl.expl {
+            AuditExplanation::Stated { stmt } => format!("Message '{}' is not stated", style(stmt).bold()),
+            AuditExplanation::Extract { err: _ } => format!("Cannot extract policy"),
+            AuditExplanation::Valid { expl: _ } => format!("Extracted policy is not valid"),
+            AuditExplanation::Based { stmt } => format!("Message '{}' is not in the set of agreements", style(stmt).bold()),
+            AuditExplanation::Timely { stmt, applies_at, taken_at } => format!(
+                "Message '{}' is an agreement valid for time {}, but the action was taken at time {}",
+                style(stmt).bold(),
+                applies_at,
+                taken_at
+            ),
         };
-        let sint: &str = sint.trim_end();
+        let sexpl: &str = sexpl.trim_end();
 
         // Write the sets
-        println!(" ├> Basis '{}' {{", style(act.basis().id()).bold());
-        println!(" |      {sbasis}");
-        println!(" |  }}");
-        println!(" ├> Justification '{}' {{", style(just_ids).bold());
-        println!(" |      {sjust}");
-        println!(" |  }}");
-        println!(" ├> Enactment '{}' {{", style(act.enactment().id()).bold());
-        println!(" |      {senact}");
-        println!(" |  }}");
-        println!(" |");
-        println!(" └> {sint}");
+        println!(" ├> {}", expl.act.basis().display("Basis", " |  "));
+        println!(" ├> {}", expl.act.justification().display("Justification", " |  "));
+        println!(" ├> {}", expl.act.enacts().display("Enacts", "    "));
+        println!(" └> {sexpl}");
         println!();
     }
 }

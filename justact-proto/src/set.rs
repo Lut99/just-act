@@ -4,7 +4,7 @@
 //  Created:
 //    18 Apr 2024, 11:37:12
 //  Last edited:
-//    17 May 2024, 10:23:34
+//    17 May 2024, 10:53:42
 //  Auto updated?
 //    Yes
 //
@@ -32,10 +32,10 @@ macro_rules! set_passthrough_impl {
 
     // Main entrypoint
     (
-        impl $(< $($set_lifetimes:lifetime $(: $set_constraints:lifetime)?),* >)? Set<$set_t:ty> $((as $set_base_t:ty))? for $set_name:ident.$set_field:ident;
-        $(impl $(< $($map_lifetimes:lifetime $(: $map_constraints:lifetime)?),* >)? Map<$map_t:ty> for $map_name:ident.$map_field:ident;)?
+        impl $(< $($set_lifetimes:lifetime $(: $set_constraints:lifetime)?),* $(,)? $($set_generics:ident $(: $set_generics_constraints:path)?),* >)? Set<$set_t:ty> $((as $set_base_t:ty))? for $set_name:ident.$set_field:ident $(where $($set_where_clause:path: $set_where_clause_bound_lt:lifetime),*)?;
+        $(impl $(< $($map_lifetimes:lifetime $(: $map_constraints:lifetime)?),* $(,)? $($map_generics:ident $(: $map_generics_constraints:path)?),* >)? Map<$map_t:ty> for $map_name:ident.$map_field:ident $(where $($map_where_clause:path: $map_where_clause_bound_lt:lifetime),*)?;)?
     ) => {
-        impl$(< $($set_lifetimes $(: $set_constraints)?),* >)? ::justact_core::Set<$set_t> for $set_name $(<$($set_lifetimes),*>)? {
+        impl$(< $($set_lifetimes $(: $set_constraints)?,)* $($set_generics $(: $set_generics_constraints)?,)* >)? ::justact_core::Set<$set_t> for $set_name $(<$($set_lifetimes,)* $($set_generics,)*>)? $(where $($set_where_clause: $set_where_clause_bound_lt),*)? {
             type Item<'_s> = <set_passthrough_impl!(@resolve $set_t $(, $set_base_t)?) as ::justact_core::Set<$set_t>>::Item<'_s> where Self: '_s;
             type Iter<'_s> = <set_passthrough_impl!(@resolve $set_t $(, $set_base_t)?) as ::justact_core::Set<$set_t>>::Iter<'_s> where Self: '_s;
 
@@ -48,7 +48,7 @@ macro_rules! set_passthrough_impl {
             #[inline]
             fn len(&self) -> usize { self.$set_field.len() }
         }
-        $(impl$(< $($map_lifetimes $(: $map_constraints)?),* >)? ::justact_core::Map<$map_t> for $map_name $(<$($map_lifetimes),*>)? {
+        $(impl$(< $($map_lifetimes $(: $map_constraints)?,)* $($map_generics $(: $map_generics_constraints)?,)* >)? ::justact_core::Map<$map_t> for $map_name $(<$($map_lifetimes,)* $($map_generics,)*>)? $(where $($map_where_clause: $map_where_clause_bound_lt),*)? {
             #[inline]
             fn get(&self, id: &<$map_t as ::justact_core::auxillary::Identifiable>::Id) -> Option<&$map_t> { self.$map_field.get(id) }
         })?

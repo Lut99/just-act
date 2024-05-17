@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:06:51
 //  Last edited:
-//    13 May 2024, 16:07:42
+//    17 May 2024, 14:10:59
 //  Auto updated?
 //    Yes
 //
@@ -12,20 +12,25 @@
 //!   Implements the main simulation loop that can run agents.
 //
 
+use std::any::type_name;
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::error;
 use std::fmt::{Display, Formatter, Result as FResult};
-use std::hash::{BuildHasher as _, Hash as _, Hasher, RandomState};
+use std::rc::Rc;
 
 use console::Style;
-use justact_core::agent::{Agent, AgentPoll, RationalAgent};
-use justact_core::local::Statements as _;
-use justact_core::wire::{Action as _, Message as _};
+use justact_core::agent::{AgentPoll, RationalAgent};
+use justact_core::auxillary::Identifiable;
+use justact_core::ExtractablePolicy;
 use log::{debug, info};
 use stackvec::StackVec;
 
+use crate::global::{GlobalState, GlobalView, Timestamp};
 use crate::interface::Interface;
-use crate::statements::{Statements, StatementsMut};
+use crate::local::{LocalState, LocalView};
+use crate::sync::Synchronizer;
+use crate::wire::{Agreement, MessageSet};
 
 
 /***** ERROR *****/
@@ -33,13 +38,13 @@ use crate::statements::{Statements, StatementsMut};
 #[derive(Debug)]
 pub enum Error<E> {
     /// Some agent errored.
-    AgentPoll { i: usize, err: E },
+    AgentPoll { agent: &'static str, err: E },
 }
 impl<E: Display> Display for Error<E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         use Error::*;
         match self {
-            AgentPoll { i, .. } => write!(f, "Failed to poll agent {i}"),
+            AgentPoll { agent, .. } => write!(f, "Failed to poll agent {agent}"),
         }
     }
 }
@@ -62,65 +67,94 @@ impl<E: 'static + error::Error> error::Error for Error<E> {
 /// The simulation runs until all given agents are dead.
 ///
 /// # Generics
+/// - `S1`: The [`Synchronizer`] used to reach consensus on new agreements.
+/// - `S2`: The [`Synchronizer`] used to reach consensus on new times.
 /// - `A`: Some generic kind over the specific [`Agent`] required for this implementation. It is recommended to make some sum Agent type yourself that abstracts over the different ones if necessary.
 #[derive(Debug)]
-pub struct Simulation<A> {
-    /// The [`MessagePool`] that agents communicate through.
-    stmts:     Statements,
-    /// The [`Interface`] that agents report through.
-    interface: Interface,
+pub struct Simulation<S1, S2, A> {
+    /// The [`GlobalState`] that agents communicate synchronized information through.
+    global:    GlobalState<S1, S2>,
+    /// The [`LocalState`] that agents communicate potentially asynchronized information through.
+    local:     LocalState,
     /// The (alive!) agents in the simulation.
     agents:    Vec<A>,
-    /// A set of action (hashes) of the ones we've already audited
-    audited:   HashSet<u64>,
+    /// A set of action (identifiers) of the ones we've already audited
+    audited:   HashSet<&'static str>,
+    /// An interface we use to log whatever happens in pretty ways.
+    interface: Rc<RefCell<Interface>>,
 }
-impl<A> Default for Simulation<A> {
-    #[inline]
-    fn default() -> Self { Self::new() }
-}
-impl<A> Simulation<A> {
+impl<S1, S2, A> Simulation<S1, S2, A> {
     /// Creates a new Simulation with no agents registered yet.
+    ///
+    /// # Arguments
+    /// - `sync1`: The [`Synchronizer`] used to reach consensus on new [`Agreements`](crate::global::Agreements).
+    /// - `sync2`: The [`Synchronizer`] used to reach consensus on new [`Times`](crate::global::Times).
     ///
     /// # Returns
     /// An empty simulation that wouldn't run anything.
     #[inline]
-    pub fn new() -> Self {
-        info!("Creating demo Simulation");
+    pub fn new(sync1: S1, sync2: S2) -> Self {
+        info!("Creating demo Simulation<{}, {}, {}>", type_name::<S1>(), type_name::<S2>(), type_name::<A>());
+
+        // Build an interface with ourselves registered
+        let mut interface: Interface = Interface::new();
+        interface.register("<system>", Style::new().bold());
 
         // Create ourselves with that
-        Self { stmts: Statements::new(), interface: Interface::new(Style::new().bold()), agents: Vec::new(), audited: HashSet::new() }
+        let interface: Rc<RefCell<Interface>> = Rc::new(RefCell::new(interface));
+        Self {
+            global: GlobalState::new(Timestamp(0), sync1, sync2, interface.clone()),
+            local: LocalState::new(interface.clone()),
+            agents: Vec::new(),
+            audited: HashSet::new(),
+            interface,
+        }
     }
 
     /// Creates a new Simulation with no agents registered yet, but space to do so before re-allocation is triggered.
     ///
     /// # Arguments
+    /// - `sync1`: The [`Synchronizer`] used to reach consensus on new [`Agreements`](crate::global::Agreements).
+    /// - `sync2`: The [`Synchronizer`] used to reach consensus on new [`Times`](crate::global::Times).
     /// - `capacity`: The number of agents for which there should _at least_ be space.
     ///
     /// # Returns
     /// An empty simulation that wouldn't run anything but that has space for at least `capacity` agents.
     #[inline]
-    pub fn with_capacity(capacity: usize) -> Self {
-        info!("Creating demo Simulation");
+    pub fn with_capacity(sync1: S1, sync2: S2, capacity: usize) -> Self {
+        info!("Creating demo Simulation<{}, {}, {}> (with capacity '{}')", type_name::<S1>(), type_name::<S2>(), type_name::<A>(), capacity);
+
+        // Build an interface with ourselves registered
+        let mut interface: Interface = Interface::new();
+        interface.register("<system>", Style::new().bold());
 
         // Create ourselves with that
+        let interface: Rc<RefCell<Interface>> = Rc::new(RefCell::new(interface));
         Self {
-            stmts:     Statements::new(),
-            interface: Interface::new(Style::new().bold()),
-            agents:    Vec::with_capacity(capacity),
-            audited:   HashSet::new(),
+            global: GlobalState::new(Timestamp(0), sync1, sync2, interface.clone()),
+            local: LocalState::new(interface.clone()),
+            agents: Vec::with_capacity(capacity),
+            audited: HashSet::new(),
+            interface,
         }
     }
 
     /// Builds a new Simulation with the given set of agents registered to it from the get-go.
     ///
     /// # Arguments
+    /// - `sync1`: The [`Synchronizer`] used to reach consensus on new [`Agreements`](crate::global::Agreements).
+    /// - `sync2`: The [`Synchronizer`] used to reach consensus on new [`Times`](crate::global::Times).
     /// - `agents`: Some list of `A`gents that should be registered right away.
     ///
     /// # Returns
     /// A Simulation with the given `agents` already registered in it.
     #[inline]
-    pub fn with_agents(agents: impl IntoIterator<Item = A>) -> Self {
-        info!("Creating demo Simulation");
+    pub fn with_agents(sync1: S1, sync2: S2, agents: impl IntoIterator<Item = A>) -> Self {
+        info!("Creating demo Simulation<{}, {}, {}> with agents", type_name::<S1>(), type_name::<S2>(), type_name::<A>());
+
+        // Build an interface with ourselves registered
+        let mut interface: Interface = Interface::new();
+        interface.register("<system>", Style::new().bold());
 
         // Create agents out of the given iterator, logging as we go
         let agents: Vec<A> = agents
@@ -133,39 +167,42 @@ impl<A> Simulation<A> {
             .collect();
 
         // Now built self
-        debug!("Created demo Simulation with {} agents", agents.len());
-        Self { stmts: Statements::new(), interface: Interface::new(Style::new().bold()), agents, audited: HashSet::new() }
+        let interface: Rc<RefCell<Interface>> = Rc::new(RefCell::new(interface));
+        Self {
+            global: GlobalState::new(Timestamp(0), sync1, sync2, interface.clone()),
+            local: LocalState::new(interface.clone()),
+            agents,
+            audited: HashSet::new(),
+            interface,
+        }
     }
-
+}
+impl<S1, S2, A: Identifiable<Id = &'static str>> Simulation<S1, S2, A> {
     /// Registers a new agent after creation.
     ///
     /// # Arguments
     /// - `agent`: The new `A`gent to register.
+    /// - `style`: A [`Style`] that is used to format the agent's ID during logging.
     #[inline]
-    pub fn register(&mut self, agent: impl Into<A>) {
+    pub fn register(&mut self, agent: impl Into<A>, style: Style) {
         debug!("Registered agent {}", self.agents.len());
+
+        // Register the agent in the interface
+        let agent: A = agent.into();
+        self.interface.borrow_mut().register(agent.id(), style);
+
+        // Put it in the simulation
         self.agents.push(agent.into());
     }
-
-    /// Returns a reference to the internal [`Statements`].
-    #[inline]
-    pub fn stmts(&self) -> &Statements { &self.stmts }
-
-    /// Returns a mutable reference to the internal [`Statements`].
-    #[inline]
-    pub fn stmts_mut(&mut self) -> &mut Statements { &mut self.stmts }
-
-    /// Returns a reference to the internal [`Interface`].
-    #[inline]
-    pub fn interface(&self) -> &Interface { &self.interface }
-
-    /// Returns a mutable reference to the internal [`Interface`].
-    #[inline]
-    pub fn interface_mut(&mut self) -> &mut Interface { &mut self.interface }
 }
-impl<A> Simulation<A>
+impl<S1, S2, A> Simulation<S1, S2, A>
 where
-    for<'s> A: 's + Agent<Identifier = &'static str> + RationalAgent<Statements<'s> = StatementsMut<'s>> + std::fmt::Debug,
+    S1: Synchronizer<Agreement>,
+    S1::Error: 'static,
+    S2: Synchronizer<Timestamp>,
+    S2::Error: 'static,
+    A: Identifiable<Id = &'static str>,
+    A: RationalAgent,
 {
     /// Polls all the agents in the simulation once.
     ///
@@ -184,11 +221,14 @@ where
 
             // Prepare calling the agent's poll method
             let id: &'static str = agent.id();
-            let mut stmts: StatementsMut = self.stmts.scope(id);
-            match agent.poll(&mut stmts) {
+            let mut global: GlobalView<S1, S2> = self.global.scope(id);
+            let mut local: LocalView = self.local.scope(id);
+
+            // Do the call then
+            match agent.poll(&mut global, &mut local) {
                 Ok(AgentPoll::Alive) => agents.push(agent),
                 Ok(AgentPoll::Dead) => continue,
-                Err(err) => return Err(Error::AgentPoll { i, err }),
+                Err(err) => return Err(Error::AgentPoll { agent: id, err }),
             }
         }
 
@@ -202,31 +242,20 @@ where
     /// # Errors
     /// This function errors if any of the agents fails to communicate with the end-user or other agents.
     #[inline]
-    pub fn run(&mut self) -> Result<(), Error<A::Error>> {
-        let state: RandomState = RandomState::default();
+    pub fn run<P>(&mut self) -> Result<(), Error<A::Error>>
+    where
+        P: for<'s> ExtractablePolicy<<MessageSet<'s> as IntoIterator>::IntoIter>,
+    {
         loop {
             // Run the next iteration
             let reiterate: bool = self.poll()?;
 
             // Run an audit
-            debug!("Running audit on {} actions...", self.stmts.n_enacted());
-            for act in self.stmts.enacted() {
-                // Only audit this act if we didn't already
-                let hash: u64 = {
-                    let mut state = state.build_hasher();
-                    act.hash(&mut state);
-                    state.finish()
-                };
-                if self.audited.contains(&hash) {
-                    continue;
-                }
-                self.audited.insert(hash);
-
-                // Run the audit
-                match act.audit(&self.stmts) {
-                    Ok(_) => self.interface.log("<system>", format!("Action enacting statement '{}' is valid", act.basis().id())),
-                    Err(expl) => self.interface.error_audit_datalog("<system>", act, expl),
-                }
+            debug!("Running audit on {} actions...", self.local.acts.acts.len());
+            while let Err(expl) = self.local.acts.audit::<S1, P>(&self.global.agrmnts.unspecific(), &self.local.stmts.full(), Some(&mut self.audited))
+            {
+                // Write the problem
+                self.interface.borrow().error_audit("<system>", expl);
             }
 
             // Stop if no agents are alive

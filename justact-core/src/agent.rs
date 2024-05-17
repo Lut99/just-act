@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:52:41
 //  Last edited:
-//    13 May 2024, 15:32:20
+//    17 May 2024, 11:07:13
 //  Auto updated?
 //    Yes
 //
@@ -46,10 +46,6 @@ pub trait Agent: Identifiable {}
 
 /// Extends an [`Agent`] with the capacity to think, i.e., do something.
 pub trait RationalAgent: Agent {
-    /// Some kind of view/access on/to global information that is synchronized and complete.
-    type GlobalView: GlobalView;
-    /// Some kind of view/access on/to local information that may be asynchronized and/or partial.
-    type LocalView: LocalView;
     /// The type of errors raised by reasoning.
     type Error: Error;
 
@@ -67,5 +63,5 @@ pub trait RationalAgent: Agent {
     ///
     /// # Errors
     /// Only fatal errors that prevent the Agent from participating in the system should cause this function to error. Examples are failures to properly attach to some remote registry or queue.
-    fn poll(&mut self, global: &mut Self::GlobalView, local: &mut Self::LocalView) -> Result<AgentPoll, Self::Error>;
+    fn poll<G: GlobalView, L: LocalView>(&mut self, global: &mut G, local: &mut L) -> Result<AgentPoll, Self::Error>;
 }
