@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:16:19
 //  Last edited:
-//    17 May 2024, 10:24:30
+//    17 May 2024, 10:35:07
 //  Auto updated?
 //    Yes
 //
@@ -14,15 +14,18 @@
 //
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 
 use bit_vec::BitVec;
 use justact_core::auxillary::Identifiable;
 use justact_core::local::{Actions as _, Statements as _};
+use justact_core::ExtractablePolicy;
 
+use crate::global::AgreementsView;
 use crate::set::set_passthrough_impl;
-use crate::wire::{Action, AuditExplanation, Message};
+use crate::sync::Synchronizer;
+use crate::wire::{Action, Agreement, Message, MessageSet};
 
 
 /***** ITERATORS *****/
@@ -120,11 +123,11 @@ impl Target {
 
 /// Explains why an audit of all [`Action`]s in a [`Statements`] failed.
 #[derive(Debug)]
-pub struct Explanation<E1, E2> {
+pub struct AuditExplanation<E1, E2> {
     /// The action that failed to audit
     pub act:  Action,
     /// The reason why this action failed.
-    pub expl: AuditExplanation<E1, E2>,
+    pub expl: crate::wire::AuditExplanation<E1, E2>,
 }
 
 
@@ -235,6 +238,46 @@ impl Actions {
     /// Note that, if the given `agent` is unknown, the resulting `ActionsView` will not return any statements.
     #[inline]
     pub fn scope<'s>(&'s mut self, agent: &'static str) -> ActionsView<'s> { ActionsView { acts: self, agent } }
+
+    /// Audits all actions.
+    ///
+    /// For more information on what exactly is audited, see [`Action::audit()`].
+    ///
+    /// # Arguments
+    /// - `agrmnts`: An [`AgreementsView`] that provides access to the globally synchronized agreements.
+    /// - `stmts`: A [`StatementsView`] that provides access to the messages this agent knows are stated.
+    /// - `reported`: A list of actions that we already reported as failing the audit. This will prevent them from being raised again. If it's [`Some`], then it will be automatically updated.
+    ///
+    /// # Errors
+    /// This function errors if the audit failed. Which property is violated, and how, is explained by the returned [`AuditExplanation`].
+    #[inline]
+    pub fn audit<'s, S, P>(
+        &'s self,
+        agrmnts: &AgreementsView<S>,
+        stmts: &StatementsView,
+        mut reported: Option<&mut HashSet<&'static str>>,
+    ) -> Result<(), AuditExplanation<P::ExtractError, P::Explanation>>
+    where
+        S: Synchronizer<Agreement>,
+        S::Error: 'static,
+        P: ExtractablePolicy<<MessageSet<'s> as IntoIterator>::IntoIter>,
+    {
+        // Go through all the actions to find the first culprit
+        for act in &self.acts {
+            if let Err(expl) = act.audit::<S, P>(agrmnts, stmts) {
+                // See if we need to prevent reporting
+                if let Some(reported) = &mut reported {
+                    if !reported.contains(act.id()) {
+                        reported.insert(act.id());
+                        return Err(AuditExplanation { act: act.clone(), expl });
+                    }
+                } else {
+                    return Err(AuditExplanation { act: act.clone(), expl });
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Implements a per-agent view on [`Actions`].

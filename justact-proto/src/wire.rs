@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 19:15:18
 //  Last edited:
-//    17 May 2024, 10:16:10
+//    17 May 2024, 10:29:05
 //  Auto updated?
 //    Yes
 //
@@ -35,10 +35,14 @@ use crate::sync::Synchronizer;
 pub enum AuditExplanation<E1, E2> {
     /// One of the messages in the action was not stated (property 3).
     Stated { stmt: &'static str },
-    /// Failed to extract the policy from the justification (property 4).
+    /// Failed to extract the policy from the justification (property 5).
     Extract { err: E1 },
-    /// The policy was not valid (property 4).
+    /// The policy was not valid (property 5).
     Valid { expl: E2 },
+    /// The basis was not an agreement (property 6).
+    Based { stmt: &'static str },
+    /// The basis was an agreement but not one for the action's taken time (property 6).
+    Timely { applies_at: Timestamp, taken_at: Timestamp },
 }
 
 
@@ -286,11 +290,18 @@ impl Action {
 
         /* Property 6 */
         // Assert that the basis is an agreement
-        if !agrmnts.contains(self.basis.id()) {}
+        if !agrmnts.contains(self.basis.id()) {
+            return Err(AuditExplanation::Based { stmt: self.basis.id() });
+        }
+
+        // Assert the agreement's time matches the action's
+        if self.basis.timestamp != self.timestamp {
+            return Err(AuditExplanation::Timely { applies_at: self.basis.timestamp, taken_at: self.timestamp });
+        }
 
 
 
-        // Done
+        /* Success */
         Ok(())
     }
 }
