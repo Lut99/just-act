@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 14:16:11
 //  Last edited:
-//    13 May 2024, 19:18:21
+//    17 May 2024, 09:50:29
 //  Auto updated?
 //    Yes
 //
@@ -31,7 +31,7 @@ pub trait Identifiable {
     ///
     /// # Returns
     /// Something of type `Self::Id` that uniquely identifiers this object.
-    fn id(&self) -> Self::Id;
+    fn id(&self) -> &Self::Id;
 }
 
 // Implement over some pointer-like types
@@ -39,13 +39,13 @@ impl<'a, T: Identifiable> Identifiable for &'a T {
     type Id = T::Id;
 
     #[inline]
-    fn id(&self) -> Self::Id { T::id(self) }
+    fn id(&self) -> &Self::Id { T::id(self) }
 }
 impl<'a, T: Clone + Identifiable> Identifiable for Cow<'a, T> {
     type Id = T::Id;
 
     #[inline]
-    fn id(&self) -> Self::Id { T::id(self) }
+    fn id(&self) -> &Self::Id { T::id(self) }
 }
 
 
@@ -59,7 +59,7 @@ pub trait Authored {
     ///
     /// # Returns
     /// A `Self::Author::Id` that represents the author of this object.
-    fn author(&self) -> Self::AuthorId;
+    fn author(&self) -> &Self::AuthorId;
 }
 
 // Implement over some pointer-like types
@@ -67,11 +67,11 @@ impl<'a, T: Authored> Authored for &'a T {
     type AuthorId = T::AuthorId;
 
     #[inline]
-    fn author(&self) -> Self::AuthorId { T::author(self) }
+    fn author(&self) -> &Self::AuthorId { T::author(self) }
 }
 impl<'a, T: Clone + Authored> Authored for Cow<'a, T> {
     type AuthorId = T::AuthorId;
 
     #[inline]
-    fn author(&self) -> Self::AuthorId { T::author(self) }
+    fn author(&self) -> &Self::AuthorId { T::author(self) }
 }

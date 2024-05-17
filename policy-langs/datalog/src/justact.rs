@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 18:39:10
 //  Last edited:
-//    13 May 2024, 19:18:57
+//    17 May 2024, 09:59:17
 //  Auto updated?
 //    Yes
 //
@@ -118,7 +118,7 @@ where
                         if cons.ident.value.value().starts_with("ctl-") {
                             // ...and its first argument is _not_ the author of the message...
                             if let Some(arg) = cons.args.iter().flat_map(|a| a.args.values().next()).next() {
-                                if arg.ident().value.value() != msg.author() {
+                                if &arg.ident().value.value() != msg.author() {
                                     continue;
                                 } else {
                                     // ...then we derive error

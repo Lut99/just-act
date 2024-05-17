@@ -4,7 +4,7 @@
 //  Created:
 //    18 Apr 2024, 11:37:12
 //  Last edited:
-//    16 May 2024, 16:27:44
+//    17 May 2024, 10:23:34
 //  Auto updated?
 //    Yes
 //
@@ -20,6 +20,44 @@ use std::hash::Hash;
 use justact_core::auxillary::Identifiable;
 use justact_core::set::Set as _;
 use stackvec::StackVec;
+
+
+/***** HELPER MACROS *****/
+/// Implements [`justact_core::Set`] for a given type by simply referring it to a nested [`Set`].
+macro_rules! set_passthrough_impl {
+    // Either pass the given ones, or default to the classic type
+    (@resolve $set_t:ty, $base_t:ty) => { $base_t };
+    (@resolve $set_t:ty) => { crate::set::Set<$set_t> };
+
+
+    // Main entrypoint
+    (
+        impl $(< $($set_lifetimes:lifetime $(: $set_constraints:lifetime)?),* >)? Set<$set_t:ty> $((as $set_base_t:ty))? for $set_name:ident.$set_field:ident;
+        $(impl $(< $($map_lifetimes:lifetime $(: $map_constraints:lifetime)?),* >)? Map<$map_t:ty> for $map_name:ident.$map_field:ident;)?
+    ) => {
+        impl$(< $($set_lifetimes $(: $set_constraints)?),* >)? ::justact_core::Set<$set_t> for $set_name $(<$($set_lifetimes),*>)? {
+            type Item<'_s> = <set_passthrough_impl!(@resolve $set_t $(, $set_base_t)?) as ::justact_core::Set<$set_t>>::Item<'_s> where Self: '_s;
+            type Iter<'_s> = <set_passthrough_impl!(@resolve $set_t $(, $set_base_t)?) as ::justact_core::Set<$set_t>>::Iter<'_s> where Self: '_s;
+
+            #[inline]
+            fn add(&mut self, new_elem: $set_t) -> bool { self.$set_field.add(new_elem) }
+
+            #[inline]
+            fn iter<'_s>(&'_s self) -> Self::Iter<'_s> { self.$set_field.iter() }
+
+            #[inline]
+            fn len(&self) -> usize { self.$set_field.len() }
+        }
+        $(impl$(< $($map_lifetimes $(: $map_constraints)?),* >)? ::justact_core::Map<$map_t> for $map_name $(<$($map_lifetimes),*>)? {
+            #[inline]
+            fn get(&self, id: &<$map_t as ::justact_core::auxillary::Identifiable>::Id) -> Option<&$map_t> { self.$map_field.get(id) }
+        })?
+    };
+}
+pub(crate) use set_passthrough_impl;
+
+
+
 
 
 /***** ITERATORS *****/
@@ -303,7 +341,6 @@ impl<T: Eq + Hash> justact_core::Set<T> for Set<T> {
     type Item<'s> = &'s T where Self: 's;
     type Iter<'s> = SetIter<'s, T> where Self: 's;
 
-    #[inline]
     fn add(&mut self, new_elem: T) -> bool {
         // Get an owned version of self
         let mut temp: Self = Self::Empty;
@@ -359,7 +396,7 @@ impl<T: Eq + Hash> justact_core::Set<T> for Set<T> {
 }
 impl<T: Eq + Hash + Identifiable> justact_core::Map<T> for Set<T> {
     #[inline]
-    fn get(&self, id: T::Id) -> Option<&T> {
+    fn get(&self, id: &T::Id) -> Option<&T> {
         // We have to do iterative search
         match self {
             Self::Empty => None,
@@ -453,7 +490,7 @@ impl<T: Identifiable> Map<T> {
 impl<T> Map<T>
 where
     T: Identifiable,
-    T::Id: Eq + Hash,
+    T::Id: Clone + Eq + Hash,
 {
     /// Merges the given Map into this one.
     ///
@@ -469,15 +506,15 @@ where
         let mut temp: Self = match temp {
             Self::Empty => {
                 // Create an allocation for other
-                Self::Multi(other.into_iter().map(|elem| (elem.id(), elem)).collect())
+                Self::Multi(other.into_iter().map(|elem| (elem.id().clone(), elem)).collect())
             },
             Self::Singleton(msg) => {
-                let iter = other.into_iter().map(|elem| (elem.id(), elem));
+                let iter = other.into_iter().map(|elem| (elem.id().clone(), elem));
                 let size_hint: (usize, Option<usize>) = iter.size_hint();
 
                 // Create a map with both self element and the other
                 let mut elems: HashMap<T::Id, T> = HashMap::with_capacity(1 + size_hint.1.unwrap_or(size_hint.0));
-                elems.insert(msg.id(), msg);
+                elems.insert(msg.id().clone(), msg);
                 elems.extend(iter);
 
                 // Return it. Even if the map is only 1 (i.e., the other was empty or duplicate), we still insert as multi to not waste the allocation.
@@ -486,10 +523,10 @@ where
             Self::Multi(mut msgs) => {
                 if msgs.capacity() == 0 {
                     // The list has no allocation yet. As such, we just directly use the one from the `other`.
-                    msgs = other.into_iter().map(|elem| (elem.id(), elem)).collect();
+                    msgs = other.into_iter().map(|elem| (elem.id().clone(), elem)).collect();
                 } else {
                     // Extend it instead. Even if the extension would result in a map of exactly 1, we still use this over Singleton to not waste the allocation.
-                    msgs.extend(other.into_iter().map(|elem| (elem.id(), elem)));
+                    msgs.extend(other.into_iter().map(|elem| (elem.id().clone(), elem)));
                 }
                 Self::Multi(msgs)
             },
@@ -522,7 +559,7 @@ impl<T> Eq for Map<T> where T: Eq + Identifiable {}
 impl<T> Hash for Map<T>
 where
     T: Hash + Identifiable,
-    T::Id: Ord,
+    T::Id: Clone + Ord,
 {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         // Collect everything in an ordered fashion, then commit to some deterministic order
@@ -530,7 +567,7 @@ where
         for elem in self {
             buf.push(elem);
         }
-        buf.sort_by_key(|elem| elem.id());
+        buf.sort_by_key(|elem| elem.id().clone());
 
         // Hash that
         for elem in buf {
@@ -561,7 +598,7 @@ where
 impl<T> justact_core::Set<T> for Map<T>
 where
     T: Identifiable,
-    T::Id: Eq + Hash,
+    T::Id: Clone + Eq + Hash,
 {
     type Item<'s> = &'s T where Self: 's;
     type Iter<'s> = MapIter<'s, T> where Self: 's;
@@ -581,7 +618,7 @@ where
             },
             Self::Singleton(elem) => {
                 existed = elem.id() == new_elem.id();
-                Self::Multi(HashMap::from([(elem.id(), elem), (new_elem.id(), new_elem)]))
+                Self::Multi(HashMap::from([(elem.id().clone(), elem), (new_elem.id().clone(), new_elem)]))
             },
             Self::Multi(mut elems) => {
                 // If the `elems` are empty, we might avoid an allocation by creating a singleton instead
@@ -591,7 +628,7 @@ where
                     Self::Singleton(new_elem)
                 } else {
                     // There is already an alloc, use it
-                    existed = elems.insert(new_elem.id(), new_elem).is_some();
+                    existed = elems.insert(new_elem.id().clone(), new_elem).is_some();
                     Self::Multi(elems)
                 }
             },
@@ -620,9 +657,13 @@ where
         }
     }
 }
-impl<T: Identifiable> justact_core::Map<T> for Map<T> {
+impl<T> justact_core::Map<T> for Map<T>
+where
+    T: Identifiable,
+    T::Id: Clone,
+{
     #[inline]
-    fn get(&self, id: T::Id) -> Option<&T> {
+    fn get(&self, id: &T::Id) -> Option<&T> {
         // We can do fast search
         match self {
             Self::Empty => None,
@@ -638,7 +679,10 @@ impl<T: Identifiable> justact_core::Map<T> for Map<T> {
     }
 }
 
-impl<T: Identifiable> IntoIterator for Map<T> {
+impl<T> IntoIterator for Map<T>
+where
+    T: Identifiable,
+{
     type IntoIter = MapIntoIter<T>;
     type Item = T;
 
@@ -654,7 +698,7 @@ impl<T: Identifiable> IntoIterator for Map<T> {
 impl<'s, T> IntoIterator for &'s Map<T>
 where
     T: Identifiable,
-    T::Id: Eq + Hash,
+    T::Id: Clone + Eq + Hash,
 {
     type IntoIter = MapIter<'s, T>;
     type Item = &'s T;

@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:16:19
 //  Last edited:
-//    16 May 2024, 16:37:38
+//    17 May 2024, 10:24:30
 //  Auto updated?
 //    Yes
 //
@@ -21,6 +21,7 @@ use bit_vec::BitVec;
 use justact_core::auxillary::Identifiable;
 use justact_core::local::{Actions as _, Statements as _};
 
+use crate::set::set_passthrough_impl;
 use crate::wire::{Action, AuditExplanation, Message};
 
 
@@ -174,23 +175,14 @@ pub struct LocalView<'s> {
     /// All statements in the universe.
     stmts: StatementsView<'s>,
 }
-impl<'s> justact_core::Set<Action> for LocalView<'s> {
-    type Item<'s2> = <ActionsView<'s> as justact_core::Set<Action>>::Item<'s2> where Self: 's2;
-    type Iter<'s2> = <ActionsView<'s> as justact_core::Set<Action>>::Iter<'s2> where Self: 's2;
-
-    #[inline]
-    fn add(&mut self, new_elem: Action) -> bool { self.acts.add(new_elem) }
-
-    #[inline]
-    fn iter<'s2>(&'s2 self) -> Self::Iter<'s2> { self.acts.iter() }
-
-    #[inline]
-    fn len(&self) -> usize { self.acts.len() }
-}
-impl<'s> justact_core::Map<Action> for LocalView<'s> {
-    #[inline]
-    fn get(&self, id: <Action as Identifiable>::Id) -> Option<&Action> { self.acts.get(id) }
-}
+set_passthrough_impl!(
+    impl<'s> Set<Action> (as ActionsView<'s>) for LocalView.acts;
+    impl<'s> Map<Action> for LocalView.acts;
+);
+set_passthrough_impl!(
+    impl<'s> Set<Message> (as StatementsView<'s>) for LocalView.stmts;
+    impl<'s> Map<Message> for LocalView.stmts;
+);
 impl<'s> justact_core::Actions for LocalView<'s> {
     type Enactment = <ActionsView<'s> as justact_core::Actions>::Enactment;
     type Action = <ActionsView<'s> as justact_core::Actions>::Action;
@@ -199,23 +191,6 @@ impl<'s> justact_core::Actions for LocalView<'s> {
 
     #[inline]
     fn enact(&mut self, target: Self::Target, msg: Self::Action) -> Result<(), Self::Error> { self.acts.enact(target, msg) }
-}
-impl<'s> justact_core::Set<Message> for LocalView<'s> {
-    type Item<'s2> = <StatementsView<'s> as justact_core::Set<Message>>::Item<'s2> where Self: 's2;
-    type Iter<'s2> = <StatementsView<'s> as justact_core::Set<Message>>::Iter<'s2> where Self: 's2;
-
-    #[inline]
-    fn add(&mut self, new_elem: Message) -> bool { self.stmts.add(new_elem) }
-
-    #[inline]
-    fn iter<'s2>(&'s2 self) -> Self::Iter<'s2> { self.stmts.iter() }
-
-    #[inline]
-    fn len(&self) -> usize { self.stmts.len() }
-}
-impl<'s> justact_core::Map<Message> for LocalView<'s> {
-    #[inline]
-    fn get(&self, id: <Message as Identifiable>::Id) -> Option<&Message> { self.stmts.get(id) }
 }
 impl<'s> justact_core::Statements for LocalView<'s> {
     type Statement = <StatementsView<'s> as justact_core::Statements>::Statement;
@@ -297,7 +272,7 @@ impl<'s> justact_core::Set<Action> for ActionsView<'s> {
 }
 impl<'s> justact_core::Map<Action> for ActionsView<'s> {
     #[inline]
-    fn get(&self, id: <Action as Identifiable>::Id) -> Option<&Action> {
+    fn get(&self, id: &<Action as Identifiable>::Id) -> Option<&Action> {
         let Actions { acts, masks } = &self.acts;
 
         // See if it exists, which is if there's one with an ID that is not masked out
@@ -403,7 +378,7 @@ impl<'s> justact_core::Set<Message> for StatementsView<'s> {
 }
 impl<'s> justact_core::Map<Message> for StatementsView<'s> {
     #[inline]
-    fn get(&self, id: <Message as Identifiable>::Id) -> Option<&Message> {
+    fn get(&self, id: &<Message as Identifiable>::Id) -> Option<&Message> {
         let Statements { msgs, masks } = &self.stmts;
 
         // See if it exists, which is if there's one with an ID that is not masked out

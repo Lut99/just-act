@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 10:14:23
 //  Last edited:
-//    16 May 2024, 16:24:27
+//    17 May 2024, 10:02:37
 //  Auto updated?
 //    Yes
 //
@@ -121,7 +121,7 @@ where
     ///
     /// # Returns
     /// A reference to the internal `Elem` that was identified by `id`, or [`None`] if no such item could be found.
-    fn get(&self, id: Elem::Id) -> Option<&Elem>;
+    fn get(&self, id: &Elem::Id) -> Option<&Elem>;
 
     /// Checks if an item with a given unique identifier is in this set.
     ///
@@ -131,19 +131,19 @@ where
     /// # Returns
     /// True if such an item existed, or false otherwise.
     #[inline]
-    fn contains(&self, id: Elem::Id) -> bool { self.get(id).is_some() }
+    fn contains(&self, id: &Elem::Id) -> bool { self.get(id).is_some() }
 }
 
 // Default impls for pointer-like types
 impl<'a, Elem: Identifiable, T: Clone + Map<Elem>> Map<Elem> for &'a T {
     #[inline]
-    fn get(&self, id: <Elem>::Id) -> Option<&Elem> { T::get(self, id) }
+    fn get(&self, id: &<Elem>::Id) -> Option<&Elem> { T::get(self, id) }
 }
 impl<'a, Elem: Identifiable, T: Clone + Map<Elem>> Map<Elem> for &'a mut T {
     #[inline]
-    fn get(&self, id: <Elem>::Id) -> Option<&Elem> { T::get(self, id) }
+    fn get(&self, id: &<Elem>::Id) -> Option<&Elem> { T::get(self, id) }
 }
 impl<'a, Elem: Identifiable, T: Clone + Map<Elem>> Map<Elem> for Cow<'a, T> {
     #[inline]
-    fn get(&self, id: <Elem>::Id) -> Option<&Elem> { T::get(self, id) }
+    fn get(&self, id: &<Elem>::Id) -> Option<&Elem> { T::get(self, id) }
 }

@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 19:28:04
 //  Last edited:
-//    16 May 2024, 17:43:31
+//    17 May 2024, 10:25:07
 //  Auto updated?
 //    Yes
 //
@@ -15,13 +15,14 @@
 use std::error::Error;
 
 use error_trace::trace;
+use justact_core::auxillary::Identifiable;
 use justact_core::global::{Agreements as _, Times as _};
 use justact_core::{global as justact, Set as _};
 use log::{error, warn};
 
-use crate::set::Set;
+use crate::set::Map;
 use crate::sync::{SyncVote, Synchronizer};
-use crate::wire::{Agreement, MessageSet};
+use crate::wire::{Agreement, Message};
 
 
 /***** AUXILLARY *****/
@@ -41,7 +42,7 @@ pub struct Timestamp(pub u128);
 #[derive(Clone, Debug)]
 pub struct Agreements<S> {
     /// The of (accepted) agreements.
-    agrmnts:      Set<Agreement>,
+    agrmnts:      Map<Agreement>,
     /// The synchronizer used to push updated.
     synchronizer: S,
 }
@@ -54,7 +55,7 @@ impl<S> Agreements<S> {
     /// # Returns
     /// A new Agreements ready for use in the simulation.
     #[inline]
-    pub fn new(synchronizer: S) -> Self { Self { agrmnts: Set::empty(), synchronizer } }
+    pub fn new(synchronizer: S) -> Self { Self { agrmnts: Map::empty(), synchronizer } }
 
     /// Returns a new Agreements that is scoped to the given agent.
     ///
@@ -96,15 +97,15 @@ impl<'s, S: Synchronizer<Agreement>> justact_core::Set<Agreement> for Agreements
 where
     S::Error: 'static,
 {
-    type Item<'s2> = <Set<Agreement> as justact_core::Set<Agreement>>::Item<'s2>
+    type Item<'s2> = <Map<Agreement> as justact_core::Set<Agreement>>::Item<'s2>
     where
         Self: 's2;
-    type Iter<'s2> = <Set<Agreement> as justact_core::Set<Agreement>>::Iter<'s2> where Self: 's2;
+    type Iter<'s2> = <Map<Agreement> as justact_core::Set<Agreement>>::Iter<'s2> where Self: 's2;
 
     #[inline]
     fn add(&mut self, new_elem: Agreement) -> bool {
         // Else, treat as a normal agree
-        if let Err(err) = self.agree(new_elem.timestamp, new_elem.msgs) {
+        if let Err(err) = self.agree(new_elem.timestamp, new_elem.msg) {
             error!("{}", trace!(("Failed to agree on a message set"), err));
             warn!("The failure to synchronize agreements is not handled. Call `AgreementsView::agree()` to do so.");
         }
@@ -117,19 +118,26 @@ where
     #[inline]
     fn len(&self) -> usize { self.agrmnts.agrmnts.len() }
 }
+impl<'s, S: Synchronizer<Agreement>> justact_core::Map<Agreement> for AgreementsView<'s, S>
+where
+    S::Error: 'static,
+{
+    #[inline]
+    fn get(&self, id: &<Agreement as Identifiable>::Id) -> Option<&Agreement> { self.agrmnts.agrmnts.get(id) }
+}
 impl<'s, S: Synchronizer<Agreement>> justact::Agreements for AgreementsView<'s, S>
 where
     S::Error: 'static,
 {
     type Agreement = Agreement;
     type Time = Timestamp;
-    type MessageSet = MessageSet<'static>;
+    type Message = Message;
     type Error = S::Error;
 
     #[inline]
-    fn agree(&mut self, time: Self::Time, msgs: Self::MessageSet) -> Result<(), Self::Error> {
+    fn agree(&mut self, time: Self::Time, msg: Self::Message) -> Result<(), Self::Error> {
         // Simply start the voting, agents have to do the rest (through `Self::synchronize()`).
-        self.agrmnts.synchronizer.start(self.agent, Agreement { timestamp: time, msgs })
+        self.agrmnts.synchronizer.start(self.agent, Agreement { timestamp: time, msg })
     }
 }
 

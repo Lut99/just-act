@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 19:15:18
 //  Last edited:
-//    16 May 2024, 17:46:25
+//    17 May 2024, 10:16:10
 //  Auto updated?
 //    Yes
 //
@@ -25,7 +25,7 @@ use justact_core::wire::Action as _;
 
 use crate::global::{AgreementsView, Timestamp};
 use crate::local::StatementsView;
-use crate::set::Set;
+use crate::set::{set_passthrough_impl, Set};
 use crate::sync::Synchronizer;
 
 
@@ -78,13 +78,13 @@ impl Identifiable for Message {
     type Id = &'static str;
 
     #[inline]
-    fn id(&self) -> Self::Id { self.id }
+    fn id(&self) -> &Self::Id { &self.id }
 }
 impl Authored for Message {
     type AuthorId = &'static str;
 
     #[inline]
-    fn author(&self) -> Self::AuthorId { self.author }
+    fn author(&self) -> &Self::AuthorId { &self.author }
 }
 impl justact::Message for Message {
     #[inline]
@@ -114,28 +114,10 @@ impl<'m> MessageSet<'m> {
     }
 }
 
-impl<'m> justact_core::Set<Cow<'m, Message>> for MessageSet<'m> {
-    type Item<'s> = <Set<Cow<'m, Message>> as justact_core::set::Set<Cow<'m, Message>>>::Item<'s> where Self: 's;
-    type Iter<'s> = <Set<Cow<'m, Message>> as justact_core::set::Set<Cow<'m, Message>>>::Iter<'s> where Self: 's;
-
-    #[inline]
-    fn add(&mut self, new_elem: Cow<'m, Message>) -> bool { self.msgs.add(new_elem) }
-
-    #[inline]
-    fn iter<'s>(&'s self) -> Self::Iter<'s> { self.msgs.iter() }
-
-    #[inline]
-    fn len(&self) -> usize { self.msgs.len() }
-}
-impl<'m> justact_core::Map<Cow<'m, Message>> for MessageSet<'m> {
-    #[inline]
-    fn get(&self, id: <Cow<'m, Message> as Identifiable>::Id) -> Option<&Cow<'m, Message>>
-    where
-        Message: Identifiable,
-    {
-        self.msgs.get(id)
-    }
-}
+set_passthrough_impl!(
+    impl<'m> Set<Cow<'m, Message>> for MessageSet.msgs;
+    impl<'m> Map<Cow<'m, Message>> for MessageSet.msgs;
+);
 impl<'m> justact::MessageSet for MessageSet<'m> {
     type Message = Cow<'m, Message>;
 }
@@ -175,15 +157,21 @@ impl<'m> From<Message> for MessageSet<'m> {
 pub struct Agreement {
     /// The time at which this agreement was valid.
     pub timestamp: Timestamp,
-    /// The message set that was agreed upon.
-    pub msgs:      MessageSet<'static>,
+    /// The message (statement, rather) set that was agreed upon.
+    pub msg: Message,
+}
+impl Identifiable for Agreement {
+    type Id = <Message as Identifiable>::Id;
+
+    #[inline]
+    fn id(&self) -> &Self::Id { self.msg.id() }
 }
 impl justact::Agreement for Agreement {
-    type MessageSet<'s> = &'s MessageSet<'static>;
+    type Message = Message;
     type Time = Timestamp;
 
     #[inline]
-    fn statements<'s>(&'s self) -> Self::MessageSet<'s> { &self.msgs }
+    fn statements(&self) -> &Self::Message { &self.msg }
 
     #[inline]
     fn applies_at(&self) -> Self::Time { self.timestamp }
@@ -207,28 +195,26 @@ impl Identifiable for Action {
     type Id = &'static str;
 
     #[inline]
-    fn id(&self) -> Self::Id { self.enactment.id }
+    fn id(&self) -> &Self::Id { &self.enactment.id }
 }
 impl justact::Action for Action {
     type Time = Timestamp;
-    type Agreement<'s> = &'s Agreement;
+    type Agreement = Agreement;
     type MessageSet<'s> = MessageSet<'s>;
-    type Message<'s> = &'s Message;
+    type Message = Message;
 
     #[inline]
     fn taken_at(&self) -> Self::Time { self.timestamp }
 
     #[inline]
-    fn basis<'s>(&'s self) -> Self::Agreement<'s> { &self.basis }
+    fn basis(&self) -> &Self::Agreement { &self.basis }
 
     fn justification<'s>(&'s self) -> Self::MessageSet<'s> {
         // Clone the internal message set by borrow
         let mut set: MessageSet<'s> = self.justification.borrow();
 
         // Inject the basis & enactment into it
-        for msg in &self.basis.msgs {
-            set.add(Cow::Borrowed(msg));
-        }
+        set.add(Cow::Borrowed(&self.basis.msg));
         set.add(Cow::Borrowed(&self.enactment));
 
         // OK, return the full justification
@@ -236,7 +222,7 @@ impl justact::Action for Action {
     }
 
     #[inline]
-    fn enacts<'s>(&'s self) -> Self::Message<'s> { &self.enactment }
+    fn enacts(&self) -> &Self::Message { &self.enactment }
 }
 
 impl Action {
@@ -300,7 +286,7 @@ impl Action {
 
         /* Property 6 */
         // Assert that the basis is an agreement
-        for agrmnt in agrmnts.iter() {}
+        if !agrmnts.contains(self.basis.id()) {}
 
 
 

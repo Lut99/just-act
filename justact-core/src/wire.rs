@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:59:05
 //  Last edited:
-//    16 May 2024, 14:31:19
+//    17 May 2024, 09:58:49
 //  Auto updated?
 //    Yes
 //
@@ -92,12 +92,9 @@ where
 
 
 /// Defines an agreed-upon message.
-pub trait Agreement {
+pub trait Agreement: Identifiable {
     /// The set returned by this agreement that represents what is agreed upon.
-    type MessageSet<'s>: MessageSet
-    where
-        Self: 's;
-
+    type Message: Message;
     /// The type of the time at which this Action can be taken.
     type Time: Ord;
 
@@ -106,7 +103,7 @@ pub trait Agreement {
     ///
     /// # Returns
     /// Some `Self::MessageSet` that represents the set of messages.
-    fn statements<'s>(&'s self) -> Self::MessageSet<'s>;
+    fn statements(&self) -> &Self::Message;
 
     /// Returns some time at which this agreement can be used to enact actions.
     ///
@@ -119,14 +116,16 @@ pub trait Agreement {
 
 // Implement `Agreement` for some pointer-like types
 impl<'a, T: Agreement> Agreement for &'a T {
-    type MessageSet<'s> = T::MessageSet<'s> where Self: 's;
+    type Message = T::Message;
     type Time = T::Time;
 
     #[inline]
-    fn statements<'s>(&'s self) -> Self::MessageSet<'s> { T::statements(self) }
+    fn statements(&self) -> &Self::Message { T::statements(self) }
     #[inline]
     fn applies_at(&self) -> Self::Time { T::applies_at(self) }
 }
+
+
 
 /// Defines a justified enactment.
 ///
@@ -135,17 +134,13 @@ pub trait Action: Identifiable {
     /// The type of the time at which this Action can be taken.
     type Time: Ord;
     /// The type of Agreement which forms the `Self::basis()` of the agreement.
-    type Agreement<'s>: 's + Agreement
-    where
-        Self: 's;
+    type Agreement: Agreement;
     /// The type of MessageSet out of which this Action is built.
     type MessageSet<'s>: 's + MessageSet
     where
         Self: 's;
     /// The type of Message out of which this Action is built. In particular, this is what is returned by `Self::enacts()`.
-    type Message<'s>: 's + Message
-    where
-        Self: 's;
+    type Message: Message;
 
 
     /// Returns some time at which this action was taken.
@@ -162,7 +157,7 @@ pub trait Action: Identifiable {
     ///
     /// # Returns
     /// A `Self::Agreement` describing the basis of the action.
-    fn basis<'s>(&'s self) -> Self::Agreement<'s>;
+    fn basis(&self) -> &Self::Agreement;
 
     /// Returns the _justification_ of this action.
     ///
@@ -180,5 +175,5 @@ pub trait Action: Identifiable {
     ///
     /// # Returns
     /// A `Self::Message` describing the enacted effects of the action.
-    fn enacts<'s>(&'s self) -> Self::Message<'s>;
+    fn enacts(&self) -> &Self::Message;
 }
