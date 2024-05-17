@@ -4,7 +4,7 @@
 //  Created:
 //    18 Apr 2024, 15:27:35
 //  Last edited:
-//    15 May 2024, 10:38:25
+//    17 May 2024, 14:39:16
 //  Auto updated?
 //    Yes
 //
@@ -22,23 +22,18 @@
 
 use std::error::Error;
 
-use crate::set::Set;
+use crate::set::Map;
 use crate::wire::{Action, Message};
 
 
 /***** LIBRARY *****/
-/// Combines both an [`Actions`] and a [`Statements`] into one convenient interface.
-pub trait LocalView: Actions + Statements {}
-
-
-
 /// Defines the interface that agents use to inspect- and create actions.
 ///
 /// Conceptually, one can think of this as a _localized_ set that contains all the enacted statements that _a particular agent_ knows of.
 ///
 /// Together with [`Statements`], this forms the agent's _potentially partial_ knowledge of the system.
 /// ```
-pub trait Actions: Set<Self::Enactment> {
+pub trait Actions: Map<Self::Enactment> {
     /// The type of actions stored in this set.
     type Enactment: Action;
     /// The type of actions that can become enacted actions.
@@ -67,7 +62,7 @@ pub trait Actions: Set<Self::Enactment> {
 /// Conceptually, one can think of this as a _localized_ set that contains all the statements that _a particular agent_ knows of.
 ///
 /// Together with [`Actions`], this forms the agent's _potentially partial_ knowledge of the system.
-pub trait Statements: Set<Self::Statement> {
+pub trait Statements: Map<Self::Statement> {
     /// The type of statements stored in this set.
     type Statement: Message;
     /// The type of messages that can become statements.

@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 15:11:07
 //  Last edited:
-//    13 May 2024, 13:57:31
+//    17 May 2024, 18:52:37
 //  Auto updated?
 //    Yes
 //
@@ -14,6 +14,8 @@
 //
 
 use std::error::Error;
+
+use crate::wire::Message;
 
 
 /***** LIBRARY *****/
@@ -89,7 +91,7 @@ pub trait Policy {
 ///     }
 /// }
 /// ```
-pub trait ExtractablePolicy<I>: Policy {
+pub trait ExtractablePolicy: Policy {
     /// The error that is raised if we failed to parse a policy from the MessageSet's payload.
     ///
     /// Note that this should only reflect _syntactic_ invalidity instead of _semantic_ invalidity.
@@ -120,7 +122,7 @@ pub trait ExtractablePolicy<I>: Policy {
     /// # Errors
     /// This function should fail if there was some _syntactic_ problem in the input that you want to notify to the user for debugging purposes.
     /// All other cases (semantic invalidity, problems with parsing that do not need reporting) should simply result in an instance of self for which [`Policy::check_validity()`] fails.
-    fn extract_from(msgs: I) -> Result<Self, Self::ExtractError>
+    fn extract_from<'s, I: Iterator<Item = &'s M>, M: 's + Message>(msgs: I) -> Result<Self, Self::ExtractError>
     where
         Self: Sized;
 }

@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 19:28:04
 //  Last edited:
-//    17 May 2024, 14:18:47
+//    17 May 2024, 14:37:13
 //  Auto updated?
 //    Yes
 //
@@ -125,12 +125,6 @@ where
 
     #[inline]
     fn current(&self) -> Self::Time { self.times.current() }
-}
-impl<'s, S1: Synchronizer<Agreement>, S2: Synchronizer<Timestamp>> justact_core::GlobalView for GlobalView<'s, S1, S2>
-where
-    S1::Error: 'static,
-    S2::Error: 'static,
-{
 }
 
 

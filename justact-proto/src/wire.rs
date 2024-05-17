@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 19:15:18
 //  Last edited:
-//    17 May 2024, 13:46:29
+//    17 May 2024, 18:36:43
 //  Auto updated?
 //    Yes
 //
@@ -27,7 +27,7 @@ use justact_core::wire::{Action as _, Message as _};
 
 use crate::global::{AgreementsView, Timestamp};
 use crate::local::StatementsView;
-use crate::set::{set_passthrough_impl, Set};
+use crate::set::{Set, SetIter};
 use crate::sync::Synchronizer;
 
 
@@ -224,27 +224,40 @@ impl<'m> MessageSet<'m> {
     }
 }
 
-set_passthrough_impl!(
-    impl<'m> Set<Cow<'m, Message>> for MessageSet.msgs;
-    impl<'m> Map<Cow<'m, Message>> for MessageSet.msgs;
-);
+impl<'m> justact_core::Set<Cow<'m, Message>> for MessageSet<'m> {
+    type Item<'s> = &'s Message where Self: 's;
+    type Iter<'s> = std::iter::Map<SetIter<'s, Cow<'m, Message>>, fn(&'s Cow<'m, Message>) -> &'s Message> where Self: 's;
+
+    #[inline]
+    fn add(&mut self, new_elem: Cow<'m, Message>) -> bool { self.msgs.add(new_elem) }
+
+    #[inline]
+    fn iter<'s>(&'s self) -> Self::Iter<'s> { self.msgs.iter().map(|e| e.as_ref()) }
+
+    #[inline]
+    fn len(&self) -> usize { self.msgs.len() }
+}
+impl<'m> justact_core::Map<Cow<'m, Message>> for MessageSet<'m> {
+    #[inline]
+    fn get(&self, id: &<Cow<'m, Message> as Identifiable>::Id) -> Option<&Cow<'m, Message>> { self.msgs.get(id) }
+}
 impl<'m> justact::MessageSet for MessageSet<'m> {
     type Message = Cow<'m, Message>;
 }
 
 impl<'m> IntoIterator for MessageSet<'m> {
-    type Item = <Set<<Self as justact::MessageSet>::Message> as IntoIterator>::Item;
+    type Item = Cow<'m, Message>;
     type IntoIter = <Set<<Self as justact::MessageSet>::Message> as IntoIterator>::IntoIter;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter { self.msgs.into_iter() }
 }
 impl<'s, 'm> IntoIterator for &'s MessageSet<'m> {
-    type Item = <&'s Set<<Self as justact::MessageSet>::Message> as IntoIterator>::Item;
-    type IntoIter = <&'s Set<<Self as justact::MessageSet>::Message> as IntoIterator>::IntoIter;
+    type Item = <MessageSet<'m> as justact_core::Set<Cow<'m, Message>>>::Item<'s>;
+    type IntoIter = <MessageSet<'m> as justact_core::Set<Cow<'m, Message>>>::Iter<'s>;
 
     #[inline]
-    fn into_iter(self) -> Self::IntoIter { self.msgs.iter() }
+    fn into_iter(self) -> Self::IntoIter { <MessageSet<'m> as justact_core::Set<Cow<'m, Message>>>::iter(self) }
 }
 
 impl<'m> From<&'m Message> for MessageSet<'m> {
@@ -374,7 +387,8 @@ impl Action {
     where
         S: Synchronizer<Agreement>,
         S::Error: 'static,
-        P: ExtractablePolicy<<MessageSet<'s> as IntoIterator>::IntoIter>,
+        P: ExtractablePolicy<std::iter::Map<<MessageSet<'s> as IntoIterator>::IntoIter, fn(Cow<'s, Message>) -> &'s Message>>,
+        P::Explanation: 's,
     {
         let just: MessageSet = self.justification();
 
@@ -396,7 +410,7 @@ impl Action {
 
         /* Property 5 */
         // Attempt to extract the policy
-        let policy: P = match P::extract_from(just.into_iter()) {
+        let policy: P = match P::extract_from(just.into_iter().map(|m| if let Cow::Borrowed(m) = m { m } else { panic!("Should not occur") })) {
             Ok(policy) => policy,
             Err(err) => return Err(AuditExplanation::Extract { err }),
         };

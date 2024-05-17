@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 16:43:37
 //  Last edited:
-//    07 May 2024, 15:54:13
+//    17 May 2024, 15:22:44
 //  Auto updated?
 //    Yes
 //
@@ -112,6 +112,136 @@ macro_rules! impl_enum_map {
 
 
 
+/***** FORMATTERS *****/
+/// Given an AST node, calls [`Reserialize::reserialize_fmt()`] on it.
+#[cfg(feature = "reserialize")]
+pub struct ReserializeFormatter<'n, N: ?Sized> {
+    /// The node to reserialize.
+    node: &'n N,
+}
+#[cfg(feature = "reserialize")]
+impl<'n, N: Reserialize> Display for ReserializeFormatter<'n, N> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult { self.node.reserialize_fmt(f) }
+}
+
+/// Given an AST node, calls [`ReserializeDelim::reserialize_open_fmt()`] on it.
+#[cfg(feature = "reserialize")]
+pub struct ReserializeOpenFormatter<'n, N: ?Sized> {
+    /// The node to reserialize.
+    node: &'n N,
+}
+#[cfg(feature = "reserialize")]
+impl<'n, N: ReserializeDelim> Display for ReserializeOpenFormatter<'n, N> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult { self.node.reserialize_open_fmt(f) }
+}
+
+/// Given an AST node, calls [`ReserializeDelim::reserialize_close_fmt()`] on it.
+#[cfg(feature = "reserialize")]
+pub struct ReserializeCloseFormatter<'n, N: ?Sized> {
+    /// The node to reserialize.
+    node: &'n N,
+}
+#[cfg(feature = "reserialize")]
+impl<'n, N: ReserializeDelim> Display for ReserializeCloseFormatter<'n, N> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult { self.node.reserialize_close_fmt(f) }
+}
+
+
+
+
+
+/***** AUXILLARY *****/
+/// Serializes a node in the $Datalog^\neg$-tree such that is serializable to the same tree (modulo whitespace).
+#[cfg(feature = "reserialize")]
+pub trait Reserialize {
+    /// Formats this AST node to some formatter.
+    ///
+    /// The idea is that it is deterministic, i.e., serialializing and then parsing this output should yield you an equivalent tree (modulo whitespace).
+    ///
+    /// # Arguments
+    /// - `f`: The [`Formatter`] to serialize to.
+    ///
+    /// # Errors
+    /// This function is allowed to error if it failed to write to the given `f`ormatter.
+    fn reserialize_fmt(&self, f: &mut Formatter) -> FResult;
+}
+
+/// Allows a node in the $Datalog^\neg$ to be serializable in a repeatable way.
+///
+/// Specifically, if serialized through this trait, it should be guaranteed that parsing it yields the same AST modulo whitespace.
+#[cfg(feature = "reserialize")]
+pub trait Reserializable: Reserialize {
+    /// Returns a formatter that re-serializes this node in the AST.
+    ///
+    /// # Returns
+    /// A [`ReserializeFormatter`] that implements [`Display`].
+    fn reserialize(&self) -> ReserializeFormatter<Self>;
+}
+#[cfg(feature = "reserialize")]
+impl<T: Reserialize> Reserializable for T {
+    #[inline]
+    fn reserialize(&self) -> ReserializeFormatter<Self> { ReserializeFormatter { node: self } }
+}
+
+
+
+/// Serializes a delimiting node in the $Datalog^\neg$-tree such that is serializable to the same tree (modulo whitespace).
+#[cfg(feature = "reserialize")]
+pub trait ReserializeDelim {
+    /// Formats the opening token of this AST node to some formatter.
+    ///
+    /// The idea is that it is deterministic, i.e., serialializing and then parsing this output should yield you an equivalent tree (modulo whitespace).
+    ///
+    /// # Arguments
+    /// - `f`: The [`Formatter`] to serialize to.
+    ///
+    /// # Errors
+    /// This function is allowed to error if it failed to write to the given `f`ormatter.
+    fn reserialize_open_fmt(&self, f: &mut Formatter) -> FResult;
+
+    /// Formats the closing token of this AST node to some formatter.
+    ///
+    /// The idea is that it is deterministic, i.e., serialializing and then parsing this output should yield you an equivalent tree (modulo whitespace).
+    ///
+    /// # Arguments
+    /// - `f`: The [`Formatter`] to serialize to.
+    ///
+    /// # Errors
+    /// This function is allowed to error if it failed to write to the given `f`ormatter.
+    fn reserialize_close_fmt(&self, f: &mut Formatter) -> FResult;
+}
+
+/// Allows a delimited node in the $Datalog^\neg$ to be serializable in a repeatable way.
+///
+/// Specifically, if serialized through this trait, it should be guaranteed that parsing it yields the same AST modulo whitespace.
+#[cfg(feature = "reserialize")]
+pub trait ReserializableDelim: ReserializeDelim {
+    /// Returns a formatter that re-serializes the opening token of this node in the AST.
+    ///
+    /// # Returns
+    /// A [`ReserializeOpenFormatter`] that implements [`Display`].
+    fn reserialize_open(&self) -> ReserializeOpenFormatter<Self>;
+    /// Returns a formatter that re-serializes the closing token of this node in the AST.
+    ///
+    /// # Returns
+    /// A [`ReserializeCloseFormatter`] that implements [`Display`].
+    fn reserialize_close(&self) -> ReserializeCloseFormatter<Self>;
+}
+#[cfg(feature = "reserialize")]
+impl<T: ReserializeDelim> ReserializableDelim for T {
+    #[inline]
+    fn reserialize_open(&self) -> ReserializeOpenFormatter<Self> { ReserializeOpenFormatter { node: self } }
+    #[inline]
+    fn reserialize_close(&self) -> ReserializeCloseFormatter<Self> { ReserializeCloseFormatter { node: self } }
+}
+
+
+
+
+
 /***** LIBRARY FUNCTIONS *****/
 /// Generates a static railroad diagram of the $Datalog^\neg$ AST.
 ///
@@ -165,11 +295,23 @@ pub struct Spec<'f, 's> {
     /// The list of rules in this program.
     pub rules: Vec<Rule<'f, 's>>,
 }
+impl<'f, 's> Spec<'f, 's> {}
 impl<'f, 's> Display for Spec<'f, 's> {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         for rule in &self.rules {
             writeln!(f, "{rule}")?;
+        }
+        Ok(())
+    }
+}
+#[cfg(feature = "reserialize")]
+impl<'f, 's> Reserialize for Spec<'f, 's> {
+    #[inline]
+    fn reserialize_fmt(&self, f: &mut Formatter) -> FResult {
+        for rule in &self.rules {
+            rule.reserialize_fmt(f)?;
+            writeln!(f)?;
         }
         Ok(())
     }
@@ -203,6 +345,23 @@ impl<'f, 's> Display for Rule<'f, 's> {
             self.consequences.values().map(|c| c.to_string()).collect::<Vec<String>>().join(", "),
             if let Some(tail) = &self.tail { tail.to_string() } else { String::new() }
         )
+    }
+}
+#[cfg(feature = "reserialize")]
+impl<'f, 's> Reserialize for Rule<'f, 's> {
+    #[inline]
+    fn reserialize_fmt(&self, f: &mut Formatter) -> FResult {
+        for (value, punct) in self.consequences.pairs() {
+            value.reserialize_fmt(f)?;
+            if let Some(punct) = punct {
+                punct.reserialize_fmt(f)?;
+                write!(f, " ")?;
+            }
+        }
+        if let Some(tail) = &self.tail {
+            tail.reserialize_fmt(f)?;
+        }
+        self.dot.reserialize_fmt(f)
     }
 }
 #[cfg(feature = "railroad")]
@@ -246,6 +405,22 @@ impl<'f, 's> Display for RuleAntecedents<'f, 's> {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         write!(f, " :- {}", self.antecedents.values().map(|a| a.to_string()).collect::<Vec<String>>().join(", "))
+    }
+}
+#[cfg(feature = "reserialize")]
+impl<'f, 's> Reserialize for RuleAntecedents<'f, 's> {
+    #[inline]
+    fn reserialize_fmt(&self, f: &mut Formatter) -> FResult {
+        self.arrow_token.reserialize_fmt(f)?;
+        write!(f, " ")?;
+        for (value, punct) in self.antecedents.pairs() {
+            value.reserialize_fmt(f)?;
+            if let Some(punct) = punct {
+                punct.reserialize_fmt(f)?;
+                write!(f, " ")?;
+            }
+        }
+        Ok(())
     }
 }
 impl_map!(RuleAntecedents, antecedents);
@@ -324,6 +499,16 @@ impl<'f, 's> Display for Literal<'f, 's> {
         }
     }
 }
+#[cfg(feature = "reserialize")]
+impl<'f, 's> Reserialize for Literal<'f, 's> {
+    #[inline]
+    fn reserialize_fmt(&self, f: &mut Formatter) -> FResult {
+        match self {
+            Self::Atom(a) => a.reserialize_fmt(f),
+            Self::NegAtom(na) => na.reserialize_fmt(f),
+        }
+    }
+}
 impl_enum_map!(Literal, Atom(atom), NegAtom(atom));
 
 /// Wraps around an [`Atom`] to express its non-existance.
@@ -344,6 +529,15 @@ pub struct NegAtom<'f, 's> {
 impl<'f, 's> Display for NegAtom<'f, 's> {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult { write!(f, "not {}", self.atom) }
+}
+#[cfg(feature = "reserialize")]
+impl<'f, 's> Reserialize for NegAtom<'f, 's> {
+    #[inline]
+    fn reserialize_fmt(&self, f: &mut Formatter) -> FResult {
+        self.not_token.reserialize_fmt(f)?;
+        write!(f, " ")?;
+        self.atom.reserialize_fmt(f)
+    }
 }
 impl_map!(NegAtom, atom);
 
@@ -389,6 +583,17 @@ impl<'f, 's> Display for Atom<'f, 's> {
         write!(f, "{}{}", self.ident, if let Some(args) = &self.args { args.to_string() } else { String::new() })
     }
 }
+#[cfg(feature = "reserialize")]
+impl<'f, 's> Reserialize for Atom<'f, 's> {
+    #[inline]
+    fn reserialize_fmt(&self, f: &mut Formatter) -> FResult {
+        self.ident.reserialize_fmt(f)?;
+        if let Some(args) = &self.args {
+            args.reserialize_fmt(f)?;
+        }
+        Ok(())
+    }
+}
 impl_map!(Atom, ident, args);
 
 /// Defines the (optional) arguments-part of the constructor application.
@@ -408,6 +613,22 @@ impl<'f, 's> Display for AtomArgs<'f, 's> {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         write!(f, "({})", self.args.values().map(|a| a.to_string()).collect::<Vec<String>>().join(","))
+    }
+}
+#[cfg(feature = "reserialize")]
+impl<'f, 's> Reserialize for AtomArgs<'f, 's> {
+    #[inline]
+    fn reserialize_fmt(&self, f: &mut Formatter) -> FResult {
+        self.paren_tokens.reserialize_open_fmt(f)?;
+        for (value, punct) in self.args.pairs() {
+            value.reserialize_fmt(f)?;
+            if let Some(punct) = punct {
+                punct.reserialize_fmt(f)?;
+                write!(f, " ")?;
+            };
+        }
+        self.paren_tokens.reserialize_close_fmt(f)?;
+        Ok(())
     }
 }
 #[cfg(feature = "railroad")]
@@ -480,6 +701,11 @@ impl<'f, 's> Display for AtomArg<'f, 's> {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult { write!(f, "{}", self.ident()) }
 }
+#[cfg(feature = "reserialize")]
+impl<'f, 's> Reserialize for AtomArg<'f, 's> {
+    #[inline]
+    fn reserialize_fmt(&self, f: &mut Formatter) -> FResult { write!(f, "{}", self.ident()) }
+}
 impl_enum_map!(AtomArg, Atom(ident), Var(ident));
 
 /// Represents identifiers.
@@ -499,6 +725,11 @@ impl<'f, 's> Display for Ident<'f, 's> {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult { write!(f, "{}", self.value.value()) }
 }
+#[cfg(feature = "reserialize")]
+impl<'f, 's> Reserialize for Ident<'f, 's> {
+    #[inline]
+    fn reserialize_fmt(&self, f: &mut Formatter) -> FResult { write!(f, "{}", self.value) }
+}
 impl_map!(Ident, value);
 
 
@@ -516,6 +747,11 @@ pub struct Arrow<'f, 's> {
     /// The source of this arrow in the source.
     pub span: Span<&'f str, &'s str>,
 }
+#[cfg(feature = "reserialize")]
+impl<'f, 's> Reserialize for Arrow<'f, 's> {
+    #[inline]
+    fn reserialize_fmt(&self, f: &mut Formatter) -> FResult { write!(f, ":-") }
+}
 impl_map_invariant!(Arrow);
 
 /// Defines a comma token.
@@ -530,6 +766,11 @@ impl_map_invariant!(Arrow);
 pub struct Comma<'f, 's> {
     /// The source of this comma in the source.
     pub span: Span<&'f str, &'s str>,
+}
+#[cfg(feature = "reserialize")]
+impl<'f, 's> Reserialize for Comma<'f, 's> {
+    #[inline]
+    fn reserialize_fmt(&self, f: &mut Formatter) -> FResult { write!(f, ",") }
 }
 impl_map_invariant!(Comma);
 
@@ -546,6 +787,11 @@ pub struct Dot<'f, 's> {
     /// The source of this dot in the source.
     pub span: Span<&'f str, &'s str>,
 }
+#[cfg(feature = "reserialize")]
+impl<'f, 's> Reserialize for Dot<'f, 's> {
+    #[inline]
+    fn reserialize_fmt(&self, f: &mut Formatter) -> FResult { write!(f, ".") }
+}
 impl_map_invariant!(Dot);
 
 /// Defines a not token.
@@ -560,6 +806,11 @@ impl_map_invariant!(Dot);
 pub struct Not<'f, 's> {
     /// The source of this not in the source.
     pub span: Span<&'f str, &'s str>,
+}
+#[cfg(feature = "reserialize")]
+impl<'f, 's> Reserialize for Not<'f, 's> {
+    #[inline]
+    fn reserialize_fmt(&self, f: &mut Formatter) -> FResult { write!(f, "not") }
 }
 impl_map_invariant!(Not);
 
@@ -585,5 +836,12 @@ impl<'f, 's> Parens<'f, 's> {
     /// A new [`Span`] that wraps these parenthesis.
     #[inline]
     pub fn span(&self) -> Span<&'f str, &'s str> { self.open.join(&self.close).unwrap_or_else(|| self.open.clone()) }
+}
+#[cfg(feature = "reserialize")]
+impl<'f, 's> ReserializeDelim for Parens<'f, 's> {
+    #[inline]
+    fn reserialize_open_fmt(&self, f: &mut Formatter) -> FResult { write!(f, "(") }
+    #[inline]
+    fn reserialize_close_fmt(&self, f: &mut Formatter) -> FResult { write!(f, ")") }
 }
 impl_map_invariant!(Parens);

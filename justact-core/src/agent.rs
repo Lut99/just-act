@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:52:41
 //  Last edited:
-//    17 May 2024, 11:07:13
+//    17 May 2024, 14:49:31
 //  Auto updated?
 //    Yes
 //
@@ -16,8 +16,9 @@
 use std::error::Error;
 
 use crate::auxillary::Identifiable;
-use crate::global::GlobalView;
-use crate::local::LocalView;
+use crate::global::{Agreements, Times};
+use crate::local::{Actions, Statements};
+use crate::wire::{Action, Message};
 
 
 /***** AUXILLARY *****/
@@ -45,7 +46,19 @@ pub trait Agent: Identifiable {}
 
 
 /// Extends an [`Agent`] with the capacity to think, i.e., do something.
+///
+/// This is effectively the trait that unifies everything into a concrete implementation. Its associated types force the implementer to get concrete about everything.
 pub trait RationalAgent: Agent {
+    /// The type of actions stored in this set.
+    type Enactment: Action;
+    /// The type of actions that can become enacted actions.
+    type Action: Action;
+    /// The type of statements stated by agents.
+    type Statement: Message;
+    /// The type of messages that can become statements.
+    type Message: Message;
+    /// Some type that allows the agent to decide where its messages go.
+    type Target;
     /// The type of errors raised by reasoning.
     type Error: Error;
 
@@ -63,5 +76,10 @@ pub trait RationalAgent: Agent {
     ///
     /// # Errors
     /// Only fatal errors that prevent the Agent from participating in the system should cause this function to error. Examples are failures to properly attach to some remote registry or queue.
-    fn poll<G: GlobalView, L: LocalView>(&mut self, global: &mut G, local: &mut L) -> Result<AgentPoll, Self::Error>;
+    fn poll<G, L>(&mut self, global: &mut G, local: &mut L) -> Result<AgentPoll, Self::Error>
+    where
+        G: Agreements + Times,
+        L: Actions<Enactment = Self::Enactment, Action = Self::Action, Target = Self::Target>
+            + Statements<Statement = Self::Statement, Message = Self::Message, Target = Self::Target>,
+        Self::Error: From<<L as Actions>::Error> + From<<L as Statements>::Error>;
 }

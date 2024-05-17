@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:06:51
 //  Last edited:
-//    17 May 2024, 14:10:59
+//    17 May 2024, 18:40:19
 //  Auto updated?
 //    Yes
 //
@@ -13,8 +13,10 @@
 //
 
 use std::any::type_name;
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::convert::Infallible;
 use std::error;
 use std::fmt::{Display, Formatter, Result as FResult};
 use std::rc::Rc;
@@ -28,9 +30,9 @@ use stackvec::StackVec;
 
 use crate::global::{GlobalState, GlobalView, Timestamp};
 use crate::interface::Interface;
-use crate::local::{LocalState, LocalView};
+use crate::local::{LocalState, LocalView, Target};
 use crate::sync::Synchronizer;
-use crate::wire::{Agreement, MessageSet};
+use crate::wire::{Action, Agreement, Message, MessageSet};
 
 
 /***** ERROR *****/
@@ -202,7 +204,7 @@ where
     S2: Synchronizer<Timestamp>,
     S2::Error: 'static,
     A: Identifiable<Id = &'static str>,
-    A: RationalAgent,
+    A: RationalAgent<Enactment = Action, Action = Action, Statement = Message, Message = Message, Target = Target, Error = Infallible>,
 {
     /// Polls all the agents in the simulation once.
     ///
@@ -244,7 +246,7 @@ where
     #[inline]
     pub fn run<P>(&mut self) -> Result<(), Error<A::Error>>
     where
-        P: for<'s> ExtractablePolicy<<MessageSet<'s> as IntoIterator>::IntoIter>,
+        P: for<'p> ExtractablePolicy<std::iter::Map<<MessageSet<'p> as IntoIterator>::IntoIter, fn(Cow<'p, Message>) -> &'p Message>>,
     {
         loop {
             // Run the next iteration

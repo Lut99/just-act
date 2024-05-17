@@ -4,7 +4,7 @@
 //  Created:
 //    08 May 2024, 11:12:42
 //  Last edited:
-//    08 May 2024, 11:42:17
+//    17 May 2024, 18:07:38
 //  Auto updated?
 //    Yes
 //
@@ -13,8 +13,9 @@
 //
 
 use std::error::Error;
-use std::fmt::{Display, Formatter, Result as FResult};
+use std::fmt::{Debug, Display, Formatter, Result as FResult};
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 use ast_toolkit_snack::error::{Common, Failure};
 use ast_toolkit_snack::{combinator as comb, error, multi, sequence as seq, utf8, Combinator, Expects, ExpectsFormatter, Result as SResult};
@@ -35,11 +36,27 @@ type Span<'f, 's> = ast_toolkit_span::Span<&'f str, &'s str>;
 /***** ERRORS *****/
 /// Errors returned when parsing literals and related.
 #[derive(Debug)]
-pub enum ParseError<'f, 's> {
+pub enum ParseError<F, S> {
     /// Failed to parse a rule.
-    Rule { span: Span<'f, 's> },
+    Rule { span: ast_toolkit_span::Span<F, S> },
 }
-impl<'f, 's> Display for ParseError<'f, 's> {
+impl<F, S> ParseError<F, S> {
+    /// Casts the [`Span`]s in this Failure into their owned counterparts.
+    ///
+    /// This performs some wizardry to clone the `from`- and `source`-strings only once, and then share them among the [`Span`]s using reference-counted pointers.
+    ///
+    /// See [`Failure::to_owned_arc()`] to get [`Arc`]-shared strings instead of [`Rc`]-shared ones.
+    ///
+    /// # Returns
+    /// An equivalent Failure that owns the underlying source text among itself.
+    #[inline]
+    pub fn into_owned<FO: From<F>, SO: From<S>>(self) -> ParseError<Rc<FO>, Rc<SO>> {
+        match self {
+            Self::Rule { span } => ParseError::Rule { span: span.into_owned() },
+        }
+    }
+}
+impl<F, S> Display for ParseError<F, S> {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         use ParseError::*;
@@ -48,13 +65,13 @@ impl<'f, 's> Display for ParseError<'f, 's> {
         }
     }
 }
-impl<'f, 's> Error for ParseError<'f, 's> {}
-impl<'f, 's> Spanning<&'f str, &'s str> for ParseError<'f, 's> {
+impl<F: Debug, S: Debug> Error for ParseError<F, S> {}
+impl<F: Clone, S: Clone> Spanning<F, S> for ParseError<F, S> {
     #[inline]
-    fn span(&self) -> Span<'f, 's> {
+    fn span(&self) -> ast_toolkit_span::Span<F, S> {
         use ParseError::*;
         match self {
-            Rule { span } => *span,
+            Rule { span } => span.clone(),
         }
     }
 }
@@ -183,7 +200,7 @@ impl<'f, 's> Expects<'static> for Spec<'f, 's> {
 }
 impl<'f, 's> Combinator<'static, &'f str, &'s str> for Spec<'f, 's> {
     type Output = ast::Spec<'f, 's>;
-    type Error = ParseError<'f, 's>;
+    type Error = ParseError<&'f str, &'s str>;
 
     #[inline]
     fn parse(&mut self, input: Span<'f, 's>) -> SResult<'static, Self::Output, &'f str, &'s str, Self::Error> {

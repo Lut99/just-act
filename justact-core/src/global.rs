@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 14:43:47
 //  Last edited:
-//    17 May 2024, 09:57:13
+//    17 May 2024, 14:39:03
 //  Auto updated?
 //    Yes
 //
@@ -22,23 +22,18 @@
 
 use std::error::Error;
 
-use crate::set::Set;
+use crate::set::{Map, Set};
 use crate::{Agreement, Message};
 
 
 /***** LIBRARY *****/
-/// Combines both an [`Agreements`] and a [`Times`] into one convenient interface.
-pub trait GlobalView: Agreements + Times {}
-
-
-
 /// Defines the interface that agents use to inspect- and create agreements.
 ///
 /// Conceptually, one can think of this as a _global_, _synchronized_ set that contains all the statements that _all agents agree on_.
 ///
 /// Together with [`Times`], this forms the agents' shared knowledge of the system.
 /// ```
-pub trait Agreements: Set<Self::Agreement> {
+pub trait Agreements: Map<Self::Agreement> {
     /// The type of agreements stored in this set.
     type Agreement: Agreement;
     /// The common notion of Time in the framework.

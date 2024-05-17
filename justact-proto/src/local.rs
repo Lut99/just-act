@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:16:19
 //  Last edited:
-//    17 May 2024, 14:06:32
+//    17 May 2024, 18:36:33
 //  Auto updated?
 //    Yes
 //
@@ -214,7 +214,6 @@ impl<'s> justact_core::Statements for LocalView<'s> {
     #[inline]
     fn state(&mut self, target: Self::Target, msg: Self::Message) -> Result<(), Self::Error> { self.stmts.state(target, msg) }
 }
-impl<'s> justact_core::LocalView for LocalView<'s> {}
 
 
 
@@ -283,7 +282,8 @@ impl Actions {
     where
         S: Synchronizer<Agreement>,
         S::Error: 'static,
-        P: ExtractablePolicy<<MessageSet<'s> as IntoIterator>::IntoIter>,
+        P: ExtractablePolicy<std::iter::Map<<MessageSet<'s> as IntoIterator>::IntoIter, fn(Cow<'s, Message>) -> &'s Message>>,
+        P::Explanation: 's,
     {
         // Go through all the actions to find the first culprit
         for act in &self.acts {

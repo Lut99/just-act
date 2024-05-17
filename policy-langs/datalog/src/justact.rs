@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 18:39:10
 //  Last edited:
-//    17 May 2024, 09:59:17
+//    17 May 2024, 18:54:56
 //  Auto updated?
 //    Yes
 //
@@ -82,15 +82,11 @@ impl<'f, 's> Policy for Spec<'f, 's> {
 
 
 // Implement `ExtractablePolicy` for Datalog
-impl<'f, 's, 'a, I, M> ExtractablePolicy<I> for Spec<'f, 's>
-where
-    I: Iterator<Item = &'s M>,
-    M: 's + Authored<AuthorId = &'a str> + Message<Id = &'f str>,
-{
+impl<'f, 's> ExtractablePolicy for Spec<'f, 's> {
     type ExtractError = ParseError<'f, 's>;
 
     #[inline]
-    fn extract_from(msgs: I) -> Result<Self, Self::ExtractError>
+    fn extract_from<'s2, I: Iterator<Item = &'s2 M>, M: 's2 + Message>(msgs: I) -> Result<Self, Self::ExtractError>
     where
         Self: Sized,
     {

@@ -4,7 +4,7 @@
 //  Created:
 //    03 May 2024, 13:42:38
 //  Last edited:
-//    08 May 2024, 11:43:02
+//    17 May 2024, 18:17:35
 //  Auto updated?
 //    Yes
 //
@@ -29,7 +29,7 @@ use crate::ast::Spec;
 
 /***** ERRORS *****/
 /// The concrete error type returned by the [`parse()`] function.
-pub type Error<'f, 's> = ast_toolkit_snack::error::Error<'static, &'f str, &'s str, specs::ParseError<'f, 's>>;
+pub type Error<'f, 's> = ast_toolkit_snack::error::Error<'static, &'f str, &'s str, specs::ParseError<&'f str, &'s str>>;
 
 
 

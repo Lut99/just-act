@@ -33,10 +33,11 @@ log = "0.4"
 [features]
 default = []
 
-justact = ["dep:justact-core", "interpreter", "parser"]
+justact = ["dep:justact-core", "interpreter", "parser", "reserialize"]
 
 interpreter = []
 parser = ["dep:ast-toolkit-snack"]
+reserialize = []
 
 derive = ["dep:datalog-derive"]
 log = ["dep:log"]
