@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 19:28:04
 //  Last edited:
-//    17 May 2024, 14:37:13
+//    21 May 2024, 15:46:00
 //  Auto updated?
 //    Yes
 //
@@ -24,7 +24,7 @@ use justact_core::{global as justact, Set as _};
 use log::{error, warn};
 
 use crate::interface::Interface;
-use crate::set::{set_passthrough_impl, Map};
+use crate::set::{set_passthrough_impl, Set};
 use crate::sync::{SyncVote, Synchronizer};
 use crate::wire::{Agreement, Message};
 
@@ -136,7 +136,7 @@ where
 #[derive(Clone, Debug)]
 pub struct Agreements<S> {
     /// The of (accepted) agreements.
-    pub agrmnts:      Map<Agreement>,
+    pub agrmnts:      Set<Agreement>,
     /// The synchronizer used to push updated.
     pub synchronizer: S,
     /// The interface we're using to log things nicely.
@@ -152,7 +152,7 @@ impl<S> Agreements<S> {
     /// # Returns
     /// A new Agreements ready for use in the simulation.
     #[inline]
-    pub fn new(synchronizer: S, interface: Rc<RefCell<Interface>>) -> Self { Self { agrmnts: Map::empty(), synchronizer, interface } }
+    pub fn new(synchronizer: S, interface: Rc<RefCell<Interface>>) -> Self { Self { agrmnts: Set::empty(), synchronizer, interface } }
 
     /// Returns a new Agreements that is scoped to the given agent.
     ///
@@ -211,10 +211,10 @@ impl<'s, S: Synchronizer<Agreement>> justact_core::Set<Agreement> for Agreements
 where
     S::Error: 'static,
 {
-    type Item<'s2> = <Map<Agreement> as justact_core::Set<Agreement>>::Item<'s2>
+    type Item<'s2> = <Set<Agreement> as justact_core::Set<Agreement>>::Item<'s2>
     where
         Self: 's2;
-    type Iter<'s2> = <Map<Agreement> as justact_core::Set<Agreement>>::Iter<'s2> where Self: 's2;
+    type Iter<'s2> = <Set<Agreement> as justact_core::Set<Agreement>>::Iter<'s2> where Self: 's2;
 
     #[inline]
     fn add(&mut self, new_elem: Agreement) -> bool {

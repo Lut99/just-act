@@ -4,7 +4,7 @@
 //  Created:
 //    18 Apr 2024, 11:37:12
 //  Last edited:
-//    17 May 2024, 10:53:42
+//    21 May 2024, 15:34:20
 //  Auto updated?
 //    Yes
 //
@@ -97,13 +97,13 @@ impl<'s, T> Iterator for SetIter<'s, T> {
 
 /// Iterator-by-ref for the [`Map`].
 #[derive(Clone, Debug)]
-pub enum MapIter<'s, T: Identifiable> {
+pub enum MapIter<'s, I, T> {
     // We return a single message
     Singleton(Option<&'s T>),
     // We return a host of messages
-    Multi(std::collections::hash_map::Values<'s, T::Id, T>),
+    Multi(std::collections::hash_map::Values<'s, I, T>),
 }
-impl<'s, T: Identifiable> Iterator for MapIter<'s, T> {
+impl<'s, I, T> Iterator for MapIter<'s, I, T> {
     type Item = &'s T;
 
     #[inline]
@@ -167,13 +167,13 @@ impl<T> Iterator for SetIntoIter<T> {
 
 /// Iterator-by-ownership for the [`Map`].
 #[derive(Debug)]
-pub enum MapIntoIter<T: Identifiable> {
+pub enum MapIntoIter<I, T> {
     // We return a single message
     Singleton(Option<T>),
     // We return a host of messages
-    Multi(std::collections::hash_map::IntoValues<T::Id, T>),
+    Multi(std::collections::hash_map::IntoValues<I, T>),
 }
-impl<T: Identifiable> Iterator for MapIntoIter<T> {
+impl<I, T> Iterator for MapIntoIter<I, T> {
     type Item = T;
 
     #[inline]
@@ -449,19 +449,19 @@ impl<T> From<T> for Set<T> {
 
 /// A variation of a [`Set`] which uses the element's ID to make searching the set more efficient.
 #[derive(Clone, Debug)]
-pub enum Map<T: Identifiable> {
+pub enum Map<I, T> {
     /// No elements are in the set.
     Empty,
     /// In case there's exactly one element, to prevent allocation.
     Singleton(T),
     /// In case there's zero _or_ multiple elements.
-    Multi(HashMap<T::Id, T>),
+    Multi(HashMap<I, T>),
 }
-impl<T: Identifiable> Default for Map<T> {
+impl<I, T> Default for Map<I, T> {
     #[inline]
     fn default() -> Self { Self::empty() }
 }
-impl<T: Identifiable> Map<T> {
+impl<I, T> Map<I, T> {
     /// Creates an empty Map.
     ///
     /// # Returns
@@ -487,17 +487,17 @@ impl<T: Identifiable> Map<T> {
         }
     }
 }
-impl<T> Map<T>
+impl<I, T> Map<I, T>
 where
+    for<'a> I: Clone + Eq + From<&'a T::Id> + Hash,
     T: Identifiable,
-    T::Id: Clone + Eq + Hash,
 {
     /// Merges the given Map into this one.
     ///
     /// # Arguments
     /// - `other`: Some other Map to join.
     #[inline]
-    pub fn join(&mut self, other: impl IntoIterator<Item = T>) {
+    pub fn join(&mut self, other: impl IntoIterator<Item = (I, T)>) {
         // Get an owned version of self
         let mut temp: Self = Self::Empty;
         std::mem::swap(&mut temp, self);
@@ -506,15 +506,15 @@ where
         let mut temp: Self = match temp {
             Self::Empty => {
                 // Create an allocation for other
-                Self::Multi(other.into_iter().map(|elem| (elem.id().clone(), elem)).collect())
+                Self::Multi(other.into_iter().map(|(id, elem)| (id.clone(), elem)).collect())
             },
             Self::Singleton(msg) => {
-                let iter = other.into_iter().map(|elem| (elem.id().clone(), elem));
+                let iter = other.into_iter().map(|(id, elem)| (id.clone(), elem));
                 let size_hint: (usize, Option<usize>) = iter.size_hint();
 
                 // Create a map with both self element and the other
-                let mut elems: HashMap<T::Id, T> = HashMap::with_capacity(1 + size_hint.1.unwrap_or(size_hint.0));
-                elems.insert(msg.id().clone(), msg);
+                let mut elems: HashMap<I, T> = HashMap::with_capacity(1 + size_hint.1.unwrap_or(size_hint.0));
+                elems.insert(msg.id().into(), msg);
                 elems.extend(iter);
 
                 // Return it. Even if the map is only 1 (i.e., the other was empty or duplicate), we still insert as multi to not waste the allocation.
@@ -523,10 +523,10 @@ where
             Self::Multi(mut msgs) => {
                 if msgs.capacity() == 0 {
                     // The list has no allocation yet. As such, we just directly use the one from the `other`.
-                    msgs = other.into_iter().map(|elem| (elem.id().clone(), elem)).collect();
+                    msgs = other.into_iter().map(|(id, elem)| (id.clone(), elem)).collect();
                 } else {
                     // Extend it instead. Even if the extension would result in a map of exactly 1, we still use this over Singleton to not waste the allocation.
-                    msgs.extend(other.into_iter().map(|elem| (elem.id().clone(), elem)));
+                    msgs.extend(other.into_iter().map(|(id, elem)| (id.clone(), elem)));
                 }
                 Self::Multi(msgs)
             },
@@ -536,17 +536,17 @@ where
         std::mem::swap(self, &mut temp);
     }
 }
-impl<'a, T> Map<Cow<'a, T>>
+impl<'a, I, T> Map<I, Cow<'a, T>>
 where
+    I: Clone + Eq + From<&'a T::Id> + Hash,
     T: Clone + Identifiable,
-    T::Id: Clone + Eq + Hash,
 {
     /// Clones this `Set`, returning an equivalent where all elements are borrowed from `self` instead of whatever they were.
     ///
     /// # Returns
     /// A new `Set` that has its lifetime scoped down to `self`.
     #[inline]
-    pub fn reborrow<'s>(&'s self) -> Map<Cow<'s, T>> {
+    pub fn reborrow<'s>(&'s self) -> Map<I, Cow<'s, T>> {
         match self {
             Self::Empty => Map::Empty,
             Self::Singleton(elem) => Map::Singleton(Cow::Borrowed(elem.as_ref())),
@@ -555,28 +555,42 @@ where
     }
 }
 
-impl<T> Eq for Map<T> where T: Eq + Identifiable {}
-impl<T> Hash for Map<T>
+impl<I, T> Eq for Map<I, T>
 where
-    T: Hash + Identifiable,
-    T::Id: Clone + Ord,
+    I: Eq + Hash,
+    T: Identifiable + PartialEq,
+{
+}
+impl<I, T> Hash for Map<I, T>
+where
+    I: Hash + Ord,
+    T: Identifiable,
 {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // Collect everything in an ordered fashion, then commit to some deterministic order
-        let mut buf: StackVec<64, &T> = StackVec::new();
-        for elem in self {
-            buf.push(elem);
-        }
-        buf.sort_by_key(|elem| elem.id().clone());
+        match self {
+            // Nothing to hash
+            Self::Empty => return,
+            Self::Singleton(elem) => elem.id().hash(state),
+            Self::Multi(elems) => {
+                // Collect everything in an ordered fashion, then commit to some deterministic order
+                let mut buf: StackVec<64, &I> = StackVec::new();
+                for id in elems.keys() {
+                    buf.push(id);
+                }
+                buf.sort();
 
-        // Hash that
-        for elem in buf {
-            elem.hash(state);
+                // Hash that
+                // NOTE: Because we assume that the identifiers are unique, it is sufficient to only hash the identifiers.
+                for id in buf {
+                    id.hash(state);
+                }
+            },
         }
     }
 }
-impl<T> PartialEq for Map<T>
+impl<I, T> PartialEq for Map<I, T>
 where
+    I: Eq + Hash,
     T: Identifiable + PartialEq,
 {
     #[inline]
@@ -595,13 +609,13 @@ where
     }
 }
 
-impl<T> justact_core::Set<T> for Map<T>
+impl<I, T> justact_core::Set<T> for Map<I, T>
 where
+    for<'a> I: Eq + From<&'a T::Id> + Hash,
     T: Identifiable,
-    T::Id: Clone + Eq + Hash,
 {
     type Item<'s> = &'s T where Self: 's;
-    type Iter<'s> = MapIter<'s, T> where Self: 's;
+    type Iter<'s> = MapIter<'s, I, T> where Self: 's;
 
     #[inline]
     fn add(&mut self, new_elem: T) -> bool {
@@ -618,7 +632,7 @@ where
             },
             Self::Singleton(elem) => {
                 existed = elem.id() == new_elem.id();
-                Self::Multi(HashMap::from([(elem.id().clone(), elem), (new_elem.id().clone(), new_elem)]))
+                Self::Multi(HashMap::from([(elem.id().into(), elem), (new_elem.id().into(), new_elem)]))
             },
             Self::Multi(mut elems) => {
                 // If the `elems` are empty, we might avoid an allocation by creating a singleton instead
@@ -628,7 +642,7 @@ where
                     Self::Singleton(new_elem)
                 } else {
                     // There is already an alloc, use it
-                    existed = elems.insert(new_elem.id().clone(), new_elem).is_some();
+                    existed = elems.insert(new_elem.id().into(), new_elem).is_some();
                     Self::Multi(elems)
                 }
             },
@@ -657,10 +671,10 @@ where
         }
     }
 }
-impl<T> justact_core::Map<T> for Map<T>
+impl<I, T> justact_core::Map<T> for Map<I, T>
 where
+    for<'a> I: Eq + From<&'a T::Id> + Hash,
     T: Identifiable,
-    T::Id: Clone,
 {
     #[inline]
     fn get(&self, id: &T::Id) -> Option<&T> {
@@ -674,16 +688,13 @@ where
                     None
                 }
             },
-            Self::Multi(msgs) => msgs.get(&id),
+            Self::Multi(msgs) => msgs.get(&id.into()),
         }
     }
 }
 
-impl<T> IntoIterator for Map<T>
-where
-    T: Identifiable,
-{
-    type IntoIter = MapIntoIter<T>;
+impl<I, T> IntoIterator for Map<I, T> {
+    type IntoIter = MapIntoIter<I, T>;
     type Item = T;
 
     #[inline]
@@ -695,19 +706,25 @@ where
         }
     }
 }
-impl<'s, T> IntoIterator for &'s Map<T>
+impl<'s, I, T> IntoIterator for &'s Map<I, T>
 where
     T: Identifiable,
     T::Id: Clone + Eq + Hash,
 {
-    type IntoIter = MapIter<'s, T>;
+    type IntoIter = MapIter<'s, I, T>;
     type Item = &'s T;
 
     #[inline]
-    fn into_iter(self) -> Self::IntoIter { self.iter() }
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            Map::Empty => MapIter::Singleton(None),
+            Map::Singleton(msg) => MapIter::Singleton(Some(msg)),
+            Map::Multi(msgs) => MapIter::Multi(msgs.values()),
+        }
+    }
 }
 
-impl<T: Identifiable> From<T> for Map<T> {
+impl<I, T> From<T> for Map<I, T> {
     #[inline]
     fn from(value: T) -> Self { Self::Singleton(value) }
 }

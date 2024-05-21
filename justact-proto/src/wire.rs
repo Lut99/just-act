@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 19:15:18
 //  Last edited:
-//    17 May 2024, 18:36:43
+//    21 May 2024, 15:47:57
 //  Auto updated?
 //    Yes
 //
@@ -23,7 +23,7 @@ use justact_core::auxillary::{Authored, Identifiable};
 use justact_core::policy::ExtractablePolicy;
 use justact_core::set::{Map as _, Set as _};
 use justact_core::wire as justact;
-use justact_core::wire::{Action as _, Message as _};
+use justact_core::wire::{Action as _, Message as _, MessageSet as _};
 
 use crate::global::{AgreementsView, Timestamp};
 use crate::local::StatementsView;
@@ -140,6 +140,13 @@ pub struct Message {
     pub data:   Vec<u8>,
 }
 impl Message {
+    // /// Returns a [`MessageRef`] from the [`Message`].
+    // ///
+    // /// # Returns
+    // /// A [`MessageRef`] that borrows the data from this [`Message`] and, importantly, implements [`justact::Message`] with lifetimes skipping the reference lifetimes.
+    // #[inline]
+    // pub fn as_ref(&self) -> MessageRef { MessageRef { id: self.id, author: self.author, data: self.data.as_slice() } }
+
     /// Returns a formatter that displays the message.
     ///
     /// # Arguments
@@ -172,13 +179,13 @@ impl PartialOrd for Message {
 }
 
 impl Identifiable for Message {
-    type Id = &'static str;
+    type Id = str;
 
     #[inline]
     fn id(&self) -> &Self::Id { &self.id }
 }
 impl Authored for Message {
-    type AuthorId = &'static str;
+    type AuthorId = str;
 
     #[inline]
     fn author(&self) -> &Self::AuthorId { &self.author }
@@ -205,7 +212,7 @@ impl<'m> MessageSet<'m> {
     pub fn borrow<'s>(&'s self) -> MessageSet<'s> {
         let mut set: MessageSet = MessageSet { msgs: Set::with_capacity(self.msgs.len()) };
         for msg in &self.msgs {
-            set.add(Cow::Borrowed(msg));
+            set.msgs.add(Cow::Borrowed(msg.as_ref()));
         }
         set
     }
@@ -224,40 +231,42 @@ impl<'m> MessageSet<'m> {
     }
 }
 
-impl<'m> justact_core::Set<Cow<'m, Message>> for MessageSet<'m> {
-    type Item<'s> = &'s Message where Self: 's;
-    type Iter<'s> = std::iter::Map<SetIter<'s, Cow<'m, Message>>, fn(&'s Cow<'m, Message>) -> &'s Message> where Self: 's;
+impl<'m> justact_core::Set<Message> for MessageSet<'m> {
+    type Item<'s> = &'m Message where Self: 's;
+    type Iter<'s> = std::iter::Map<SetIter<'s, Cow<'m, Message>>, fn(&'s Cow<'m, Message>) -> &'m Message> where Self: 's;
 
     #[inline]
-    fn add(&mut self, new_elem: Cow<'m, Message>) -> bool { self.msgs.add(new_elem) }
+    fn add(&mut self, new_elem: Message) -> bool { self.msgs.add(Cow::Owned(new_elem)) }
 
     #[inline]
-    fn iter<'s>(&'s self) -> Self::Iter<'s> { self.msgs.iter().map(|e| e.as_ref()) }
+    fn iter<'s>(&'s self) -> Self::Iter<'s> {
+        self.msgs.iter().map(|e| if let Cow::Borrowed(e) = e { e } else { panic!("This trick only works when all elements are borrowed...") })
+    }
 
     #[inline]
     fn len(&self) -> usize { self.msgs.len() }
 }
-impl<'m> justact_core::Map<Cow<'m, Message>> for MessageSet<'m> {
+impl<'m> justact_core::Map<Message> for MessageSet<'m> {
     #[inline]
-    fn get(&self, id: &<Cow<'m, Message> as Identifiable>::Id) -> Option<&Cow<'m, Message>> { self.msgs.get(id) }
+    fn get(&self, id: &<Message as Identifiable>::Id) -> Option<&Message> { self.msgs.get(id).map(|m| m.as_ref()) }
 }
 impl<'m> justact::MessageSet for MessageSet<'m> {
-    type Message = Cow<'m, Message>;
+    type Message = Message;
 }
 
 impl<'m> IntoIterator for MessageSet<'m> {
     type Item = Cow<'m, Message>;
-    type IntoIter = <Set<<Self as justact::MessageSet>::Message> as IntoIterator>::IntoIter;
+    type IntoIter = <Set<Cow<'m, Message>> as IntoIterator>::IntoIter;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter { self.msgs.into_iter() }
 }
 impl<'s, 'm> IntoIterator for &'s MessageSet<'m> {
-    type Item = <MessageSet<'m> as justact_core::Set<Cow<'m, Message>>>::Item<'s>;
-    type IntoIter = <MessageSet<'m> as justact_core::Set<Cow<'m, Message>>>::Iter<'s>;
+    type Item = <MessageSet<'m> as justact_core::Set<Message>>::Item<'s>;
+    type IntoIter = <MessageSet<'m> as justact_core::Set<Message>>::Iter<'s>;
 
     #[inline]
-    fn into_iter(self) -> Self::IntoIter { <MessageSet<'m> as justact_core::Set<Cow<'m, Message>>>::iter(self) }
+    fn into_iter(self) -> Self::IntoIter { <MessageSet<'m> as justact_core::Set<Message>>::iter(self) }
 }
 
 impl<'m> From<&'m Message> for MessageSet<'m> {
@@ -303,6 +312,12 @@ impl Identifiable for Agreement {
     #[inline]
     fn id(&self) -> &Self::Id { self.msg.id() }
 }
+impl Authored for Agreement {
+    type AuthorId = <Message as Authored>::AuthorId;
+
+    #[inline]
+    fn author(&self) -> &Self::AuthorId { &self.msg.id }
+}
 impl justact::Agreement for Agreement {
     type Message = Message;
     type Time = Timestamp;
@@ -334,6 +349,12 @@ impl Identifiable for Action {
     #[inline]
     fn id(&self) -> &Self::Id { &self.enactment.id }
 }
+impl Authored for Action {
+    type AuthorId = <Message as Authored>::AuthorId;
+
+    #[inline]
+    fn author(&self) -> &Self::AuthorId { &self.enactment.id }
+}
 impl justact::Action for Action {
     type Time = Timestamp;
     type Agreement = Agreement;
@@ -351,8 +372,8 @@ impl justact::Action for Action {
         let mut set: MessageSet<'s> = self.justification.borrow();
 
         // Inject the basis & enactment into it
-        set.add(Cow::Borrowed(&self.basis.msg));
-        set.add(Cow::Borrowed(&self.enactment));
+        set.msgs.add(Cow::Borrowed(&self.basis.msg));
+        set.msgs.add(Cow::Borrowed(&self.enactment));
 
         // OK, return the full justification
         set
@@ -387,8 +408,7 @@ impl Action {
     where
         S: Synchronizer<Agreement>,
         S::Error: 'static,
-        P: ExtractablePolicy<std::iter::Map<<MessageSet<'s> as IntoIterator>::IntoIter, fn(Cow<'s, Message>) -> &'s Message>>,
-        P::Explanation: 's,
+        P: ExtractablePolicy<&'s Message>,
     {
         let just: MessageSet = self.justification();
 
@@ -396,7 +416,7 @@ impl Action {
         // Checks if the policy is stated correctly.
         for stmt in &just {
             if !stmts.contains(stmt.id()) {
-                return Err(AuditExplanation::Stated { stmt: stmt.id() });
+                return Err(AuditExplanation::Stated { stmt: stmt.id });
             }
         }
 
@@ -410,7 +430,7 @@ impl Action {
 
         /* Property 5 */
         // Attempt to extract the policy
-        let policy: P = match P::extract_from(just.into_iter().map(|m| if let Cow::Borrowed(m) = m { m } else { panic!("Should not occur") })) {
+        let policy: P = match just.extract::<P>() {
             Ok(policy) => policy,
             Err(err) => return Err(AuditExplanation::Extract { err }),
         };
@@ -425,12 +445,12 @@ impl Action {
         /* Property 6 */
         // Assert that the basis is an agreement
         if !agrmnts.contains(self.basis.id()) {
-            return Err(AuditExplanation::Based { stmt: self.basis.id() });
+            return Err(AuditExplanation::Based { stmt: self.basis.msg.id });
         }
 
         // Assert the agreement's time matches the action's
         if self.basis.timestamp != self.timestamp {
-            return Err(AuditExplanation::Timely { stmt: self.basis.id(), applies_at: self.basis.timestamp, taken_at: self.timestamp });
+            return Err(AuditExplanation::Timely { stmt: self.basis.msg.id, applies_at: self.basis.timestamp, taken_at: self.timestamp });
         }
 
 

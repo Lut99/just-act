@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 14:16:11
 //  Last edited:
-//    17 May 2024, 09:50:29
+//    21 May 2024, 14:39:59
 //  Auto updated?
 //    Yes
 //
@@ -23,7 +23,7 @@ use std::hash::Hash;
 /// Note, however, that the namespace of uniqueness is only for things of the same type (e.g., across messages or across agents).
 pub trait Identifiable {
     /// The thing used as identifier. For convenience, we require it to [`Eq`] and [`Hash`].
-    type Id: Eq + Hash;
+    type Id: ?Sized + Eq + Hash;
 
     /// Returns the identifier for this thing.
     ///
@@ -53,7 +53,7 @@ impl<'a, T: Clone + Identifiable> Identifiable for Cow<'a, T> {
 /// Something is authored by some agent.
 pub trait Authored {
     /// The thing used as identifier of the agent. For convenience, we require it to [`Eq`] and [`Hash`].
-    type AuthorId: Eq + Hash;
+    type AuthorId: ?Sized + Eq + Hash;
 
     /// Returns the unique identifier of the author of this object.
     ///

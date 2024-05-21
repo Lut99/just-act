@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 18:39:10
 //  Last edited:
-//    17 May 2024, 18:54:56
+//    21 May 2024, 15:48:55
 //  Auto updated?
 //    Yes
 //
@@ -17,7 +17,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FResult};
 
 use ast_toolkit_punctuated::Punctuated;
-use justact_core::auxillary::Authored;
+use justact_core::auxillary::{Authored, Identifiable};
 use justact_core::policy::{ExtractablePolicy, Policy};
 use justact_core::wire::Message;
 
@@ -82,11 +82,19 @@ impl<'f, 's> Policy for Spec<'f, 's> {
 
 
 // Implement `ExtractablePolicy` for Datalog
-impl<'f, 's> ExtractablePolicy for Spec<'f, 's> {
-    type ExtractError = ParseError<'f, 's>;
+// impl<'a, 'f, 's, M> ExtractablePolicy<'s, M> for Spec<'f, 's>
+// where
+//     M: 'a + MessageSet + Set<M::Message, Item<'a> = &'s M::Message>,
+//     M::Message: 's + Authored<AuthorId = &'static str> + Identifiable<Id = &'static str> + Message,
+// {
+impl<'s, M> ExtractablePolicy<&'s M> for Spec<'s, 's>
+where
+    M: Authored<AuthorId = str> + Identifiable<Id = str> + Message,
+{
+    type ExtractError = ParseError<'s, 's>;
 
     #[inline]
-    fn extract_from<'s2, I: Iterator<Item = &'s2 M>, M: 's2 + Message>(msgs: I) -> Result<Self, Self::ExtractError>
+    fn extract_from(msgs: impl IntoIterator<Item = &'s M>) -> Result<Self, Self::ExtractError>
     where
         Self: Sized,
     {
@@ -114,7 +122,7 @@ impl<'f, 's> ExtractablePolicy for Spec<'f, 's> {
                         if cons.ident.value.value().starts_with("ctl-") {
                             // ...and its first argument is _not_ the author of the message...
                             if let Some(arg) = cons.args.iter().flat_map(|a| a.args.values().next()).next() {
-                                if &arg.ident().value.value() != msg.author() {
+                                if arg.ident().value.value() != msg.author() {
                                     continue;
                                 } else {
                                     // ...then we derive error

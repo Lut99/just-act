@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:16:19
 //  Last edited:
-//    17 May 2024, 18:36:33
+//    21 May 2024, 15:12:05
 //  Auto updated?
 //    Yes
 //
@@ -28,7 +28,7 @@ use crate::global::AgreementsView;
 use crate::interface::Interface;
 use crate::set::set_passthrough_impl;
 use crate::sync::Synchronizer;
-use crate::wire::{Action, Agreement, Message, MessageSet};
+use crate::wire::{Action, Agreement, Message};
 
 
 /***** ITERATORS *****/
@@ -282,8 +282,7 @@ impl Actions {
     where
         S: Synchronizer<Agreement>,
         S::Error: 'static,
-        P: ExtractablePolicy<std::iter::Map<<MessageSet<'s> as IntoIterator>::IntoIter, fn(Cow<'s, Message>) -> &'s Message>>,
-        P::Explanation: 's,
+        P: ExtractablePolicy<&'s Message>,
     {
         // Go through all the actions to find the first culprit
         for act in &self.acts {

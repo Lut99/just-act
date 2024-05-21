@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:59:05
 //  Last edited:
-//    17 May 2024, 18:53:27
+//    21 May 2024, 15:11:21
 //  Auto updated?
 //    Yes
 //
@@ -66,8 +66,7 @@ pub trait MessageSet: Set<Self::Message> {
     #[inline]
     fn extract<'s, P>(&'s self) -> Result<P, P::ExtractError>
     where
-        Self::Iter<'s>: Iterator<Item = &'s Self::Message>,
-        P: ExtractablePolicy,
+        P: ExtractablePolicy<<Self as Set<Self::Message>>::Item<'s>>,
     {
         // Default impl: just wrap the given policy's `extract_from()`
         P::extract_from(self.iter())

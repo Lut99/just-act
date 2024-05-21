@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:06:51
 //  Last edited:
-//    17 May 2024, 18:40:19
+//    21 May 2024, 15:12:22
 //  Auto updated?
 //    Yes
 //
@@ -13,7 +13,6 @@
 //
 
 use std::any::type_name;
-use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::convert::Infallible;
@@ -32,7 +31,7 @@ use crate::global::{GlobalState, GlobalView, Timestamp};
 use crate::interface::Interface;
 use crate::local::{LocalState, LocalView, Target};
 use crate::sync::Synchronizer;
-use crate::wire::{Action, Agreement, Message, MessageSet};
+use crate::wire::{Action, Agreement, Message};
 
 
 /***** ERROR *****/
@@ -246,7 +245,7 @@ where
     #[inline]
     pub fn run<P>(&mut self) -> Result<(), Error<A::Error>>
     where
-        P: for<'p> ExtractablePolicy<std::iter::Map<<MessageSet<'p> as IntoIterator>::IntoIter, fn(Cow<'p, Message>) -> &'p Message>>,
+        for<'m> P: ExtractablePolicy<&'m Message>,
     {
         loop {
             // Run the next iteration
