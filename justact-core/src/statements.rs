@@ -4,7 +4,7 @@
 //  Created:
 //    21 May 2024, 16:48:17
 //  Last edited:
-//    23 May 2024, 11:58:34
+//    23 May 2024, 13:37:06
 //  Auto updated?
 //    Yes
 //
@@ -14,7 +14,7 @@
 
 use std::error::Error;
 
-use crate::agreements::Agreement;
+use crate::agreements::{Agreement, Agreements};
 use crate::auxillary::{Authored, Identifiable};
 use crate::set::Set;
 use crate::times::Timestamp;
@@ -189,10 +189,11 @@ impl<'v, M: 'v + Clone + Message<'v>> Action<M> {
     /// # Errors
     /// This function errors if one of the properties does not hold. The returned
     /// [`AuditExplanation`] encodes specifically which one did not.
-    pub fn audit<P, S, A>(&self, stmts: &'v S, agrmnts: &A) -> Result<(), AuditExplanation<&'v M::Id, P::SyntaxError, P::SemanticError>>
+    pub fn audit<P, S, A>(&self, stmts: &'v S, agrmnts: &'v A) -> Result<(), AuditExplanation<&'v M::Id, P::SyntaxError, P::SemanticError>>
     where
         P: Extractable<'v> + Policy<'v>,
         S: Statements<Message<'v> = M>,
+        A: Agreements<Message<'v> = M>,
     {
         let just: Set<M> = self.justification();
 
@@ -227,10 +228,10 @@ impl<'v, M: 'v + Clone + Message<'v>> Action<M> {
 
 
         /* Property 6 */
-        // // Assert that the basis is an agreement
-        // if !agrmnts.contains(self.basis.id()) {
-        //     return Err(AuditExplanation::Based { stmt: self.basis.id() });
-        // }
+        // Assert that the basis is an agreement
+        if !agrmnts.agreed().contains(self.basis.id()) {
+            return Err(AuditExplanation::Based { stmt: self.basis.id() });
+        }
 
         // Assert the agreement's time matches the action's
         if self.basis.applies_at() != self.timestamp {
@@ -243,6 +244,7 @@ impl<'v, M: 'v + Clone + Message<'v>> Action<M> {
         Ok(())
     }
 }
+
 impl<'v, M: 'v + Identifiable<'v>> Identifiable<'v> for Action<M> {
     type Id = M::Id;
 

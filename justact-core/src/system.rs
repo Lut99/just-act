@@ -4,7 +4,7 @@
 //  Created:
 //    21 May 2024, 16:23:20
 //  Last edited:
-//    23 May 2024, 11:59:06
+//    23 May 2024, 13:36:26
 //  Auto updated?
 //    Yes
 //
@@ -14,6 +14,7 @@
 
 use std::fmt::{Debug, Formatter, Result as FResult};
 
+use crate::agreements::{Agreement, Agreements};
 use crate::set::Set;
 use crate::statements::{Action, Statements};
 use crate::times::{Times, Timestamp};
@@ -80,6 +81,16 @@ impl<T: Times, A, S> Times for SystemView<T, A, S> {
 
     #[inline]
     fn advance_to(&mut self, timestamp: Timestamp) -> Result<(), Self::Error> { self.times.advance_to(timestamp) }
+}
+impl<T, A: Agreements, S> Agreements for SystemView<T, A, S> {
+    type Message<'s> = A::Message<'s> where Self: 's;
+    type Error = A::Error;
+
+    #[inline]
+    fn agree<'s>(&'s mut self, agr: impl Into<Agreement<Self::Message<'s>>>) -> Result<(), Self::Error> { self.agreed.agree(agr) }
+
+    #[inline]
+    fn agreed<'s>(&'s self) -> Set<Agreement<Self::Message<'s>>> { self.agreed.agreed() }
 }
 impl<T, A, S: Statements> Statements for SystemView<T, A, S> {
     type Message<'s> = S::Message<'s> where Self: 's;
