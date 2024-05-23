@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:52:41
 //  Last edited:
-//    23 May 2024, 13:42:08
+//    23 May 2024, 17:04:06
 //  Auto updated?
 //    Yes
 //
@@ -38,7 +38,7 @@ impl Default for AgentPoll {
 
 /***** LIBRARY *****/
 /// Defines an agent in the system, at least abstractly.
-pub trait Agent: Identifiable<'static> {}
+pub trait Agent: Identifiable {}
 
 /// Extends an [`Agent`] with the capacity to think, i.e., do something.
 ///

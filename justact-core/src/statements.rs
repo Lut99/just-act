@@ -4,7 +4,7 @@
 //  Created:
 //    21 May 2024, 16:48:17
 //  Last edited:
-//    23 May 2024, 13:37:06
+//    23 May 2024, 17:35:48
 //  Auto updated?
 //    Yes
 //
@@ -16,7 +16,7 @@ use std::error::Error;
 
 use crate::agreements::{Agreement, Agreements};
 use crate::auxillary::{Authored, Identifiable};
-use crate::set::Set;
+use crate::set::LocalSet;
 use crate::times::Timestamp;
 
 
@@ -71,7 +71,8 @@ pub trait Policy<'v> {
 /// # Generics
 /// - `'v`: The lifetime of the [`SystemView`](crate::SystemView) where the set's (and therefore
 ///   resulting policy's) data lives.
-pub trait Extractable<'v> {
+/// - `M`: The type of messages that we can extract from.
+pub trait Extractable<'v, M> {
     /// The type of error emitted when the policy is **syntactically** incorrect.
     type SyntaxError: Error;
 
@@ -89,10 +90,9 @@ pub trait Extractable<'v> {
     ///
     /// Semantic correctness is conventionally modelled by returning a legal policy, but that fails
     /// the [`Policy::check_validity()`]-check.
-    fn extract_from<V, R>(set: &Set<V, R>) -> Result<Self, Self::SyntaxError>
+    fn extract_from<R>(set: &LocalSet<M, R>) -> Result<Self, Self::SyntaxError>
     where
-        Self: Sized,
-        V: Message<'v>;
+        Self: Sized;
 }
 
 
@@ -105,7 +105,18 @@ pub trait Extractable<'v> {
 ///
 /// # Generics
 /// - `'v`: The lifetime of the [`SystemView`](crate::SystemView) where the message's data lives.
-pub trait Message<'v>: Authored<'v> + Identifiable<'v> {
+pub trait Message<'v>: Authored + Identifiable {
+    /// A slight variation of [`Identifiable::id()`] that returns the reference to the systemview instead of this message.
+    ///
+    /// # Returns
+    /// Something of type `Self::Id` that uniquely identifiers this object.
+    fn id_v(&self) -> &'v Self::Id;
+    /// A slight variation of [`Authored::author()`] that returns the reference to the systemview instead of this message.
+    ///
+    /// # Returns
+    /// A `Self::Author::Id` that represents the author of this object.
+    fn author_v(&self) -> &'v Self::AuthorId;
+
     /// Returns the payload of the message.
     ///
     /// The payload of the message must always be a continious series of raw bytes. What these
@@ -129,7 +140,7 @@ pub struct Action<M> {
     /// The basis, i.e., agreement upon which the action relies.
     pub basis:     Agreement<M>,
     /// The justification that will make the composition of the `basis` and `enactment` [valid](Policy::assert_validity()).
-    pub just:      Set<M>,
+    pub just:      LocalSet<M>,
     /// The enacted statement that encodes the effect of the action.
     pub enacts:    M,
     /// The timestamp encoding when this action was taken.
@@ -154,16 +165,16 @@ impl<M> Action<M> {
     #[inline]
     pub fn enacts(&self) -> &M { &self.enacts }
 }
-impl<'v, M: 'v + Clone + Identifiable<'v>> Action<M> {
+impl<M: Clone + Identifiable> Action<M> {
     /// Returns the justification of the action.
     ///
     /// Note that, contrary to accessing `just` manually, this includes both the `basis` _and_ the `enacts`.
     ///
     /// # Returns
     /// A [`Set`] of messages that form the entire justification, including its basis and effects.
-    pub fn justification(&self) -> Set<M> {
+    pub fn justification(&self) -> LocalSet<M> {
         // Get the justification first
-        let mut just: Set<M> = self.just.clone();
+        let mut just: LocalSet<M> = self.just.clone();
         // Include the agreement
         just.add(self.basis.msg.clone());
         // Include the enactment
@@ -191,17 +202,17 @@ impl<'v, M: 'v + Clone + Message<'v>> Action<M> {
     /// [`AuditExplanation`] encodes specifically which one did not.
     pub fn audit<P, S, A>(&self, stmts: &'v S, agrmnts: &'v A) -> Result<(), AuditExplanation<&'v M::Id, P::SyntaxError, P::SemanticError>>
     where
-        P: Extractable<'v> + Policy<'v>,
-        S: Statements<Message<'v> = M>,
-        A: Agreements<Message<'v> = M>,
+        P: Extractable<'v, M> + Policy<'v>,
+        S: Statements<Statement<'v> = M>,
+        A: Agreements<Statement<'v> = M>,
     {
-        let just: Set<M> = self.justification();
+        let just: LocalSet<M> = self.justification();
 
         /* Property 3 */
         // Checks if the policy is stated correctly.
         for stmt in &just {
             if !stmts.stated().contains(stmt.id()) {
-                return Err(AuditExplanation::Stated { stmt: stmt.id() });
+                return Err(AuditExplanation::Stated { stmt: stmt.id_v() });
             }
         }
 
@@ -230,12 +241,12 @@ impl<'v, M: 'v + Clone + Message<'v>> Action<M> {
         /* Property 6 */
         // Assert that the basis is an agreement
         if !agrmnts.agreed().contains(self.basis.id()) {
-            return Err(AuditExplanation::Based { stmt: self.basis.id() });
+            return Err(AuditExplanation::Based { stmt: self.basis.msg.id_v() });
         }
 
         // Assert the agreement's time matches the action's
         if self.basis.applies_at() != self.timestamp {
-            return Err(AuditExplanation::Timely { stmt: self.basis.id(), applies_at: self.basis.timestamp, taken_at: self.timestamp });
+            return Err(AuditExplanation::Timely { stmt: self.basis.msg.id_v(), applies_at: self.basis.timestamp, taken_at: self.timestamp });
         }
 
 
@@ -245,17 +256,17 @@ impl<'v, M: 'v + Clone + Message<'v>> Action<M> {
     }
 }
 
-impl<'v, M: 'v + Identifiable<'v>> Identifiable<'v> for Action<M> {
+impl<M: Identifiable> Identifiable for Action<M> {
     type Id = M::Id;
 
     #[inline]
-    fn id(&self) -> &'v Self::Id { self.enacts.id() }
+    fn id(&self) -> &Self::Id { self.enacts.id() }
 }
-impl<'v, M: 'v + Authored<'v>> Authored<'v> for Action<M> {
+impl<M: Authored> Authored for Action<M> {
     type AuthorId = M::AuthorId;
 
     #[inline]
-    fn author(&self) -> &'v Self::AuthorId { self.enacts.author() }
+    fn author(&self) -> &Self::AuthorId { self.enacts.author() }
 }
 
 
@@ -265,7 +276,13 @@ impl<'v, M: 'v + Authored<'v>> Authored<'v> for Action<M> {
 /// Note that this set is _local_, meaning that its contents may differ per-agent.
 pub trait Statements {
     /// The type of [`Message`]s that can be stated.
-    type Message<'s>: Message<'s>
+    ///
+    /// This serves as _input_ to [`Statements::state()`].
+    type Message;
+    /// The type of [`Message`]s once they are stated.
+    ///
+    /// This serves as _output_ from [`Statements::stated()`].
+    type Statement<'s>: Message<'s>
     where
         Self: 's;
     /// The target that specifies who might learn of the statements.
@@ -289,13 +306,13 @@ pub trait Statements {
     /// succeed, and some of them to fail. As such, this function doesn't have a binary concept
     /// of success like [`Result`] implies; instead, [`Self::Status`](Statements::Status) describes
     /// where on the continuum of success the result lies.
-    fn state<'s>(&'s mut self, target: Self::Target, msg: impl Into<Self::Message<'s>>) -> Self::Status;
+    fn state(&mut self, target: Self::Target, msg: Self::Message) -> Self::Status;
 
     /// Returns a message set with the messages in this Statements.
     ///
     /// # Returns
     /// A [`Set`] that contains all the messages in this statements.
-    fn stated<'s>(&'s self) -> Set<Self::Message<'s>>;
+    fn stated<'s>(&'s self) -> LocalSet<Self::Statement<'s>>;
 
 
 
@@ -314,11 +331,11 @@ pub trait Statements {
     /// succeed, and some of them to fail. As such, this function doesn't have a binary concept
     /// of success like [`Result`] implies; instead, [`Self::Status`](Statements::Status) describes
     /// where on the continuum of success the result lies.
-    fn enact<'s>(&'s mut self, target: Self::Target, act: impl Into<Action<Self::Message<'s>>>) -> Self::Status;
+    fn enact(&mut self, target: Self::Target, act: Action<Self::Message>) -> Self::Status;
 
     /// Returns an action set with the enacted actions in this Statements.
     ///
     /// # Returns
     /// A [`Set`] that contains all the actions in this statements.
-    fn enacted<'s>(&'s self) -> Set<Action<Self::Message<'s>>>;
+    fn enacted<'s>(&'s self) -> LocalSet<Action<Self::Statement<'s>>>;
 }

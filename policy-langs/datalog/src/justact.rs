@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 18:39:10
 //  Last edited:
-//    21 May 2024, 15:48:55
+//    23 May 2024, 17:04:52
 //  Auto updated?
 //    Yes
 //
@@ -18,8 +18,8 @@ use std::fmt::{Display, Formatter, Result as FResult};
 
 use ast_toolkit_punctuated::Punctuated;
 use justact_core::auxillary::{Authored, Identifiable};
-use justact_core::policy::{ExtractablePolicy, Policy};
-use justact_core::wire::Message;
+use justact_core::set::LocalSet;
+use justact_core::statements::{Extractable, Message, Policy};
 
 use crate::ast::{Atom, Comma, Dot, Ident, Rule, Span, Spec};
 use crate::interpreter::interpretation::Interpretation;
@@ -56,52 +56,44 @@ impl<'f, 's> Error for ParseError<'f, 's> {
     }
 }
 
+/// Defines reasons why a policy wasn't valid.
+#[derive(Debug)]
+pub enum ValidityError<'f, 's> {
+    /// `error.` was derived.
+    ErrorHolds { int: Interpretation<'f, 's> },
+}
+impl<'f, 's> Display for ValidityError<'f, 's> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        use ValidityError::*;
+        match self {
+            ErrorHolds { int } => write!(f, "\"error\" holds in the interpretation\n\n{int}"),
+        }
+    }
+}
+impl<'f, 's> Error for ValidityError<'f, 's> {}
+
 
 
 
 
 /***** LIBRARY *****/
-// Implement `Policy` for Datalog
-impl<'f, 's> Policy for Spec<'f, 's> {
-    type Explanation = Interpretation<'f, 's>;
-
-    #[inline]
-    #[track_caller]
-    fn check_validity(&self) -> Result<(), Self::Explanation> {
-        // Simply derive and see if `error` occurs.
-        let int: Interpretation<'f, 's> = match self.alternating_fixpoint() {
-            Ok(int) => int,
-            Err(err) => panic!("Failed to run derivation: {err}"),
-        };
-        let error_truth: Option<bool> = int
-            .closed_world_truth(&Atom { ident: Ident { value: Span::new("<justact_policy::datalog::Policy::is_valid()>", "error") }, args: None });
-        if error_truth == Some(false) { Ok(()) } else { Err(int) }
-    }
-}
-
-
-
-// Implement `ExtractablePolicy` for Datalog
-// impl<'a, 'f, 's, M> ExtractablePolicy<'s, M> for Spec<'f, 's>
-// where
-//     M: 'a + MessageSet + Set<M::Message, Item<'a> = &'s M::Message>,
-//     M::Message: 's + Authored<AuthorId = &'static str> + Identifiable<Id = &'static str> + Message,
-// {
-impl<'s, M> ExtractablePolicy<&'s M> for Spec<'s, 's>
+// Implements `Extractable` for Datalog
+impl<'v, M> Extractable<'v, M> for Spec<'v, 'v>
 where
-    M: Authored<AuthorId = str> + Identifiable<Id = str> + Message,
+    M: Authored<AuthorId = str> + Identifiable<Id = str> + Message<'v>,
 {
-    type ExtractError = ParseError<'s, 's>;
+    type SyntaxError = ParseError<'v, 'v>;
 
     #[inline]
-    fn extract_from(msgs: impl IntoIterator<Item = &'s M>) -> Result<Self, Self::ExtractError>
+    fn extract_from<R>(set: &LocalSet<M, R>) -> Result<Self, Self::SyntaxError>
     where
         Self: Sized,
     {
         // Parse the policy in the messages one-by-one
         let mut add_error: bool = false;
         let mut spec = Spec { rules: vec![] };
-        for msg in msgs {
+        for msg in set {
             // Parse as UTF-8
             let snippet: &str = match std::str::from_utf8(msg.payload()) {
                 Ok(snippet) => snippet,
@@ -109,7 +101,7 @@ where
             };
 
             // Parse as Datalog
-            let msg_spec: Spec = match parse(msg.id(), snippet) {
+            let msg_spec: Spec = match parse(msg.id_v(), snippet) {
                 Ok(spec) => spec,
                 Err(err) => return Err(ParseError::Datalog { err }),
             };
@@ -155,5 +147,25 @@ where
 
         // OK, return the spec
         Ok(spec)
+    }
+}
+
+
+
+// Implements `Policy` for Datalog
+impl<'v> Policy<'v> for Spec<'v, 'v> {
+    type SemanticError = ValidityError<'v, 'v>;
+
+    #[inline]
+    #[track_caller]
+    fn assert_validity(&self) -> Result<(), Self::SemanticError> {
+        // Simply derive and see if `error` occurs.
+        let int: Interpretation<'v, 'v> = match self.alternating_fixpoint() {
+            Ok(int) => int,
+            Err(err) => panic!("Failed to run derivation: {err}"),
+        };
+        let error_truth: Option<bool> = int
+            .closed_world_truth(&Atom { ident: Ident { value: Span::new("<justact_policy::datalog::Policy::is_valid()>", "error") }, args: None });
+        if error_truth == Some(false) { Ok(()) } else { Err(ValidityError::ErrorHolds { int }) }
     }
 }

@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:13:37
 //  Last edited:
-//    17 May 2024, 11:43:59
+//    23 May 2024, 17:42:45
 //  Auto updated?
 //    Yes
 //
@@ -13,13 +13,16 @@
 //
 
 // Declare modules
-pub mod global;
-pub mod interface;
-pub mod local;
-pub mod set;
-pub mod simulation;
-pub mod sync;
-pub mod wire;
+pub mod agreements;
+pub mod message;
+pub mod statements;
+pub mod times;
+// pub mod interface;
+// pub mod local;
+// pub mod set;
+// pub mod simulation;
+// pub mod sync;
+// pub mod wire;
 
 // Use some of it in the global namespace
-pub use simulation::*;
+// pub use simulation::*;

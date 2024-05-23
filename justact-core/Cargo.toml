@@ -8,3 +8,4 @@ description = "Implements the core framework part of the JustAct framework. For 
 
 
 [dependencies]
+nohash-hasher = "0.2"

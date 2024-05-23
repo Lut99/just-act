@@ -4,7 +4,7 @@
 //  Created:
 //    23 May 2024, 11:27:32
 //  Last edited:
-//    23 May 2024, 13:35:04
+//    23 May 2024, 17:04:00
 //  Auto updated?
 //    Yes
 //
@@ -16,7 +16,7 @@
 use std::error::Error;
 
 use crate::auxillary::{Authored, Identifiable};
-use crate::set::Set;
+use crate::set::LocalSet;
 use crate::statements::Message;
 use crate::times::Timestamp;
 
@@ -42,17 +42,17 @@ impl<M> Agreement<M> {
     pub fn applies_at(&self) -> Timestamp { self.timestamp }
 }
 
-impl<'v, M: 'v + Identifiable<'v>> Identifiable<'v> for Agreement<M> {
+impl<M: Identifiable> Identifiable for Agreement<M> {
     type Id = M::Id;
 
     #[inline]
-    fn id(&self) -> &'v Self::Id { self.msg.id() }
+    fn id(&self) -> &Self::Id { self.msg.id() }
 }
-impl<'v, M: 'v + Authored<'v>> Authored<'v> for Agreement<M> {
+impl<M: Authored> Authored for Agreement<M> {
     type AuthorId = M::AuthorId;
 
     #[inline]
-    fn author(&self) -> &'v Self::AuthorId { self.msg.author() }
+    fn author(&self) -> &Self::AuthorId { self.msg.author() }
 }
 
 
@@ -63,7 +63,9 @@ impl<'v, M: 'v + Authored<'v>> Authored<'v> for Agreement<M> {
 /// agreement at all times about this set's contents.
 pub trait Agreements {
     /// The type of [`Message`]s that are agreed upon in the form of [`Agreement`]s.
-    type Message<'s>: Message<'s>
+    type Message;
+    /// The type of [`Message`]s one they are agreed.
+    type Statement<'s>: Message<'s>
     where
         Self: 's;
     /// The type of errors returned by this set.
@@ -78,11 +80,11 @@ pub trait Agreements {
     /// # Errors
     /// This function errors if it failed to synchronize the agreement to all other agents, either
     /// because they could not be updated (synchronization) or did not agree with it (consensus).
-    fn agree<'s>(&'s mut self, agr: impl Into<Agreement<Self::Message<'s>>>) -> Result<(), Self::Error>;
+    fn agree(&mut self, agr: Agreement<Self::Message>) -> Result<(), Self::Error>;
 
     /// Returns an agreement set with all agreements in this Agreements.
     ///
     /// # Returns
     /// A [`Set`] that contains all the agreements in this Agreements.
-    fn agreed<'s>(&'s self) -> Set<Agreement<Self::Message<'s>>>;
+    fn agreed<'s>(&'s self) -> LocalSet<Agreement<Self::Statement<'s>>>;
 }

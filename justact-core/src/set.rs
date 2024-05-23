@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 10:14:23
 //  Last edited:
-//    23 May 2024, 11:31:00
+//    23 May 2024, 17:03:43
 //  Auto updated?
 //    Yes
 //
@@ -16,39 +16,90 @@
 use std::collections::HashMap;
 use std::hash::{BuildHasher, Hash, RandomState};
 
+use nohash_hasher::BuildNoHashHasher;
+
 use crate::auxillary::Identifiable;
-use crate::statements::{Extractable, Message};
+use crate::statements::Extractable;
 
 
 /***** LIBRARY *****/
-/// Implements a(n unordered) set of messages or actions.
+// /// Defines an abstract, unordered set of things.
+// ///
+// /// From a user perspective, [`LocalSet`] is the most direct implementation. However, the goal of
+// /// the framework is to define some other sets (e.g., [`Agreements`](crate::agreements::Agreements)
+// /// or [`Statements`](crate::statements::Statements)) that implement distributed sets over multiple
+// /// agents.
+// ///
+// /// The framework essentially describes which sets need to exist, and to what extend they need to
+// /// be synchronized if at all.
+// ///
+// /// This version only implements read-only parts of a set. See [`SetMut`] for the mutable
+// /// counterpart.
+// pub trait Set<V: Identifiable> {
+//     /// Retrieves an element with the given identifier from the set.
+//     ///
+//     /// # Arguments
+//     /// - `id`: The identifier of the element to retrieve.
+//     ///
+//     /// # Returns
+//     /// The referred element if it was known, or else [`None`].
+//     fn get(&self, id: &V::Id) -> Option<&V>;
+
+//     /// Checks if an element with the given identifier exists in the set.
+//     ///
+//     /// # Arguments
+//     /// - `id`: The identifier of the element to check for existance.
+//     ///
+//     /// # Returns
+//     /// True if the element existed, or false otherwise.
+//     #[inline]
+//     fn contains(&self, id: &V::Id) -> bool { self.get(id).is_some() }
+
+
+
+//     /// Returns the number of elements in the set.
+//     ///
+//     /// # Returns
+//     /// A [`usize`] describing how many elements are in this set.
+//     fn len(&self) -> usize;
+
+//     /// Checks if there are any elements in the set.
+//     ///
+//     /// # Returns
+//     /// True if there are **none**, or false otherwise.
+//     #[inline]
+//     fn is_empty(&self) -> bool { self.len() == 0 }
+// }
+
+
+
+/// Implements a(n unordered) set of messages or actions that exists purely locally.
 ///
-/// The implementation for the set is pre-provided, as we expect this to be the same across
-/// implementations.
+/// This can be thought of as a regular collection, like a [`HashMap`] or similar.
 ///
 /// # Generics
 /// - `V`: The type of [`Message`]/[`Action`]s stored in this set.
-/// - `R`: Some kind of [`BuildHasher`] that is used to compute randomized hashes. This means that
+/// - `S`: Some kind of [`BuildHasher`] that is used to compute randomized hashes. This means that
 ///   hashes are **not** comparable between set instances, only within.
 #[derive(Clone, Debug)]
-pub struct Set<V, R = RandomState> {
+pub struct LocalSet<V, S = RandomState> {
     /// The elements in this set.
-    data:  HashMap<u64, V>,
+    data:  HashMap<u64, V, BuildNoHashHasher<u64>>,
     /// The random state used to compute hashes.
-    state: R,
+    state: S,
 }
 // Constructors
-impl<V, R: Default> Default for Set<V, R> {
+impl<V, S: Default> Default for LocalSet<V, S> {
     #[inline]
     fn default() -> Self { Self::new() }
 }
-impl<V, R: Default> Set<V, R> {
+impl<V, S: Default> LocalSet<V, S> {
     /// Constructor for the Set.
     ///
     /// # Returns
     /// An empty set.
     #[inline]
-    pub fn new() -> Self { Self { data: HashMap::new(), state: R::default() } }
+    pub fn new() -> Self { Self { data: HashMap::with_hasher(BuildNoHashHasher::default()), state: S::default() } }
 
     /// Constructor for the Set that gives it an initial capacity.
     ///
@@ -60,21 +111,34 @@ impl<V, R: Default> Set<V, R> {
     /// # Returns
     /// An empty set that can accept at least `capacity` elements before needing to re-allocate.
     #[inline]
-    pub fn with_capacity(capacity: usize) -> Self { Self { data: HashMap::with_capacity(capacity), state: R::default() } }
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self { data: HashMap::with_capacity_and_hasher(capacity, BuildNoHashHasher::default()), state: S::default() }
+    }
 }
-impl<V, R> Set<V, R> {
-    /// Constructor for the Set that uses a custom random state.
+impl<V, S> LocalSet<V, S> {
+    /// Constructor for the Set that uses a custom hash builder.
     ///
     /// # Arguments
-    /// - `state`: The custom random state to use to compute hashes with.
+    /// - `hash_builder`: The custom hash builder to use to compute hashes with.
     ///
     /// # Returns
     /// An empty set that will compute hashes using the given state.
     #[inline]
-    pub fn with_random_state(state: R) -> Self { Self { data: HashMap::new(), state } }
+    pub fn with_hasher(hash_builder: S) -> Self { Self { data: HashMap::with_hasher(BuildNoHashHasher::default()), state: hash_builder } }
 }
-// Read-only map functions
-impl<'v, V: Identifiable<'v>, R: BuildHasher> Set<V, R> {
+// Capacity management
+impl<V, S> LocalSet<V, S> {
+    /// Returns the number of elements this set can accept before resizing.
+    ///
+    /// Note that this is the _total_ amount of elements. So subtract [`Self::len()`](Set::len()) from this number to find how many are left to go.
+    ///
+    /// # Returns
+    /// A [`usize`] describing the total capacity of the inner memory block.
+    #[inline]
+    pub fn capacity(&self) -> usize { self.data.capacity() }
+}
+// Read-only set functions
+impl<V: Identifiable, S: BuildHasher> LocalSet<V, S> {
     /// Retrieves an element with the given identifier from the set.
     ///
     /// # Arguments
@@ -101,15 +165,6 @@ impl<'v, V: Identifiable<'v>, R: BuildHasher> Set<V, R> {
 
 
 
-    /// Returns the number of elements this set can accept before resizing.
-    ///
-    /// Note that this is the _total_ amount of elements. So subtract [`Self::len()`](Set::len()) from this number to find how many are left to go.
-    ///
-    /// # Returns
-    /// A [`usize`] describing the total capacity of the inner memory block.
-    #[inline]
-    pub fn capacity(&self) -> usize { self.data.capacity() }
-
     /// Returns the number of elements in the set.
     ///
     /// # Returns
@@ -124,8 +179,8 @@ impl<'v, V: Identifiable<'v>, R: BuildHasher> Set<V, R> {
     #[inline]
     pub fn is_empty(&self) -> bool { self.len() == 0 }
 }
-// Mutable map functions
-impl<'v, V: 'v + Identifiable<'v>, R: BuildHasher> Set<V, R> {
+// Mutable set functions
+impl<V: Identifiable, S: BuildHasher> LocalSet<V, S> {
     /// Adds a new element to the set.
     ///
     /// # Arguments
@@ -170,7 +225,7 @@ impl<'v, V: 'v + Identifiable<'v>, R: BuildHasher> Set<V, R> {
     }
 }
 // JustAct functions
-impl<'v, V: Message<'v>, R> Set<V, R> {
+impl<V, S> LocalSet<V, S> {
     /// Extracts the policy contained within this set if it's a set over messages.
     ///
     /// # Generics arguments
@@ -185,15 +240,15 @@ impl<'v, V: Message<'v>, R> Set<V, R> {
     /// Note that **semantic incorrectness** is conventionally not treated as this kind of error,
     /// but instead returned as a valid but failing policy.
     #[inline]
-    pub fn extract<P>(&self) -> Result<P, P::SyntaxError>
+    pub fn extract<'v, P>(&self) -> Result<P, P::SyntaxError>
     where
-        P: Extractable<'v>,
+        P: Extractable<'v, V>,
     {
         P::extract_from(self)
     }
 }
 // Iterator implementations
-impl<'v, M, R> Set<M, R> {
+impl<M, S> LocalSet<M, S> {
     /// Returns an iterator-by-reference for the message set.
     ///
     /// This returns exactly the same elements as a [`Self::from_iter()`](Set::from_iter())-call, except that it does not consume the set itself.
@@ -203,14 +258,14 @@ impl<'v, M, R> Set<M, R> {
     #[inline]
     pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter { self.into_iter() }
 }
-impl<M, R> IntoIterator for Set<M, R> {
+impl<M, S> IntoIterator for LocalSet<M, S> {
     type Item = M;
     type IntoIter = std::collections::hash_map::IntoValues<u64, M>;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter { self.data.into_values() }
 }
-impl<'a, M, R> IntoIterator for &'a Set<M, R> {
+impl<'a, M, S> IntoIterator for &'a LocalSet<M, S> {
     type Item = &'a M;
     type IntoIter = std::collections::hash_map::Values<'a, u64, M>;
 
@@ -218,7 +273,12 @@ impl<'a, M, R> IntoIterator for &'a Set<M, R> {
     fn into_iter(self) -> Self::IntoIter { self.data.values() }
 }
 // From-impls
-impl<M: Hash, R: Default + BuildHasher> FromIterator<M> for Set<M, R> {
+impl<M, S> FromIterator<M> for LocalSet<M, S>
+where
+    M: Identifiable,
+    M::Id: Hash,
+    S: Default + BuildHasher,
+{
     #[inline]
     fn from_iter<T: IntoIterator<Item = M>>(iter: T) -> Self {
         // See if we can get a size hint
@@ -227,10 +287,10 @@ impl<M: Hash, R: Default + BuildHasher> FromIterator<M> for Set<M, R> {
         let size_hint: usize = size_hint.1.unwrap_or(size_hint.0);
 
         // Populate a set with at least this many elements
-        let mut set: Self = Self { data: HashMap::with_capacity(size_hint), state: R::default() };
+        let mut set: Self = Self { data: HashMap::with_capacity_and_hasher(size_hint, BuildNoHashHasher::default()), state: S::default() };
         for elem in iter {
             // Compute the hash of the message
-            let hash: u64 = set.state.hash_one(&elem);
+            let hash: u64 = set.state.hash_one(elem.id());
             set.data.insert(hash, elem);
         }
 
@@ -238,11 +298,21 @@ impl<M: Hash, R: Default + BuildHasher> FromIterator<M> for Set<M, R> {
         set
     }
 }
-impl<const LEN: usize, M: Hash, R: Default + BuildHasher> From<[M; LEN]> for Set<M, R> {
+impl<const LEN: usize, M, S> From<[M; LEN]> for LocalSet<M, S>
+where
+    M: Identifiable,
+    M::Id: Hash,
+    S: Default + BuildHasher,
+{
     #[inline]
     fn from(value: [M; LEN]) -> Self { Self::from_iter(value.into_iter()) }
 }
-impl<M: Hash, R: Default + BuildHasher> From<Vec<M>> for Set<M, R> {
+impl<M, S> From<Vec<M>> for LocalSet<M, S>
+where
+    M: Identifiable,
+    M::Id: Hash,
+    S: Default + BuildHasher,
+{
     #[inline]
     fn from(value: Vec<M>) -> Self { Self::from_iter(value.into_iter()) }
 }

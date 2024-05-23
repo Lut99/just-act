@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 14:16:11
 //  Last edited:
-//    22 May 2024, 10:49:19
+//    23 May 2024, 16:58:44
 //  Auto updated?
 //    Yes
 //
@@ -22,10 +22,7 @@ use std::hash::Hash;
 ///
 /// Note, however, that the namespace of uniqueness is only for things of the same type (e.g.,
 /// across messages or across agents).
-///
-/// # Generics
-/// - `'v`: The lifetime of the [`SystemView`](crate::SystemView) where the message's data lives.
-pub trait Identifiable<'v> {
+pub trait Identifiable {
     /// The thing used as identifier. For convenience, we require it to [`Eq`] and [`Hash`].
     type Id: ?Sized + Eq + Hash;
 
@@ -35,21 +32,21 @@ pub trait Identifiable<'v> {
     ///
     /// # Returns
     /// Something of type `Self::Id` that uniquely identifiers this object.
-    fn id(&self) -> &'v Self::Id;
+    fn id(&self) -> &Self::Id;
 }
 
 // Implement over some pointer-like types
-impl<'a, 'v, T: Identifiable<'v>> Identifiable<'v> for &'a T {
+impl<'a, T: Identifiable> Identifiable for &'a T {
     type Id = T::Id;
 
     #[inline]
-    fn id(&self) -> &'v Self::Id { T::id(self) }
+    fn id(&self) -> &Self::Id { T::id(self) }
 }
-impl<'a, 'v, T: Clone + Identifiable<'v>> Identifiable<'v> for Cow<'a, T> {
+impl<'a, T: Clone + Identifiable> Identifiable for Cow<'a, T> {
     type Id = T::Id;
 
     #[inline]
-    fn id(&self) -> &'v Self::Id { T::id(self) }
+    fn id(&self) -> &Self::Id { T::id(self) }
 }
 
 
@@ -58,7 +55,7 @@ impl<'a, 'v, T: Clone + Identifiable<'v>> Identifiable<'v> for Cow<'a, T> {
 ///
 /// # Generics
 /// - `'v`: The lifetime of the [`SystemView`](crate::SystemView) where the message's data lives.
-pub trait Authored<'v> {
+pub trait Authored {
     /// The thing used as identifier of the agent. For convenience, we require it to [`Eq`] and [`Hash`].
     type AuthorId: ?Sized + Eq + Hash;
 
@@ -66,19 +63,19 @@ pub trait Authored<'v> {
     ///
     /// # Returns
     /// A `Self::Author::Id` that represents the author of this object.
-    fn author(&self) -> &'v Self::AuthorId;
+    fn author(&self) -> &Self::AuthorId;
 }
 
 // Implement over some pointer-like types
-impl<'a, 'v, T: Authored<'v>> Authored<'v> for &'a T {
+impl<'a, T: Authored> Authored for &'a T {
     type AuthorId = T::AuthorId;
 
     #[inline]
-    fn author(&self) -> &'v Self::AuthorId { T::author(self) }
+    fn author(&self) -> &Self::AuthorId { T::author(self) }
 }
-impl<'a, 'v, T: Clone + Authored<'v>> Authored<'v> for Cow<'a, T> {
+impl<'a, T: Clone + Authored> Authored for Cow<'a, T> {
     type AuthorId = T::AuthorId;
 
     #[inline]
-    fn author(&self) -> &'v Self::AuthorId { T::author(self) }
+    fn author(&self) -> &Self::AuthorId { T::author(self) }
 }
