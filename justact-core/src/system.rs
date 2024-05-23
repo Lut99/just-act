@@ -4,7 +4,7 @@
 //  Created:
 //    21 May 2024, 16:23:20
 //  Last edited:
-//    23 May 2024, 11:11:28
+//    23 May 2024, 11:59:06
 //  Auto updated?
 //    Yes
 //
@@ -14,8 +14,9 @@
 
 use std::fmt::{Debug, Formatter, Result as FResult};
 
-use crate::statements::Statements;
-use crate::times::Times;
+use crate::set::Set;
+use crate::statements::{Action, Statements};
+use crate::times::{Times, Timestamp};
 
 
 /***** LIBRARY *****/
@@ -27,7 +28,7 @@ use crate::times::Times;
 ///
 /// Implemented this way, one can think of the [`SystemView`] as the "root" of the "lifetime" tree,
 /// which other structs only refer to.
-pub struct SystemView<T, A, S, E> {
+pub struct SystemView<T, A, S> {
     // Global sets
     /// Defines the times synchronized between agents.
     ///
@@ -45,61 +46,55 @@ pub struct SystemView<T, A, S, E> {
     pub agreed: A,
 
     // Local sets
-    /// Defines the messages which are _stated_.
+    /// Defines the messages which are _stated_, and which of those are _enacted_.
     ///
     /// This is a _local_ set, meaning that the view presented here may be incomplete and in
     /// conflict with other agents.
     ///
     /// See [`crate::statements`] for more information.
-    pub stated:  S,
-    /// Defines the messages which are _enacted_.
-    ///
-    /// This is a _local_ set, meaning that the view presented here may be incomplete and in
-    /// conflict with other agents.
-    ///
-    /// See [`crate::actions`] for more information.
-    pub enacted: E,
+    pub stated: S,
 }
 
 // Some std impls
-impl<T: Clone, A: Clone, S: Clone, E: Clone> Clone for SystemView<T, A, S, E> {
+impl<T: Clone, A: Clone, S: Clone> Clone for SystemView<T, A, S> {
     #[inline]
-    fn clone(&self) -> Self {
-        Self { times: self.times.clone(), agreed: self.agreed.clone(), stated: self.stated.clone(), enacted: self.enacted.clone() }
-    }
+    fn clone(&self) -> Self { Self { times: self.times.clone(), agreed: self.agreed.clone(), stated: self.stated.clone() } }
 }
-impl<T: Debug, A: Debug, S: Debug, E: Debug> Debug for SystemView<T, A, S, E> {
+impl<T: Debug, A: Debug, S: Debug> Debug for SystemView<T, A, S> {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         let mut fmt = f.debug_struct("SystemView");
         fmt.field("times", &self.times);
         fmt.field("agreed", &self.agreed);
         fmt.field("stated", &self.stated);
-        fmt.field("enacted", &self.enacted);
         fmt.finish()
     }
 }
 
 // JustAct impls
-impl<T: Times, A, S, E> Times for SystemView<T, A, S, E> {
-    type Time = T::Time;
+impl<T: Times, A, S> Times for SystemView<T, A, S> {
     type Error = T::Error;
 
     #[inline]
-    fn current(&self) -> &Self::Time { self.times.current() }
+    fn current(&self) -> Timestamp { self.times.current() }
 
     #[inline]
-    fn advance_to(&mut self, timestamp: Self::Time) -> Result<(), Self::Error> { self.times.advance_to(timestamp) }
+    fn advance_to(&mut self, timestamp: Timestamp) -> Result<(), Self::Error> { self.times.advance_to(timestamp) }
 }
-impl<T, A, S: Statements, E> Statements for SystemView<T, A, S, E> {
+impl<T, A, S: Statements> Statements for SystemView<T, A, S> {
     type Message<'s> = S::Message<'s> where Self: 's;
     type Target = S::Target;
     type Status = S::Status;
-    type State = S::State;
 
     #[inline]
     fn state<'s>(&'s mut self, target: Self::Target, msg: impl Into<Self::Message<'s>>) -> Self::Status { self.stated.state(target, msg) }
 
     #[inline]
-    fn stated<'s>(&'s self) -> crate::statements::MessageSet<Self::Message<'s>, Self::State> { self.stated.stated() }
+    fn stated<'s>(&'s self) -> Set<Self::Message<'s>> { self.stated.stated() }
+
+    #[inline]
+    fn enact<'s>(&'s mut self, target: Self::Target, act: impl Into<Action<Self::Message<'s>>>) -> Self::Status { self.stated.enact(target, act) }
+
+    #[inline]
+    fn enacted<'s>(&'s self) -> Set<Action<Self::Message<'s>>> { self.stated.enacted() }
 }

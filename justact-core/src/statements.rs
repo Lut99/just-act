@@ -4,7 +4,7 @@
 //  Created:
 //    21 May 2024, 16:48:17
 //  Last edited:
-//    23 May 2024, 11:11:59
+//    23 May 2024, 11:58:34
 //  Auto updated?
 //    Yes
 //
@@ -12,11 +12,37 @@
 //!   Implements the globally synchronized set of stated messages.
 //
 
-use std::collections::HashMap;
 use std::error::Error;
-use std::hash::{BuildHasher, Hash, RandomState};
 
+use crate::agreements::Agreement;
 use crate::auxillary::{Authored, Identifiable};
+use crate::set::Set;
+use crate::times::Timestamp;
+
+
+/***** AUXILLARY *****/
+/// Explains why an audit of an [`Action`] in a [`Statements`] failed.
+///
+/// # Generics
+/// - `ID`: The identifier used by messages.
+/// - `SYN`: The [`Extractable::SyntaxError`] of the policy language that was potentially erronously extracted.
+/// - `SEM`: The [`Policy::SemanticError`] of the policy language that was potentially invalid.
+#[derive(Debug)]
+pub enum AuditExplanation<ID, SYN, SEM> {
+    /// One of the messages in the action was not stated (property 3).
+    Stated { stmt: ID },
+    /// Failed to extract the policy from the justification (property 5).
+    Extract { err: SYN },
+    /// The policy was not valid (property 5).
+    Valid { expl: SEM },
+    /// The basis was not an agreement (property 6).
+    Based { stmt: ID },
+    /// The basis was an agreement but not one for the action's taken time (property 6).
+    Timely { stmt: ID, applies_at: Timestamp, taken_at: Timestamp },
+}
+
+
+
 
 
 /***** LIBRARY *****/
@@ -49,10 +75,10 @@ pub trait Extractable<'v> {
     /// The type of error emitted when the policy is **syntactically** incorrect.
     type SyntaxError: Error;
 
-    /// Extracts this policy from a given [`MessageSet`].
+    /// Extracts this policy from a given [`Set`] over messages.
     ///
     /// # Arguments
-    /// - `set`: The [`MessageSet`] to extract from.
+    /// - `set`: The [`Set`] to extract from.
     ///
     /// # Returns
     /// A new instance of Self which represents the parsed policy.
@@ -63,10 +89,10 @@ pub trait Extractable<'v> {
     ///
     /// Semantic correctness is conventionally modelled by returning a legal policy, but that fails
     /// the [`Policy::check_validity()`]-check.
-    fn extract_form<M, R>(set: &MessageSet<M, R>) -> Result<Self, Self::SyntaxError>
+    fn extract_from<V, R>(set: &Set<V, R>) -> Result<Self, Self::SyntaxError>
     where
         Self: Sized,
-        M: Message<'v>;
+        V: Message<'v>;
 }
 
 
@@ -90,233 +116,144 @@ pub trait Message<'v>: Authored<'v> + Identifiable<'v> {
     fn payload(&self) -> &'v [u8];
 }
 
-/// Implements a(n unordered) set of messages.
+/// Implements a representation of actions in the framework.
 ///
-/// The implementation for this set is pre-provided, as we expect this to be the same across
+/// The implementation for the action is pre-provided, as we expect this to be the same across
 /// implementations.
 ///
-/// Note that the set is always over references to messages, which are stored in the agent's
-/// [`SystemView`](crate::SystemView).
-///
 /// # Generics
-/// - `'v`: The lifetime of the [`SystemView`](crate::SystemView) where the message's data lives.
-/// - `M`: The type of [`Message`]s stored in this set.
-/// - `R`: Some kind of [`BuildHasher`] that is used to compute randomized hashes. This means that
-///   hashes are **not** comparable between set instances, only within.
-pub struct MessageSet<M, R = RandomState> {
-    /// The elements in this set.
-    data:  HashMap<u64, M>,
-    /// The random state used to compute hashes.
-    state: R,
+/// - `M`: The concrete type of [`Message`]s stored in the action.
+/// - `T`: The concrete type of the [`Time`]stamp stored in the action and its nested basis.
+#[derive(Clone, Debug)]
+pub struct Action<M> {
+    /// The basis, i.e., agreement upon which the action relies.
+    pub basis:     Agreement<M>,
+    /// The justification that will make the composition of the `basis` and `enactment` [valid](Policy::assert_validity()).
+    pub just:      Set<M>,
+    /// The enacted statement that encodes the effect of the action.
+    pub enacts:    M,
+    /// The timestamp encoding when this action was taken.
+    pub timestamp: Timestamp,
 }
-// Constructors
-impl<M, R: Default> Default for MessageSet<M, R> {
+impl<M> Action<M> {
+    /// Returns the basis of the action.
+    ///
+    /// This is the agreement that was valid at the time it was taken (at least, claimed*).
+    ///
+    /// # Returns
+    /// A reference to the internal [`Agreement`].
     #[inline]
-    fn default() -> Self { Self::new() }
+    pub fn basis(&self) -> &Agreement<M> { &self.basis }
+
+    /// Returns the enactment of the action.
+    ///
+    /// This is a statement encoding the effects of the action.
+    ///
+    /// # Returns
+    /// A reference to the internal `M`essage.
+    #[inline]
+    pub fn enacts(&self) -> &M { &self.enacts }
 }
-impl<M, R: Default> MessageSet<M, R> {
-    /// Constructor for the MessageSet.
+impl<'v, M: 'v + Clone + Identifiable<'v>> Action<M> {
+    /// Returns the justification of the action.
+    ///
+    /// Note that, contrary to accessing `just` manually, this includes both the `basis` _and_ the `enacts`.
     ///
     /// # Returns
-    /// An empty set.
-    #[inline]
-    pub fn new() -> Self { Self { data: HashMap::new(), state: R::default() } }
-
-    /// Constructor for the MessageSet that gives it an initial capacity.
-    ///
-    /// # Arguments
-    /// - `capacity`: The _minimum_ number of elements the returned set should be able to accept
-    ///   before needing to re-allocate. Due to optimizations, it _may_ have a higher capacity, but
-    ///   never lower.
-    ///
-    /// # Returns
-    /// An empty set that can accept at least `capacity` elements before needing to re-allocate.
-    #[inline]
-    pub fn with_capacity(capacity: usize) -> Self { Self { data: HashMap::with_capacity(capacity), state: R::default() } }
-}
-impl<M, R> MessageSet<M, R> {
-    /// Constructor for the MessageSet that uses a custom random state.
-    ///
-    /// # Arguments
-    /// - `state`: The custom random state to use to compute hashes with.
-    ///
-    /// # Returns
-    /// An empty set that will compute hashes using the given state.
-    #[inline]
-    pub fn with_random_state(state: R) -> Self { Self { data: HashMap::new(), state } }
-}
-// Read-only map functions
-impl<'v, M: Identifiable<'v>, R: BuildHasher> MessageSet<M, R> {
-    /// Retrieves a message with the given identifier from the set.
-    ///
-    /// # Arguments
-    /// - `id`: The identifier of the message to retrieve.
-    ///
-    /// # Returns
-    /// The referred message if it was known, or else [`None`].
-    #[inline]
-    pub fn get(&self, id: &M::Id) -> Option<&M> {
-        // Hash the key and use that to access the map
-        let hash: u64 = self.state.hash_one(id);
-        self.data.get(&hash)
-    }
-
-    /// Checks if a message with the given identifier exists in the set.
-    ///
-    /// # Arguments
-    /// - `id`: The identifier of the message to check for existance.
-    ///
-    /// # Returns
-    /// True if the message existed, or false otherwise.
-    #[inline]
-    pub fn contains(&self, id: &M::Id) -> bool { self.get(id).is_some() }
-
-
-
-    /// Returns the number of messages this set can accept before resizing.
-    ///
-    /// Note that this is the _total_ amount of messages. So subtract [`Self::len()`](MessageSet::len()) from this number to find how many are left to go.
-    ///
-    /// # Returns
-    /// A [`usize`] describing the total capacity of the inner memory block.
-    #[inline]
-    pub fn capacity(&self) -> usize { self.data.capacity() }
-
-    /// Returns the number of messages in the set.
-    ///
-    /// # Returns
-    /// A [`usize`] describing how many elements are in this set.
-    #[inline]
-    pub fn len(&self) -> usize { self.data.len() }
-
-    /// Checks if there are any messages in the set.
-    ///
-    /// # Returns
-    /// True if there are **none**, or false otherwise.
-    #[inline]
-    pub fn is_empty(&self) -> bool { self.len() == 0 }
-}
-// Mutable map functions
-impl<'v, M: 'v + Identifiable<'v>, R: BuildHasher> MessageSet<M, R> {
-    /// Adds a new message to the set.
-    ///
-    /// # Arguments
-    /// - `msg`: The [`Message`] (reference) to add to this set.
-    ///
-    /// # Returns
-    /// The old [`Message`] if one with the same identifier already existed, or else [`None`].
-    #[inline]
-    pub fn add(&mut self, msg: M) -> Option<M> {
-        // Hash the identifier, then use that as index
-        let hash: u64 = self.state.hash_one(msg.id());
-        self.data.insert(hash, msg)
-    }
-
-    /// Removes an element from the set.
-    ///
-    /// # Arguments
-    /// - `id`: The identifier of the message to remove.
-    ///
-    /// # Returns
-    /// The removed [`Message`], or else [`None`] if there was nothing to remove.
-    #[inline]
-    pub fn remove(&mut self, id: &M::Id) -> Option<M> {
-        // Hash the identifier, then use that as index
-        let hash: u64 = self.state.hash_one(id);
-        self.data.remove(&hash)
-    }
-
-
-
-    /// Re-allocates the underlying memory block in order to fascilitate more messages.
-    ///
-    /// Note that this re-allocation only happens if the set doesn't already have enough space.
-    ///
-    /// # Arguments
-    /// - `additional`: The number of messages for which there should be space **in addition to the ones already there**.
-    #[inline]
-    pub fn reserve(&mut self, additional: usize) {
-        if self.len() + additional > self.capacity() {
-            self.data.reserve(additional)
-        }
+    /// A [`Set`] of messages that form the entire justification, including its basis and effects.
+    pub fn justification(&self) -> Set<M> {
+        // Get the justification first
+        let mut just: Set<M> = self.just.clone();
+        // Include the agreement
+        just.add(self.basis.msg.clone());
+        // Include the enactment
+        just.add(self.enacts.clone());
+        // Done
+        just
     }
 }
-// JustAct functions
-impl<'v, M: Message<'v>, R> MessageSet<M, R> {
-    /// Extracts the policy contained within this set.
+impl<'v, M: 'v + Clone + Message<'v>> Action<M> {
+    /// Audits this action, checking whether it satisfies the well-behaved properties specified in
+    /// the paper.
     ///
-    /// # Generics arguments
-    /// - `P`: The policy language that should be extracted from this set.
+    /// Specifically, it checks:
     ///
-    /// # Returns
-    /// A parsed `P` from the payload of all internal messages.
+    /// # Generics
+    /// - `P`: The [`Policy`] language that is used to verify the messages' payload's validity.
+    /// - `S`: The type of `stmts` given to check which messages are stated by agents.
+    /// - `A`: The type of `agrmtns` given to check which agreements are actually agreed upon.
+    ///
+    /// # Arguments
+    /// - `stmts`: The set of [`Statements`] to which the auditing entity has access.
     ///
     /// # Errors
-    /// This function may error if the internal payloads did not form a **syntactically correct** policy.
-    ///
-    /// Note that **semantic incorrectness** is conventionally not treated as this kind of error,
-    /// but instead returned as a valid but failing policy.
-    #[inline]
-    pub fn extract<P>(&self) -> Result<P, P::SyntaxError>
+    /// This function errors if one of the properties does not hold. The returned
+    /// [`AuditExplanation`] encodes specifically which one did not.
+    pub fn audit<P, S, A>(&self, stmts: &'v S, agrmnts: &A) -> Result<(), AuditExplanation<&'v M::Id, P::SyntaxError, P::SemanticError>>
     where
-        P: Extractable<'v>,
+        P: Extractable<'v> + Policy<'v>,
+        S: Statements<Message<'v> = M>,
     {
-        P::extract_form(self)
-    }
-}
-// Iterator implementations
-impl<'v, M, R> MessageSet<M, R> {
-    /// Returns an iterator-by-reference for the message set.
-    ///
-    /// This returns exactly the same elements as a [`Self::from_iter()`](MessageSet::from_iter())-call, except that it does not consume the set itself.
-    ///
-    /// # Returns
-    /// An iterator that returns `&'v M` message references.
-    #[inline]
-    pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter { self.into_iter() }
-}
-impl<M, R> IntoIterator for MessageSet<M, R> {
-    type Item = M;
-    type IntoIter = std::collections::hash_map::IntoValues<u64, M>;
+        let just: Set<M> = self.justification();
 
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter { self.data.into_values() }
-}
-impl<'a, M, R> IntoIterator for &'a MessageSet<M, R> {
-    type Item = &'a M;
-    type IntoIter = std::collections::hash_map::Values<'a, u64, M>;
-
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter { self.data.values() }
-}
-// From-impls
-impl<M: Hash, R: Default + BuildHasher> FromIterator<M> for MessageSet<M, R> {
-    #[inline]
-    fn from_iter<T: IntoIterator<Item = M>>(iter: T) -> Self {
-        // See if we can get a size hint
-        let iter: T::IntoIter = iter.into_iter();
-        let size_hint: (usize, Option<usize>) = iter.size_hint();
-        let size_hint: usize = size_hint.1.unwrap_or(size_hint.0);
-
-        // Populate a set with at least this many elements
-        let mut set: Self = Self { data: HashMap::with_capacity(size_hint), state: R::default() };
-        for msg in iter {
-            // Compute the hash of the message
-            let hash: u64 = set.state.hash_one(&msg);
-            set.data.insert(hash, msg);
+        /* Property 3 */
+        // Checks if the policy is stated correctly.
+        for stmt in &just {
+            if !stmts.stated().contains(stmt.id()) {
+                return Err(AuditExplanation::Stated { stmt: stmt.id() });
+            }
         }
 
-        // OK, that's it
-        set
+
+
+        /* Property 4 */
+        // Checks if the basis and enactment are included in the justification
+        // Trivial due to [`Action::justification()`]
+
+
+
+        /* Property 5 */
+        // Attempt to extract the policy
+        let policy: P = match just.extract::<P>() {
+            Ok(policy) => policy,
+            Err(err) => return Err(AuditExplanation::Extract { err }),
+        };
+
+        // Check if the policy is valid
+        if let Err(expl) = policy.assert_validity() {
+            return Err(AuditExplanation::Valid { expl });
+        }
+
+
+
+        /* Property 6 */
+        // // Assert that the basis is an agreement
+        // if !agrmnts.contains(self.basis.id()) {
+        //     return Err(AuditExplanation::Based { stmt: self.basis.id() });
+        // }
+
+        // Assert the agreement's time matches the action's
+        if self.basis.applies_at() != self.timestamp {
+            return Err(AuditExplanation::Timely { stmt: self.basis.id(), applies_at: self.basis.timestamp, taken_at: self.timestamp });
+        }
+
+
+
+        /* Success */
+        Ok(())
     }
 }
-impl<const LEN: usize, M: Hash, R: Default + BuildHasher> From<[M; LEN]> for MessageSet<M, R> {
+impl<'v, M: 'v + Identifiable<'v>> Identifiable<'v> for Action<M> {
+    type Id = M::Id;
+
     #[inline]
-    fn from(value: [M; LEN]) -> Self { Self::from_iter(value.into_iter()) }
+    fn id(&self) -> &'v Self::Id { self.enacts.id() }
 }
-impl<M: Hash, R: Default + BuildHasher> From<Vec<M>> for MessageSet<M, R> {
+impl<'v, M: 'v + Authored<'v>> Authored<'v> for Action<M> {
+    type AuthorId = M::AuthorId;
+
     #[inline]
-    fn from(value: Vec<M>) -> Self { Self::from_iter(value.into_iter()) }
+    fn author(&self) -> &'v Self::AuthorId { self.enacts.author() }
 }
 
 
@@ -333,10 +270,6 @@ pub trait Statements {
     type Target;
     /// Something describing how successful stating was.
     type Status;
-    /// The random state used for the internal [`MessageSet`].
-    ///
-    /// When in doubt, use [`std::hash::RandomState`].
-    type State: BuildHasher;
 
 
     /// States a new message.
@@ -344,7 +277,7 @@ pub trait Statements {
     /// # Arguments
     /// - `target`: Some specifyer of where the new message should end up (e.g., all other agents,
     ///   a particular subset of agents, ...).
-    /// - `msg`: The `M`essage-like to state.
+    /// - `msg`: The [`Self::Message`](Statements::Message)-like to state.
     ///
     /// # Returns
     /// This function returns a description of how much of a success the stating was.
@@ -359,6 +292,31 @@ pub trait Statements {
     /// Returns a message set with the messages in this Statements.
     ///
     /// # Returns
-    /// A [`MessageSet`] that contains all the messages in this statements.
-    fn stated<'s>(&'s self) -> MessageSet<Self::Message<'s>, Self::State>;
+    /// A [`Set`] that contains all the messages in this statements.
+    fn stated<'s>(&'s self) -> Set<Self::Message<'s>>;
+
+
+
+    /// Enacts a new statement with a justification for it.
+    ///
+    /// # Arguments
+    /// - `target`: Some specifyer of where the enactment should end up (e.g., all other agents, a
+    ///   particular subset of agents, ...).
+    /// - `act`: The [`Action`]-like to enact.
+    ///
+    /// # Returns
+    /// This function returns a description of how much of a success the enacting was.
+    ///
+    /// Remember that the statements-set may be partial and incomplete. Depending on
+    /// implementations, this means that it is OK for some synchronisations with agents to
+    /// succeed, and some of them to fail. As such, this function doesn't have a binary concept
+    /// of success like [`Result`] implies; instead, [`Self::Status`](Statements::Status) describes
+    /// where on the continuum of success the result lies.
+    fn enact<'s>(&'s mut self, target: Self::Target, act: impl Into<Action<Self::Message<'s>>>) -> Self::Status;
+
+    /// Returns an action set with the enacted actions in this Statements.
+    ///
+    /// # Returns
+    /// A [`Set`] that contains all the actions in this statements.
+    fn enacted<'s>(&'s self) -> Set<Action<Self::Message<'s>>>;
 }

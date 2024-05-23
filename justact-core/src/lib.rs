@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 15:36:47
 //  Last edited:
-//    23 May 2024, 10:08:04
+//    23 May 2024, 11:27:11
 //  Auto updated?
 //    Yes
 //
@@ -16,12 +16,13 @@
 
 // Declare submodules
 // pub mod agent;
+pub mod agreements;
 pub mod auxillary;
 // pub mod global;
 pub mod iter;
 // pub mod local;
 // pub mod policy;
-// pub mod set;
+pub mod set;
 pub mod statements;
 pub mod system;
 pub mod times;
