@@ -4,7 +4,7 @@
 //  Created:
 //    21 May 2024, 16:48:17
 //  Last edited:
-//    23 May 2024, 10:56:17
+//    23 May 2024, 11:11:59
 //  Auto updated?
 //    Yes
 //
@@ -63,7 +63,7 @@ pub trait Extractable<'v> {
     ///
     /// Semantic correctness is conventionally modelled by returning a legal policy, but that fails
     /// the [`Policy::check_validity()`]-check.
-    fn extract_form<'m, M, R>(set: &MessageSet<'v, M, R>) -> Result<Self, Self::SyntaxError>
+    fn extract_form<M, R>(set: &MessageSet<M, R>) -> Result<Self, Self::SyntaxError>
     where
         Self: Sized,
         M: Message<'v>;
@@ -103,18 +103,18 @@ pub trait Message<'v>: Authored<'v> + Identifiable<'v> {
 /// - `M`: The type of [`Message`]s stored in this set.
 /// - `R`: Some kind of [`BuildHasher`] that is used to compute randomized hashes. This means that
 ///   hashes are **not** comparable between set instances, only within.
-pub struct MessageSet<'v, M, R = RandomState> {
+pub struct MessageSet<M, R = RandomState> {
     /// The elements in this set.
-    data:  HashMap<u64, &'v M>,
+    data:  HashMap<u64, M>,
     /// The random state used to compute hashes.
     state: R,
 }
 // Constructors
-impl<'v, M, R: Default> Default for MessageSet<'v, M, R> {
+impl<M, R: Default> Default for MessageSet<M, R> {
     #[inline]
     fn default() -> Self { Self::new() }
 }
-impl<'v, M, R: Default> MessageSet<'v, M, R> {
+impl<M, R: Default> MessageSet<M, R> {
     /// Constructor for the MessageSet.
     ///
     /// # Returns
@@ -134,7 +134,7 @@ impl<'v, M, R: Default> MessageSet<'v, M, R> {
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self { Self { data: HashMap::with_capacity(capacity), state: R::default() } }
 }
-impl<'v, M, R> MessageSet<'v, M, R> {
+impl<M, R> MessageSet<M, R> {
     /// Constructor for the MessageSet that uses a custom random state.
     ///
     /// # Arguments
@@ -146,7 +146,7 @@ impl<'v, M, R> MessageSet<'v, M, R> {
     pub fn with_random_state(state: R) -> Self { Self { data: HashMap::new(), state } }
 }
 // Read-only map functions
-impl<'v, M: Identifiable<'v>, R: BuildHasher> MessageSet<'v, M, R> {
+impl<'v, M: Identifiable<'v>, R: BuildHasher> MessageSet<M, R> {
     /// Retrieves a message with the given identifier from the set.
     ///
     /// # Arguments
@@ -158,7 +158,7 @@ impl<'v, M: Identifiable<'v>, R: BuildHasher> MessageSet<'v, M, R> {
     pub fn get(&self, id: &M::Id) -> Option<&M> {
         // Hash the key and use that to access the map
         let hash: u64 = self.state.hash_one(id);
-        self.data.get(&hash).cloned()
+        self.data.get(&hash)
     }
 
     /// Checks if a message with the given identifier exists in the set.
@@ -197,7 +197,7 @@ impl<'v, M: Identifiable<'v>, R: BuildHasher> MessageSet<'v, M, R> {
     pub fn is_empty(&self) -> bool { self.len() == 0 }
 }
 // Mutable map functions
-impl<'v, M: Identifiable<'v>, R: BuildHasher> MessageSet<'v, M, R> {
+impl<'v, M: 'v + Identifiable<'v>, R: BuildHasher> MessageSet<M, R> {
     /// Adds a new message to the set.
     ///
     /// # Arguments
@@ -206,7 +206,7 @@ impl<'v, M: Identifiable<'v>, R: BuildHasher> MessageSet<'v, M, R> {
     /// # Returns
     /// The old [`Message`] if one with the same identifier already existed, or else [`None`].
     #[inline]
-    pub fn add(&mut self, msg: &'v M) -> Option<&'v M> {
+    pub fn add(&mut self, msg: M) -> Option<M> {
         // Hash the identifier, then use that as index
         let hash: u64 = self.state.hash_one(msg.id());
         self.data.insert(hash, msg)
@@ -220,7 +220,7 @@ impl<'v, M: Identifiable<'v>, R: BuildHasher> MessageSet<'v, M, R> {
     /// # Returns
     /// The removed [`Message`], or else [`None`] if there was nothing to remove.
     #[inline]
-    pub fn remove(&mut self, id: &M::Id) -> Option<&'v M> {
+    pub fn remove(&mut self, id: &M::Id) -> Option<M> {
         // Hash the identifier, then use that as index
         let hash: u64 = self.state.hash_one(id);
         self.data.remove(&hash)
@@ -242,7 +242,7 @@ impl<'v, M: Identifiable<'v>, R: BuildHasher> MessageSet<'v, M, R> {
     }
 }
 // JustAct functions
-impl<'v, M: Message<'v>, R> MessageSet<'v, M, R> {
+impl<'v, M: Message<'v>, R> MessageSet<M, R> {
     /// Extracts the policy contained within this set.
     ///
     /// # Generics arguments
@@ -265,7 +265,7 @@ impl<'v, M: Message<'v>, R> MessageSet<'v, M, R> {
     }
 }
 // Iterator implementations
-impl<'v, M, R> MessageSet<'v, M, R> {
+impl<'v, M, R> MessageSet<M, R> {
     /// Returns an iterator-by-reference for the message set.
     ///
     /// This returns exactly the same elements as a [`Self::from_iter()`](MessageSet::from_iter())-call, except that it does not consume the set itself.
@@ -275,24 +275,24 @@ impl<'v, M, R> MessageSet<'v, M, R> {
     #[inline]
     pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter { self.into_iter() }
 }
-impl<'v, M, R> IntoIterator for MessageSet<'v, M, R> {
-    type Item = &'v M;
-    type IntoIter = std::collections::hash_map::IntoValues<u64, &'v M>;
+impl<M, R> IntoIterator for MessageSet<M, R> {
+    type Item = M;
+    type IntoIter = std::collections::hash_map::IntoValues<u64, M>;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter { self.data.into_values() }
 }
-impl<'a, 'v, M, R> IntoIterator for &'a MessageSet<'v, M, R> {
-    type Item = &'v M;
-    type IntoIter = std::iter::Cloned<std::collections::hash_map::Values<'a, u64, &'v M>>;
+impl<'a, M, R> IntoIterator for &'a MessageSet<M, R> {
+    type Item = &'a M;
+    type IntoIter = std::collections::hash_map::Values<'a, u64, M>;
 
     #[inline]
-    fn into_iter(self) -> Self::IntoIter { self.data.values().cloned() }
+    fn into_iter(self) -> Self::IntoIter { self.data.values() }
 }
 // From-impls
-impl<'v, M: Hash, R: Default + BuildHasher> FromIterator<&'v M> for MessageSet<'v, M, R> {
+impl<M: Hash, R: Default + BuildHasher> FromIterator<M> for MessageSet<M, R> {
     #[inline]
-    fn from_iter<T: IntoIterator<Item = &'v M>>(iter: T) -> Self {
+    fn from_iter<T: IntoIterator<Item = M>>(iter: T) -> Self {
         // See if we can get a size hint
         let iter: T::IntoIter = iter.into_iter();
         let size_hint: (usize, Option<usize>) = iter.size_hint();
@@ -302,7 +302,7 @@ impl<'v, M: Hash, R: Default + BuildHasher> FromIterator<&'v M> for MessageSet<'
         let mut set: Self = Self { data: HashMap::with_capacity(size_hint), state: R::default() };
         for msg in iter {
             // Compute the hash of the message
-            let hash: u64 = set.state.hash_one(msg);
+            let hash: u64 = set.state.hash_one(&msg);
             set.data.insert(hash, msg);
         }
 
@@ -310,17 +310,13 @@ impl<'v, M: Hash, R: Default + BuildHasher> FromIterator<&'v M> for MessageSet<'
         set
     }
 }
-impl<'v, const LEN: usize, M: Hash, R: Default + BuildHasher> From<[&'v M; LEN]> for MessageSet<'v, M, R> {
+impl<const LEN: usize, M: Hash, R: Default + BuildHasher> From<[M; LEN]> for MessageSet<M, R> {
     #[inline]
-    fn from(value: [&'v M; LEN]) -> Self { Self::from_iter(value.into_iter()) }
+    fn from(value: [M; LEN]) -> Self { Self::from_iter(value.into_iter()) }
 }
-impl<'v, M: Hash, R: Default + BuildHasher> From<&[&'v M]> for MessageSet<'v, M, R> {
+impl<M: Hash, R: Default + BuildHasher> From<Vec<M>> for MessageSet<M, R> {
     #[inline]
-    fn from(value: &[&'v M]) -> Self { Self::from_iter(value.iter().cloned()) }
-}
-impl<'v, M: Hash, R: Default + BuildHasher> From<Vec<&'v M>> for MessageSet<'v, M, R> {
-    #[inline]
-    fn from(value: Vec<&'v M>) -> Self { Self::from_iter(value.into_iter()) }
+    fn from(value: Vec<M>) -> Self { Self::from_iter(value.into_iter()) }
 }
 
 
@@ -328,11 +324,11 @@ impl<'v, M: Hash, R: Default + BuildHasher> From<Vec<&'v M>> for MessageSet<'v, 
 /// Defines the set of messages that are stated by agents.
 ///
 /// Note that this set is _local_, meaning that its contents may differ per-agent.
-///
-/// # Generics
-/// - `'v`: The lifetime of the [`SystemView`](crate::SystemView) where the message's data lives.
-/// - `M`: The type of [`Message`]s that can be stated.
-pub trait Statements<'v, M> {
+pub trait Statements {
+    /// The type of [`Message`]s that can be stated.
+    type Message<'s>: Message<'s>
+    where
+        Self: 's;
     /// The target that specifies who might learn of the statements.
     type Target;
     /// Something describing how successful stating was.
@@ -358,11 +354,11 @@ pub trait Statements<'v, M> {
     /// succeed, and some of them to fail. As such, this function doesn't have a binary concept
     /// of success like [`Result`] implies; instead, [`Self::Status`](Statements::Status) describes
     /// where on the continuum of success the result lies.
-    fn state(&mut self, target: Self::Target, msg: impl Into<M>) -> Self::Status;
+    fn state<'s>(&'s mut self, target: Self::Target, msg: impl Into<Self::Message<'s>>) -> Self::Status;
 
     /// Returns a message set with the messages in this Statements.
     ///
     /// # Returns
     /// A [`MessageSet`] that contains all the messages in this statements.
-    fn stated(&self) -> MessageSet<'v, M, Self::State>;
+    fn stated<'s>(&'s self) -> MessageSet<Self::Message<'s>, Self::State>;
 }

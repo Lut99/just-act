@@ -4,7 +4,7 @@
 //  Created:
 //    21 May 2024, 16:23:20
 //  Last edited:
-//    21 May 2024, 16:47:44
+//    23 May 2024, 11:11:28
 //  Auto updated?
 //    Yes
 //
@@ -14,6 +14,7 @@
 
 use std::fmt::{Debug, Formatter, Result as FResult};
 
+use crate::statements::Statements;
 use crate::times::Times;
 
 
@@ -89,4 +90,16 @@ impl<T: Times, A, S, E> Times for SystemView<T, A, S, E> {
 
     #[inline]
     fn advance_to(&mut self, timestamp: Self::Time) -> Result<(), Self::Error> { self.times.advance_to(timestamp) }
+}
+impl<T, A, S: Statements, E> Statements for SystemView<T, A, S, E> {
+    type Message<'s> = S::Message<'s> where Self: 's;
+    type Target = S::Target;
+    type Status = S::Status;
+    type State = S::State;
+
+    #[inline]
+    fn state<'s>(&'s mut self, target: Self::Target, msg: impl Into<Self::Message<'s>>) -> Self::Status { self.stated.state(target, msg) }
+
+    #[inline]
+    fn stated<'s>(&'s self) -> crate::statements::MessageSet<Self::Message<'s>, Self::State> { self.stated.stated() }
 }
