@@ -4,7 +4,7 @@
 //  Created:
 //    21 May 2024, 16:48:17
 //  Last edited:
-//    22 May 2024, 11:04:25
+//    23 May 2024, 10:56:17
 //  Auto updated?
 //    Yes
 //
@@ -332,4 +332,37 @@ impl<'v, M: Hash, R: Default + BuildHasher> From<Vec<&'v M>> for MessageSet<'v, 
 /// # Generics
 /// - `'v`: The lifetime of the [`SystemView`](crate::SystemView) where the message's data lives.
 /// - `M`: The type of [`Message`]s that can be stated.
-pub trait Statements<'v, M> {}
+pub trait Statements<'v, M> {
+    /// The target that specifies who might learn of the statements.
+    type Target;
+    /// Something describing how successful stating was.
+    type Status;
+    /// The random state used for the internal [`MessageSet`].
+    ///
+    /// When in doubt, use [`std::hash::RandomState`].
+    type State: BuildHasher;
+
+
+    /// States a new message.
+    ///
+    /// # Arguments
+    /// - `target`: Some specifyer of where the new message should end up (e.g., all other agents,
+    ///   a particular subset of agents, ...).
+    /// - `msg`: The `M`essage-like to state.
+    ///
+    /// # Returns
+    /// This function returns a description of how much of a success the stating was.
+    ///
+    /// Remember that the statements-set may be partial and incomplete. Depending on
+    /// implementations, this means that it is OK for some synchronisations with agents to
+    /// succeed, and some of them to fail. As such, this function doesn't have a binary concept
+    /// of success like [`Result`] implies; instead, [`Self::Status`](Statements::Status) describes
+    /// where on the continuum of success the result lies.
+    fn state(&mut self, target: Self::Target, msg: impl Into<M>) -> Self::Status;
+
+    /// Returns a message set with the messages in this Statements.
+    ///
+    /// # Returns
+    /// A [`MessageSet`] that contains all the messages in this statements.
+    fn stated(&self) -> MessageSet<'v, M, Self::State>;
+}
