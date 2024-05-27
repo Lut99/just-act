@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 14:52:41
 //  Last edited:
-//    23 May 2024, 17:04:06
+//    27 May 2024, 17:32:02
 //  Auto updated?
 //    Yes
 //
@@ -15,7 +15,10 @@
 
 use std::error::Error;
 
+use crate::agreements::Agreements;
 use crate::auxillary::Identifiable;
+use crate::statements::Statements;
+use crate::times::Times;
 
 
 /***** AUXILLARY *****/
@@ -44,6 +47,10 @@ pub trait Agent: Identifiable {}
 ///
 /// This is effectively the trait that unifies everything into a concrete implementation. Its associated types force the implementer to get concrete about everything.
 pub trait RationalAgent: Agent {
+    /// The messages exchange by the agent.
+    type Message;
+    /// The target used by the agent to aim for other agents.
+    type Target;
     /// The type of errors raised by reasoning.
     type Error: Error;
 
@@ -52,10 +59,19 @@ pub trait RationalAgent: Agent {
     ///
     /// This effectively "runs" the agent itself. This allows it to inspect any statements, enactments, agreements and/or times, as well as create them.
     ///
+    /// # Arguments
+    /// - `agrs`: A set of globally synchronized [`Agreements`] for the agent to mutate (if consensus is reached) or not.
+    /// - `times`: A set of globally synchronized [`Times`] for the agent to mutate (if consensus is reached) or not.
+    ///
     /// # Returns
     /// An [`AgentPoll`]-type that determines what the runtime should do with this agent.
     ///
     /// # Errors
     /// Only fatal errors that prevent the Agent from participating in the system should cause this function to error. Examples are failures to properly attach to some remote registry or queue.
-    fn poll(&mut self) -> Result<AgentPoll, Self::Error>;
+    fn poll(
+        &mut self,
+        agrs: impl Agreements<Message = Self::Message>,
+        times: impl Times,
+        stmts: impl Statements<Message = Self::Message, Target = Self::Target>,
+    ) -> Result<AgentPoll, Self::Error>;
 }

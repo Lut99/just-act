@@ -4,7 +4,7 @@
 //  Created:
 //    23 May 2024, 17:42:56
 //  Last edited:
-//    23 May 2024, 17:46:52
+//    27 May 2024, 17:49:35
 //  Auto updated?
 //    Yes
 //
@@ -12,14 +12,17 @@
 //!   Implements (various) global views on agreements.
 //
 
+use std::cell::RefCell;
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FResult};
+use std::rc::Rc;
 
 use justact_core::agreements::{Agreement, Agreements as JAAgreements};
 use justact_core::auxillary::Identifiable as _;
 use justact_core::set::LocalSet;
 
-use crate::message::{Message, OwnedMessage};
+use crate::interface::Interface;
+use crate::statements::Message;
 
 
 /***** ERRORS *****/
@@ -47,24 +50,81 @@ impl Error for AgreementsDictatorError {}
 
 
 /***** LIBRARY *****/
+/// An owned version of the agreements.
+///
+/// This variation synchronizes new agreements if and only if it's a particular agent claiming it.
+///
+/// Agents will see the agent-scoped variation [`AgreementsDictator`].
+#[derive(Debug)]
+pub struct GlobalAgreementsDictator {
+    /// The only agent allowed to make changes.
+    dictator:  String,
+    /// An interface we use to log whatever happens in pretty ways.
+    interface: Rc<RefCell<Interface>>,
+    /// All agreements in the land.
+    agrs:      LocalSet<Agreement<Message>>,
+}
+impl GlobalAgreementsDictator {
+    /// Constructor for the GlobalAgreementsDictator.
+    ///
+    /// # Agreements
+    /// - `dictator`: The agent who will get to decide everything.
+    /// - `interface`: An interface we use to log whatever happens in pretty ways.
+    ///
+    /// # Returns
+    /// A new GlobalAgreementsDictator.
+    #[inline]
+    pub fn new(dictator: impl Into<String>, interface: Rc<RefCell<Interface>>) -> Self {
+        let dictator: String = dictator.into();
+        Self { dictator: dictator.clone(), interface, agrs: LocalSet::new() }
+    }
+
+    /// Returns an [`AgreementsDictator`] which is scoped for a particular agent.
+    ///
+    /// # Arguments
+    /// - `agent`: The agent to scope this [`GlobalAgreementsDictator`] for.
+    /// - `func`: Some function that is executed for this scope.
+    ///
+    /// # Returns
+    /// A new [`AgreementsDictator`] that implements [`justact_core::agreements::Agreements`].
+    #[inline]
+    pub fn scope<R>(&mut self, agent: &str, func: impl FnOnce(&mut AgreementsDictator) -> R) -> R {
+        // Call the closure
+        let (res, mut queue): (R, Vec<Agreement<Message>>) = {
+            let mut view = AgreementsDictator { agent, dictator: &self.dictator, agrs: &self.agrs, queue: vec![] };
+            let res: R = func(&mut view);
+            (res, view.queue)
+        };
+
+        // Sync the changes back
+        self.agrs.reserve(queue.len());
+        for agr in queue.drain(..) {
+            self.interface.borrow().log_agree(&agr);
+            self.agrs.add(agr);
+        }
+
+        // OK, done
+        res
+    }
+}
+
 /// Provides agents with a global view on the agreed upon agreements.
 ///
 /// This variation synchronizes new agreements if and only if it's a particular agent claiming it.
 #[derive(Debug)]
 pub struct AgreementsDictator<'v> {
     /// This agent
-    agent:    String,
+    agent:    &'v str,
     /// The only agent allowed to make changes.
-    dictator: String,
+    dictator: &'v str,
 
     /// The statements that this agent knows of.
-    agrs: LocalSet<Agreement<Message<'v>>>,
+    agrs: &'v LocalSet<Agreement<Message>>,
     /// A queue of statements that this agent pushed.
-    pub(crate) queue: Vec<Agreement<OwnedMessage>>,
+    pub(crate) queue: Vec<Agreement<Message>>,
 }
 impl<'v> JAAgreements for AgreementsDictator<'v> {
-    type Message = OwnedMessage;
-    type Statement<'s> = Message<'s> where Self: 's;
+    type Message = Message;
     type Error = AgreementsDictatorError;
 
     #[inline]
@@ -74,20 +134,20 @@ impl<'v> JAAgreements for AgreementsDictator<'v> {
             self.queue.push(agr);
             Ok(())
         } else {
-            Err(AgreementsDictatorError::NotTheDictator { id: agr.id().into(), agent: self.agent.clone(), dictator: self.dictator.clone() })
+            Err(AgreementsDictatorError::NotTheDictator { id: agr.id().into(), agent: self.agent.into(), dictator: self.dictator.into() })
         }
     }
 
     #[inline]
-    fn agreed<'s>(&'s self) -> LocalSet<Agreement<Self::Statement<'s>>> {
-        // Start with what we know...
-        let mut set: LocalSet<Agreement<Message<'s>>> = self.agrs.clone();
-        // ...and push any queued items for us
-        set.reserve(self.queue.len());
-        for agr in &self.queue {
-            set.add(Agreement { msg: (&agr.msg).into(), timestamp: agr.timestamp });
-        }
-        // OK
-        set
-    }
+    fn agreed<'s>(&'s self) -> LocalSet<&'s Agreement<Self::Message>> { self.agrs.iter().chain(self.queue.iter()).collect() }
+}
+impl<'a, 'v> JAAgreements for &'a mut AgreementsDictator<'v> {
+    type Message = <AgreementsDictator<'v> as JAAgreements>::Message;
+    type Error = <AgreementsDictator<'v> as JAAgreements>::Error;
+
+    #[inline]
+    fn agree(&mut self, agr: Agreement<Self::Message>) -> Result<(), Self::Error> { AgreementsDictator::agree(self, agr) }
+
+    #[inline]
+    fn agreed<'s>(&'s self) -> LocalSet<&'s Agreement<Self::Message>> { AgreementsDictator::agreed(self) }
 }

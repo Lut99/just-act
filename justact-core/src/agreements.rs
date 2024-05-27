@@ -4,7 +4,7 @@
 //  Created:
 //    23 May 2024, 11:27:32
 //  Last edited:
-//    23 May 2024, 17:04:00
+//    27 May 2024, 17:15:15
 //  Auto updated?
 //    Yes
 //
@@ -17,7 +17,6 @@ use std::error::Error;
 
 use crate::auxillary::{Authored, Identifiable};
 use crate::set::LocalSet;
-use crate::statements::Message;
 use crate::times::Timestamp;
 
 
@@ -64,10 +63,6 @@ impl<M: Authored> Authored for Agreement<M> {
 pub trait Agreements {
     /// The type of [`Message`]s that are agreed upon in the form of [`Agreement`]s.
     type Message;
-    /// The type of [`Message`]s one they are agreed.
-    type Statement<'s>: Message<'s>
-    where
-        Self: 's;
     /// The type of errors returned by this set.
     type Error: Error;
 
@@ -86,5 +81,5 @@ pub trait Agreements {
     ///
     /// # Returns
     /// A [`Set`] that contains all the agreements in this Agreements.
-    fn agreed<'s>(&'s self) -> LocalSet<Agreement<Self::Statement<'s>>>;
+    fn agreed<'s>(&'s self) -> LocalSet<&'s Agreement<Self::Message>>;
 }

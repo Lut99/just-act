@@ -4,7 +4,7 @@
 //  Created:
 //    21 May 2024, 16:48:17
 //  Last edited:
-//    23 May 2024, 17:35:48
+//    27 May 2024, 16:32:17
 //  Auto updated?
 //    Yes
 //
@@ -164,6 +164,21 @@ impl<M> Action<M> {
     /// A reference to the internal `M`essage.
     #[inline]
     pub fn enacts(&self) -> &M { &self.enacts }
+
+
+
+    // /// Returns a formatter that displays the action.
+    // ///
+    // /// # Arguments
+    // /// - `prefix`: Some to call the agreement, e.g., `Agreement`.
+    // /// - `indent`: The indentation (as a concrete string to write) to apply before every newline.
+    // ///
+    // /// # Returns
+    // /// A [`AgreementFormatter`] that does not write additional indentation.
+    // #[inline]
+    // pub fn display<'s, 'p, 'i>(&'s self, prefix: &'p str, indent: &'i str) -> AgreementFormatter<'s, 'p, 'i> {
+    //     AgreementFormatter { msg: self, prefix, indent }
+    // }
 }
 impl<M: Clone + Identifiable> Action<M> {
     /// Returns the justification of the action.
@@ -203,8 +218,8 @@ impl<'v, M: 'v + Clone + Message<'v>> Action<M> {
     pub fn audit<P, S, A>(&self, stmts: &'v S, agrmnts: &'v A) -> Result<(), AuditExplanation<&'v M::Id, P::SyntaxError, P::SemanticError>>
     where
         P: Extractable<'v, M> + Policy<'v>,
-        S: Statements<Statement<'v> = M>,
-        A: Agreements<Statement<'v> = M>,
+        S: Statements<Message = M>,
+        A: Agreements<Message = M>,
     {
         let just: LocalSet<M> = self.justification();
 
@@ -279,12 +294,6 @@ pub trait Statements {
     ///
     /// This serves as _input_ to [`Statements::state()`].
     type Message;
-    /// The type of [`Message`]s once they are stated.
-    ///
-    /// This serves as _output_ from [`Statements::stated()`].
-    type Statement<'s>: Message<'s>
-    where
-        Self: 's;
     /// The target that specifies who might learn of the statements.
     type Target;
     /// Something describing how successful stating was.
@@ -312,7 +321,7 @@ pub trait Statements {
     ///
     /// # Returns
     /// A [`Set`] that contains all the messages in this statements.
-    fn stated<'s>(&'s self) -> LocalSet<Self::Statement<'s>>;
+    fn stated<'s>(&'s self) -> LocalSet<&'s Self::Message>;
 
 
 
@@ -337,5 +346,5 @@ pub trait Statements {
     ///
     /// # Returns
     /// A [`Set`] that contains all the actions in this statements.
-    fn enacted<'s>(&'s self) -> LocalSet<Action<Self::Statement<'s>>>;
+    fn enacted<'s>(&'s self) -> LocalSet<&'s Action<Self::Message>>;
 }

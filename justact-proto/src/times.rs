@@ -4,7 +4,7 @@
 //  Created:
 //    23 May 2024, 17:36:27
 //  Last edited:
-//    23 May 2024, 17:42:35
+//    27 May 2024, 17:48:58
 //  Auto updated?
 //    Yes
 //
@@ -12,10 +12,14 @@
 //!   Implements (various) global views on timestamps.
 //
 
+use std::cell::RefCell;
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FResult};
+use std::rc::Rc;
 
 use justact_core::times::{Times as JATimes, Timestamp};
+
+use crate::interface::Interface;
 
 
 /***** ERRORS *****/
@@ -43,22 +47,76 @@ impl Error for TimesDictatorError {}
 
 
 /***** LIBRARY *****/
+/// An owned version of the times.
+///
+/// This variation synchronizes new times if and only if it's a particular agent claiming it.
+///
+/// Agents will see the agent-scoped variation [`TimesDictator`].
+#[derive(Debug)]
+pub struct GlobalTimesDictator {
+    /// The only agent allowed to make changes.
+    dictator:  String,
+    /// An interface we use to log whatever happens in pretty ways.
+    interface: Rc<RefCell<Interface>>,
+    /// The current timestamp.
+    current:   Timestamp,
+}
+impl GlobalTimesDictator {
+    /// Constructor for the GlobalTimesDictator.
+    ///
+    /// # Agreements
+    /// - `dictator`: The agent who will get to decide everything.
+    /// - `interface`: An interface we use to log whatever happens in pretty ways.
+    ///
+    /// # Returns
+    /// A new GlobalTimesDictator.
+    #[inline]
+    pub fn new(dictator: impl Into<String>, interface: Rc<RefCell<Interface>>) -> Self {
+        let dictator: String = dictator.into();
+        Self { dictator: dictator.clone(), interface, current: Timestamp(0) }
+    }
+
+    /// Allows an agent scoped access to the Times-set.
+    ///
+    /// # Arguments
+    /// - `agent`: The agent to scope this [`GlobalTimesDictator`] for.
+    /// - `func`: Some function that is executed for this scope.
+    ///
+    /// # Returns
+    /// A new [`TimesDictator`] that implements [`justact_core::agreements::Agreements`].
+    #[inline]
+    pub fn scope<R>(&mut self, agent: &str, func: impl FnOnce(&mut TimesDictator) -> R) -> R {
+        // Call the closure
+        let mut view = TimesDictator { agent, dictator: &self.dictator, current: self.current, queue: vec![] };
+        let res: R = func(&mut view);
+
+        // Sync the changes back
+        if let Some(current) = view.queue.pop() {
+            self.current = current;
+            self.interface.borrow().log_advance(current);
+        }
+
+        // OK, done
+        res
+    }
+}
+
 /// Provides agents with a global view on the current time.
 ///
 /// This variation synchronizes time if and only if it's a particular agent claiming it.
 #[derive(Debug)]
-pub struct TimesDictator {
+pub struct TimesDictator<'v> {
     /// This agent
-    agent:    String,
+    agent:    &'v str,
     /// The only agent allowed to make changes.
-    dictator: String,
+    dictator: &'v str,
 
     /// The statements that this agent knows of.
     current: Timestamp,
     /// A queue of statements that this agent pushed.
     pub(crate) queue: Vec<Timestamp>,
 }
-impl JATimes for TimesDictator {
+impl<'v> JATimes for TimesDictator<'v> {
     type Error = TimesDictatorError;
 
     #[inline]
@@ -74,7 +132,16 @@ impl JATimes for TimesDictator {
             self.queue.push(timestamp);
             Ok(())
         } else {
-            Err(TimesDictatorError::NotTheDictator { agent: self.agent.clone(), dictator: self.dictator.clone() })
+            Err(TimesDictatorError::NotTheDictator { agent: self.agent.into(), dictator: self.dictator.into() })
         }
     }
+}
+impl<'t, 'v> JATimes for &'t mut TimesDictator<'v> {
+    type Error = <TimesDictator<'v> as JATimes>::Error;
+
+    #[inline]
+    fn current(&self) -> Timestamp { TimesDictator::current(self) }
+
+    #[inline]
+    fn advance_to(&mut self, timestamp: Timestamp) -> Result<(), Self::Error> { TimesDictator::advance_to(self, timestamp) }
 }

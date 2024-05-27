@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 10:58:56
 //  Last edited:
-//    17 May 2024, 14:17:51
+//    27 May 2024, 18:00:39
 //  Auto updated?
 //    Yes
 //
@@ -12,15 +12,123 @@
 //!   Implements a collection of users to format messages nicesly.
 //
 
+use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fmt::Display;
+use std::fmt::{Display, Formatter, Result as FResult};
 
 use console::{style, Style};
-use justact_core::auxillary::Identifiable as _;
-use justact_core::{Action as _, Set as _};
+use justact_core::agreements::Agreement;
+use justact_core::auxillary::{Authored as _, Identifiable as _};
+use justact_core::set::LocalSet;
+use justact_core::statements::{Action, AuditExplanation, Message as _};
+use justact_core::times::Timestamp;
 
-use crate::global::Timestamp;
-use crate::wire::{Action, Agreement, AuditExplanation, Message};
+use crate::statements::Message;
+
+
+/***** FORMATTERS *****/
+/// Formats a [`MessageSet`] with proper indentation and such.
+pub struct MessageSetFormatter<'m, V, S, P, I> {
+    /// The message to format.
+    msgs:   &'m LocalSet<V, S>,
+    /// Some prefix to use when writing the message.
+    prefix: P,
+    /// The indentation to use while formatting.
+    indent: I,
+}
+impl<'m, V: Displayable, S, P: Display, I: Display> Display for MessageSetFormatter<'m, V, S, P, I> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        // Write the messages, one-by-one
+        writeln!(f, "{} {{", self.prefix)?;
+        for msg in self.msgs {
+            write!(f, "{}    {}", self.indent, msg.display("Message", &format!("{}    ", self.indent)))?;
+        }
+        writeln!(f, "{}}}", self.indent)
+    }
+}
+
+/// Formats an [`Agreement`] with proper indentation and such.
+pub struct AgreementFormatter<'a, P, I, M> {
+    /// The agreement to format.
+    agr:    &'a Agreement<M>,
+    /// Some prefix to use when writing the message.
+    prefix: P,
+    /// The indentation to use while formatting.
+    indent: I,
+}
+impl<'a, P: Display, I: Display> Display for AgreementFormatter<'a, P, I, Message> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        // First, get the agreement's payload as UTF-8
+        let spayload: Cow<str> = String::from_utf8_lossy((&self.agr.msg).payload());
+
+        // Write the agreement
+        writeln!(
+            f,
+            "{} '{}' by '{}' (applies at {}) {{",
+            self.prefix,
+            style(self.agr.id()).bold(),
+            style(self.agr.msg.author()).bold(),
+            style(self.agr.timestamp).bold(),
+        )?;
+        writeln!(f, "{}    {}", self.indent, spayload.replace('\n', &format!("\n{}    ", self.indent)).trim_end())?;
+        writeln!(f, "{}}}", self.indent)
+    }
+}
+
+
+
+
+
+/***** INTERFACES *****/
+/// Gives us an opportunity to implement some external functions on JustAct implementations.
+pub trait Displayable {
+    /// The formatter returned to display.
+    type Formatter<'s, P: Display, I: Display>: Display
+    where
+        Self: 's;
+
+
+    /// Returns some formatter that formats this Displayable.
+    ///
+    /// # Arguments
+    /// - `prefix`: Some prefix/name for this message (e.g., `Message` or `Justification`).
+    /// - `indent`: Something to write as indentation after all newlines (i.e., on all lines except the first).
+    ///
+    /// # Returns
+    /// A `Self::Formatter` that implements [`Display`].
+    fn display<'s, P: Display, I: Display>(&'s self, prefix: P, indent: I) -> Self::Formatter<'s, P, I>;
+}
+
+// Impls for JustAct types
+impl<V: Displayable, S> Displayable for LocalSet<V, S> {
+    type Formatter<'s, P: Display, I: Display> = MessageSetFormatter<'s, V, S, P, I> where Self: 's;
+
+    #[inline]
+    fn display<'s, P: Display, I: Display>(&'s self, prefix: P, indent: I) -> Self::Formatter<'s, P, I> {
+        MessageSetFormatter { msgs: self, prefix, indent }
+    }
+}
+impl Displayable for Agreement<Message> {
+    type Formatter<'s, P: Display, I: Display> = AgreementFormatter<'s, P, I, Message> where Self: 's;
+
+    #[inline]
+    fn display<'s, P: Display, I: Display>(&'s self, prefix: P, indent: I) -> Self::Formatter<'s, P, I> {
+        AgreementFormatter { agr: self, prefix, indent }
+    }
+}
+
+// Pointer-like impls
+impl<'v, D: Displayable> Displayable for &'v D {
+    type Formatter<'s, P: Display, I: Display> = D::Formatter<'s, P, I> where Self: 's;
+
+    #[inline]
+    fn display<'s, P: Display, I: Display>(&'s self, prefix: P, indent: I) -> Self::Formatter<'s, P, I> { D::display(self, prefix, indent) }
+}
+
+
+
 
 
 /***** LIBRARY *****/
@@ -28,7 +136,7 @@ use crate::wire::{Action, Agreement, AuditExplanation, Message};
 #[derive(Clone, Debug)]
 pub struct Interface {
     /// The mapping of agents to their styles.
-    styles: HashMap<&'static str, Style>,
+    styles: HashMap<String, Style>,
 }
 
 impl Interface {
@@ -47,7 +155,7 @@ impl Interface {
     /// - `id`: The identifier of the agent to register.
     /// - `style`: The style to use when formatting the agent's `id`entifier.
     #[inline]
-    pub fn register(&mut self, id: &'static str, style: Style) { self.styles.insert(id, style); }
+    pub fn register(&mut self, id: &str, style: Style) { self.styles.insert(id.into(), style); }
 
 
 
@@ -76,15 +184,17 @@ impl Interface {
         // Done
     }
 
-    /// Logs the enactment of a [`Action`] to stdout.
+    /// Logs the enactment of an [`Action`] over [`Message`]s to stdout.
     ///
     /// # Arguments
     /// - `id`: The identifier of the agent who is logging.
     /// - `act`: Some [`Action`] to emit.
-    pub fn log_enact(&self, id: &str, act: &Action) {
+    pub fn log_enact(&self, id: &str, act: &Action<Message>) {
+        let just: LocalSet<Message> = act.justification();
+
         // Retrieve the message IDs for the justication
         let mut just_ids: String = String::new();
-        for msg in act.justification.iter() {
+        for msg in just.iter() {
             if !just_ids.is_empty() {
                 just_ids.push_str(", ");
             }
@@ -103,9 +213,9 @@ impl Interface {
         );
 
         // Write the sets
-        println!(" ├> {}", act.basis().display("Basis", " |  "));
-        println!(" ├> {}", act.justification().display("Justification", " |  "));
-        println!(" └> {}", act.enacts().display("Enacts", "    "));
+        print!(" ├> {}", act.basis().display("Basis", " |  "));
+        print!(" ├> {}", just.display("Justification", " |  "));
+        print!(" └> {}", act.enacts().display("Enacts", "    "));
         println!();
 
         // Done
@@ -146,12 +256,12 @@ impl Interface {
         println!();
     }
 
-    /// Logs that an agent started synchronizing a new agreement.
+    /// Logs that an agent started synchronizing a new agreement over [`Message`]s.
     ///
     /// # Arguments
     /// - `id`: The identifier of the agent who is logging.
     /// - `agrmnt`: The [`Agreement`] that will be added to the pool of agreements when synchronized.
-    pub fn log_agree_start(&self, id: &str, agrmnt: &Agreement) {
+    pub fn log_agree_start(&self, id: &str, agrmnt: &Agreement<Message>) {
         // Write the main log-line
         println!(
             "{}{}{} Initiated synchronization to agree on message '{}'",
@@ -169,8 +279,8 @@ impl Interface {
     /// Logs that all agents agreed to synchronize time.
     ///
     /// # Arguments
-    /// - `agrmnt`: The [`Agreement`] that will be added to the pool of agreements when synchronized.
-    pub fn log_agree(&self, agrmnt: &Agreement) {
+    /// - `agrmnt`: The [`Agreement`] (over [`Message`]s) that will be added to the pool of agreements when synchronized.
+    pub fn log_agree(&self, agrmnt: &Agreement<Message>) {
         // Write the main log-line
         println!(
             "{}{}{} New agreement '{}' created",
@@ -208,8 +318,9 @@ impl Interface {
     ///
     /// # Arguments
     /// - `id`: The identifier of the agent who is logging.
-    /// - `expl`: The [`Explanation`] of why the audit failed.
-    pub fn error_audit<E1, E2>(&self, id: &str, expl: crate::local::AuditExplanation<E1, E2>) {
+    /// - `act`: The [`Action`] (over [`Message`]s) that failed the audit.
+    /// - `expl`: The [`Explanation`] of why the audit of that action failed.
+    pub fn error_audit<E1, E2>(&self, id: &str, act: &Action<Message>, expl: AuditExplanation<&str, E1, E2>) {
         // Write for that agent
         println!(
             "{}{}{}{}{} Action that enacts '{}' did not succeed audit",
@@ -218,12 +329,13 @@ impl Interface {
             style("] [").bold(),
             self.styles.get(id).unwrap().apply_to(id),
             style("]").bold(),
-            expl.act.enacts().id(),
+            act.enacts().id(),
         );
 
         // Retrieve the message IDs for the justication
+        let just: LocalSet<Message> = act.justification();
         let mut just_ids: String = String::new();
-        for msg in expl.act.justification.iter() {
+        for msg in just.iter() {
             if !just_ids.is_empty() {
                 just_ids.push_str(", ");
             }
@@ -231,7 +343,7 @@ impl Interface {
         }
 
         // Generate serialized explanation
-        let sexpl: String = match expl.expl {
+        let sexpl: String = match expl {
             AuditExplanation::Stated { stmt } => format!("Message '{}' is not stated", style(stmt).bold()),
             AuditExplanation::Extract { err: _ } => format!("Cannot extract policy"),
             AuditExplanation::Valid { expl: _ } => format!("Extracted policy is not valid"),
@@ -246,9 +358,9 @@ impl Interface {
         let sexpl: &str = sexpl.trim_end();
 
         // Write the sets
-        println!(" ├> {}", expl.act.basis().display("Basis", " |  "));
-        println!(" ├> {}", expl.act.justification().display("Justification", " |  "));
-        println!(" ├> {}", expl.act.enacts().display("Enacts", "    "));
+        println!(" ├> {}", act.basis().display("Basis", " |  "));
+        println!(" ├> {}", just.display("Justification", " |  "));
+        println!(" ├> {}", act.enacts().display("Enacts", "    "));
         println!(" └> {sexpl}");
         println!();
     }
