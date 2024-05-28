@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 18:39:10
 //  Last edited:
-//    21 May 2024, 15:48:55
+//    28 May 2024, 15:01:15
 //  Auto updated?
 //    Yes
 //
@@ -82,11 +82,6 @@ impl<'f, 's> Policy for Spec<'f, 's> {
 
 
 // Implement `ExtractablePolicy` for Datalog
-// impl<'a, 'f, 's, M> ExtractablePolicy<'s, M> for Spec<'f, 's>
-// where
-//     M: 'a + MessageSet + Set<M::Message, Item<'a> = &'s M::Message>,
-//     M::Message: 's + Authored<AuthorId = &'static str> + Identifiable<Id = &'static str> + Message,
-// {
 impl<'s, M> ExtractablePolicy<&'s M> for Spec<'s, 's>
 where
     M: Authored<AuthorId = str> + Identifiable<Id = str> + Message,

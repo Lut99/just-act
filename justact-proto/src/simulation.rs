@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:06:51
 //  Last edited:
-//    21 May 2024, 15:12:22
+//    28 May 2024, 15:09:43
 //  Auto updated?
 //    Yes
 //
@@ -243,9 +243,9 @@ where
     /// # Errors
     /// This function errors if any of the agents fails to communicate with the end-user or other agents.
     #[inline]
-    pub fn run<P>(&mut self) -> Result<(), Error<A::Error>>
+    pub fn run<'s: 'p, 'p, P>(&'s mut self) -> Result<(), Error<A::Error>>
     where
-        for<'m> P: ExtractablePolicy<&'m Message>,
+        P: ExtractablePolicy<&'p Message>,
     {
         loop {
             // Run the next iteration
