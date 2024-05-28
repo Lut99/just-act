@@ -4,7 +4,7 @@
 //  Created:
 //    21 May 2024, 16:48:17
 //  Last edited:
-//    27 May 2024, 16:32:17
+//    28 May 2024, 13:59:41
 //  Auto updated?
 //    Yes
 //
@@ -180,25 +180,32 @@ impl<M> Action<M> {
     //     AgreementFormatter { msg: self, prefix, indent }
     // }
 }
-impl<M: Clone + Identifiable> Action<M> {
+impl<'v, M> Action<M>
+where
+    &'v M: 'v + Message<'v>,
+{
     /// Returns the justification of the action.
     ///
     /// Note that, contrary to accessing `just` manually, this includes both the `basis` _and_ the `enacts`.
     ///
     /// # Returns
     /// A [`Set`] of messages that form the entire justification, including its basis and effects.
-    pub fn justification(&self) -> LocalSet<M> {
+    pub fn justification(&self) -> LocalSet<&M> {
         // Get the justification first
-        let mut just: LocalSet<M> = self.just.clone();
+        let mut just: LocalSet<&M> = self.just.iter().collect();
         // Include the agreement
-        just.add(self.basis.msg.clone());
+        just.add(&self.basis.msg);
         // Include the enactment
-        just.add(self.enacts.clone());
+        just.add(&self.enacts);
         // Done
         just
     }
 }
-impl<'v, M: 'v + Clone + Message<'v>> Action<M> {
+impl<'v, M> Action<M>
+where
+    M: Identifiable,
+    &'v M: 'v + Message<'v>,
+{
     /// Audits this action, checking whether it satisfies the well-behaved properties specified in
     /// the paper.
     ///
@@ -215,13 +222,17 @@ impl<'v, M: 'v + Clone + Message<'v>> Action<M> {
     /// # Errors
     /// This function errors if one of the properties does not hold. The returned
     /// [`AuditExplanation`] encodes specifically which one did not.
-    pub fn audit<P, S, A>(&self, stmts: &'v S, agrmnts: &'v A) -> Result<(), AuditExplanation<&'v M::Id, P::SyntaxError, P::SemanticError>>
+    pub fn audit<P, S, A>(
+        &self,
+        stmts: &'v S,
+        agrmnts: &'v A,
+    ) -> Result<(), AuditExplanation<&'v <&'v M as Identifiable>::Id, P::SyntaxError, P::SemanticError>>
     where
-        P: Extractable<'v, M> + Policy<'v>,
+        P: Extractable<'v, &'v M> + Policy<'v>,
         S: Statements<Message = M>,
         A: Agreements<Message = M>,
     {
-        let just: LocalSet<M> = self.justification();
+        let just: LocalSet<&M> = self.justification();
 
         /* Property 3 */
         // Checks if the policy is stated correctly.
@@ -256,12 +267,12 @@ impl<'v, M: 'v + Clone + Message<'v>> Action<M> {
         /* Property 6 */
         // Assert that the basis is an agreement
         if !agrmnts.agreed().contains(self.basis.id()) {
-            return Err(AuditExplanation::Based { stmt: self.basis.msg.id_v() });
+            return Err(AuditExplanation::Based { stmt: (&self.basis.msg).id_v() });
         }
 
         // Assert the agreement's time matches the action's
         if self.basis.applies_at() != self.timestamp {
-            return Err(AuditExplanation::Timely { stmt: self.basis.msg.id_v(), applies_at: self.basis.timestamp, taken_at: self.timestamp });
+            return Err(AuditExplanation::Timely { stmt: (&self.basis.msg).id_v(), applies_at: self.basis.timestamp, taken_at: self.timestamp });
         }
 
 
