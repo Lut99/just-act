@@ -4,21 +4,23 @@
 //  Created:
 //    17 May 2024, 14:23:42
 //  Last edited:
-//    17 May 2024, 18:25:30
+//    27 May 2024, 17:51:10
 //  Auto updated?
 //    Yes
 //
 //  Description:
-//!   Defines the administrator-agent from the paper.\
+//!   Defines the administrator-agent from the paper.
 //
 
 use std::convert::Infallible;
 
 use datalog::ast::{datalog, Reserializable, Spec};
+use justact_core::agents::{Agent, AgentPoll, RationalAgent};
+use justact_core::agreements::Agreements;
 use justact_core::auxillary::Identifiable;
-use justact_core::{Actions, Agent, AgentPoll, Agreements, Map, RationalAgent, Statements, Times};
-use justact_prototype::local::Target;
-use justact_prototype::wire::{Action, Message};
+use justact_core::statements::Statements;
+use justact_core::times::Times;
+use justact_prototype::statements::{Message, Target};
 
 
 /***** LIBRARY *****/
@@ -26,37 +28,34 @@ use justact_prototype::wire::{Action, Message};
 #[derive(Debug)]
 pub struct Administrator;
 impl Identifiable for Administrator {
-    type Id = &'static str;
+    type Id = str;
 
     #[inline]
-    fn id(&self) -> &Self::Id { &"administrator" }
+    fn id(&self) -> &Self::Id { "administrator" }
 }
 impl Agent for Administrator {}
 impl RationalAgent for Administrator {
-    type Enactment = Action;
-    type Action = Action;
-    type Statement = Message;
     type Message = Message;
     type Target = Target;
     type Error = Infallible;
 
-    fn poll<G, L>(&mut self, _global: &mut G, local: &mut L) -> Result<AgentPoll, Self::Error>
-    where
-        G: Agreements + Times,
-        L: Actions<Enactment = Self::Enactment, Action = Self::Action, Target = Self::Target>
-            + Statements<Statement = Self::Statement, Message = Self::Message, Target = Self::Target>,
-        Self::Error: From<<L as Actions>::Error> + From<<L as Statements>::Error>,
-    {
+    fn poll(
+        &mut self,
+        agrmnts: impl Agreements<Message = Self::Message>,
+        _times: impl Times,
+        mut stmts: impl Statements<Message = Self::Message, Target = Self::Target>,
+    ) -> Result<AgentPoll, Self::Error> {
         // The administrator emits 's2' after the agreement has een emitted
-        if <L as Map<Self::Message>>::contains(local, &"s1") {
+        if agrmnts.agreed().contains("s1") {
             // Define the policy to emit
             let spec: Spec = datalog! {
                 ctl_authorises(administrator, amy, x_rays).
             };
-            let msg: Message = Message { id: "s2", author: "administrator", data: spec.reserialize().to_string().into_bytes() };
+            let msg: Message =
+                Message { id: "s2".into(), author: "administrator".into(), payload: spec.reserialize().to_string().into_bytes() };
 
             // Emit it
-            local.state(Target::All, msg).unwrap();
+            stmts.state(Target::All, msg);
 
             // The admin is done for this example
             return Ok(AgentPoll::Dead);

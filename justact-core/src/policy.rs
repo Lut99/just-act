@@ -2,125 +2,76 @@
 //    by Lut99
 //
 //  Created:
-//    15 Apr 2024, 15:11:07
+//    29 May 2024, 11:17:34
 //  Last edited:
-//    21 May 2024, 15:10:55
+//    29 May 2024, 11:51:27
 //  Auto updated?
 //    Yes
 //
 //  Description:
-//!   Defines the interface between the JustAct framework as a whole and a
-//!   chosen policy language.
+//!   Defines JustAct's abstract notion of policy.
 //
 
 use std::error::Error;
 
+use crate::auxillary::{Authored, Identifiable};
+use crate::set::LocalSet;
+use crate::statements::Message;
+
 
 /***** LIBRARY *****/
-/// Defines how a Policy looks like.
+/// Defines the framework's notion of policy.
+///
+/// This is usually accompanied by [`Extractable`] in order to communicate that policy can be
+/// extracted from message sets.
 pub trait Policy {
-    /// The type of the object that explains why this policy is invalid.
-    type Explanation;
+    /// The type of error emitted when the policy is not valid (**semantically** incorrect).
+    type SemanticError: Error;
 
-
-    /// Checks if this policy is valid.
-    ///
-    /// This can differ wildy per policy language what this means.
+    /// Checks whether this policy is valid according to its own semantics.
     ///
     /// # Errors
-    /// If the policy is not valid, then this returns some kind of `Self::Explanation` explaining why it wasn't.
-    fn check_validity(&self) -> Result<(), Self::Explanation>;
+    /// If the policy is not valid, this function errors. The resulting
+    /// [`Self::SemanticError`](Policy::SemanticError) encodes some explanation of why the policy
+    /// wasn't valid.
+    fn assert_validity(&self) -> Result<(), Self::SemanticError>;
 }
 
-/// Defines an extension to [`Policy`] that marks it as being parsed from the payload of a [`MessageSet`](crate::wire::MessageSet).
+
+
+/// Defines the `extract()`-function for some [`Policy`].
 ///
-/// This trait mirrors the signature of [`TryFrom`] explicitly, except separately to avoid conflicts with builtin definitions for `TryFrom`.
+/// This is what is used to get some policy from a set of messages.
 ///
 /// # Generics
-/// - `I`: The type of [`MessageSet::PayloadIter`](crate::wire::MessageSet::PayloadIter)ator returned by the message set, and which can be used to construct this policy.
-///
-/// # Example
-/// Typically, one would implement this using a blanket implementation for all possible payload iterators in order to be generic over MessageSet implementations.
-///
-/// For example:
-/// ```rust
-/// use std::error::Error;
-/// use std::fmt::{Display, Formatter, Result as FResult};
-///
-/// use justact_core::{ExtractablePolicy, Message, Policy};
-///
-/// #[derive(Debug)]
-/// struct SimplePolicyError;
-/// impl Display for SimplePolicyError {
-///     fn fmt(&self, f: &mut Formatter) -> FResult {
-///         write!(f, "Policy was not either 'true' or 'false'")
-///     }
-/// }
-/// impl Error for SimplePolicyError {}
-///
-/// struct SimplePolicy {
-///     allowed: bool,
-/// };
-/// impl Policy for SimplePolicy {
-///     type Explanation = bool;
-///
-///     fn check_validity(&self) -> Result<(), Self::Explanation> {
-///         if self.allowed { Ok(()) } else { Err(self.allowed) }
-///     }
-/// }
-/// impl<I: Iterator<Item = M>, M: Message> ExtractablePolicy<I> for SimplePolicy {
-///     type ExtractError = SimplePolicyError;
-///
-///     fn extract_from(msgs: I) -> Result<Self, Self::ExtractError> {
-///         // Collect all the policy input
-///         let mut input = Vec::<u8>::new();
-///         for msg in msgs {
-///             input.extend(msg.payload());
-///         }
-///
-///         // Check if it what we expect
-///         if &input == b"true" {
-///             Ok(Self { allowed: true })
-///         } else if &input == b"false" {
-///             Ok(Self { allowed: false })
-///         } else {
-///             Err(SimplePolicyError)
-///         }
-///     }
-/// }
-/// ```
-pub trait ExtractablePolicy<M>: Policy {
-    /// The error that is raised if we failed to parse a policy from the MessageSet's payload.
-    ///
-    /// Note that this should only reflect _syntactic_ invalidity instead of _semantic_ invalidity.
-    /// For example, in the case of $Datalog^\neg$, a completely invalid datalog program would raise an error:
-    /// ```datalog
-    /// @&(@*&#$)       # Result::Err
-    /// ```
-    /// However, an invalid but syntactically correct policy would not:
-    /// ```datalog
-    /// error.          # Result::Ok
-    /// ```
-    type ExtractError: Error;
+/// - `M`: Some type of message that is contained within the given `set`.
+pub trait Extractor<M> {
+    /// The policy that is extracted.
+    type Policy<'s>: Policy
+    where
+        Self: 's;
+    /// The type of error emitted when the policy is **syntactically** incorrect.
+    type SyntaxError<'s>: Error
+    where
+        Self: 's;
 
 
-    /// Parses this Policy from a [`MessageSet`](crate::wire::MessageSet)'s payload.
-    ///
-    /// The payload is usually given as an iterator over byte slices ([`Iterator<Item = &[u8]>`]).
-    /// As a result, to be agnostic to the specific MessageSet implementation, it is recommended to implement this function as a blanket over all possible iterators.
-    ///
-    /// See the [main trait](ParsablePolicy) for an example.
+    /// Extracts this policy from a given [`Set`] over messages.
     ///
     /// # Arguments
-    /// - `msgs`: Some [`Iterator`] that yields the messages in some message set. These, together, should form a complete policy.
+    /// - `set`: The [`LocalSet`] to extract from.
     ///
     /// # Returns
-    /// A new instance of Self, representing the extracted policy.
+    /// A new instance of `Self::Policy` as encoded in the given `set`.
     ///
     /// # Errors
-    /// This function should fail if there was some _syntactic_ problem in the input that you want to notify to the user for debugging purposes.
-    /// All other cases (semantic invalidity, problems with parsing that do not need reporting) should simply result in an instance of self for which [`Policy::check_validity()`] fails.
-    fn extract_from(msgs: impl IntoIterator<Item = M>) -> Result<Self, Self::ExtractError>
+    /// This function should throw a [`Self::SyntaxError`](Extractor::SyntaxError) if and only if
+    /// the combined messages' payloads did not make a **syntactically** correct policy.
+    ///
+    /// Semantic correctness is conventionally modelled by returning a legal policy, but that fails
+    /// the [`Policy::assert_validity()`]-check.
+    fn extract<'v, R>(set: &LocalSet<M, R>) -> Result<Self::Policy<'v>, Self::SyntaxError<'v>>
     where
-        Self: Sized;
+        Self: Sized,
+        M: Authored + Identifiable + Message<'v>;
 }

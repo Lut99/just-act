@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 14:16:11
 //  Last edited:
-//    21 May 2024, 14:39:59
+//    23 May 2024, 16:58:44
 //  Auto updated?
 //    Yes
 //
@@ -20,7 +20,8 @@ use std::hash::Hash;
 /***** LIBRARY *****/
 /// Something is **uniquely** identifiable by something else.
 ///
-/// Note, however, that the namespace of uniqueness is only for things of the same type (e.g., across messages or across agents).
+/// Note, however, that the namespace of uniqueness is only for things of the same type (e.g.,
+/// across messages or across agents).
 pub trait Identifiable {
     /// The thing used as identifier. For convenience, we require it to [`Eq`] and [`Hash`].
     type Id: ?Sized + Eq + Hash;
@@ -51,6 +52,9 @@ impl<'a, T: Clone + Identifiable> Identifiable for Cow<'a, T> {
 
 
 /// Something is authored by some agent.
+///
+/// # Generics
+/// - `'v`: The lifetime of the [`SystemView`](crate::SystemView) where the message's data lives.
 pub trait Authored {
     /// The thing used as identifier of the agent. For convenience, we require it to [`Eq`] and [`Hash`].
     type AuthorId: ?Sized + Eq + Hash;

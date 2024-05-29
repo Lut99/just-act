@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 18:39:10
 //  Last edited:
-//    28 May 2024, 15:01:15
+//    29 May 2024, 14:04:42
 //  Auto updated?
 //    Yes
 //
@@ -18,8 +18,9 @@ use std::fmt::{Display, Formatter, Result as FResult};
 
 use ast_toolkit_punctuated::Punctuated;
 use justact_core::auxillary::{Authored, Identifiable};
-use justact_core::policy::{ExtractablePolicy, Policy};
-use justact_core::wire::Message;
+use justact_core::policy::{Extractor, Policy};
+use justact_core::set::LocalSet;
+use justact_core::statements::Message;
 
 use crate::ast::{Atom, Comma, Dot, Ident, Rule, Span, Spec};
 use crate::interpreter::interpretation::Interpretation;
@@ -56,47 +57,75 @@ impl<'f, 's> Error for ParseError<'f, 's> {
     }
 }
 
+/// Defines reasons why a policy wasn't valid.
+#[derive(Debug)]
+pub enum ValidityError<'f, 's> {
+    /// `error.` was derived.
+    ErrorHolds { int: Interpretation<'f, 's> },
+}
+impl<'f, 's> Display for ValidityError<'f, 's> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        use ValidityError::*;
+        match self {
+            ErrorHolds { int } => write!(f, "\"error\" holds in the interpretation\n\n{int}"),
+        }
+    }
+}
+impl<'f, 's> Error for ValidityError<'f, 's> {}
 
 
 
 
-/***** LIBRARY *****/
-// Implement `Policy` for Datalog
-impl<'f, 's> Policy for Spec<'f, 's> {
-    type Explanation = Interpretation<'f, 's>;
+
+/***** AUXILLARY *****/
+/// Represents the [`Extractor`] for Datalog's [`Spec`].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct SpecExtractor;
+
+
+
+
+
+/***** IMPLS *****/
+// Implements `Policy` for Datalog
+impl<'v> Policy for Spec<'v, 'v> {
+    type SemanticError = ValidityError<'v, 'v>;
 
     #[inline]
     #[track_caller]
-    fn check_validity(&self) -> Result<(), Self::Explanation> {
+    fn assert_validity(&self) -> Result<(), Self::SemanticError> {
         // Simply derive and see if `error` occurs.
-        let int: Interpretation<'f, 's> = match self.alternating_fixpoint() {
+        let int: Interpretation<'v, 'v> = match self.alternating_fixpoint() {
             Ok(int) => int,
             Err(err) => panic!("Failed to run derivation: {err}"),
         };
         let error_truth: Option<bool> = int
             .closed_world_truth(&Atom { ident: Ident { value: Span::new("<justact_policy::datalog::Policy::is_valid()>", "error") }, args: None });
-        if error_truth == Some(false) { Ok(()) } else { Err(int) }
+        if error_truth == Some(false) { Ok(()) } else { Err(ValidityError::ErrorHolds { int }) }
     }
 }
 
 
 
-// Implement `ExtractablePolicy` for Datalog
-impl<'s, M> ExtractablePolicy<&'s M> for Spec<'s, 's>
+// Implements `Extractor` for Datalog
+impl<M> Extractor<M> for SpecExtractor
 where
-    M: Authored<AuthorId = str> + Identifiable<Id = str> + Message,
+    M: Authored<AuthorId = str> + Identifiable<Id = str>,
 {
-    type ExtractError = ParseError<'s, 's>;
+    type Policy<'v> = Spec<'v, 'v> where Self: 'v;
+    type SyntaxError<'v> = ParseError<'v, 'v> where Self: 'v;
 
     #[inline]
-    fn extract_from(msgs: impl IntoIterator<Item = &'s M>) -> Result<Self, Self::ExtractError>
+    fn extract<'v, R>(set: &LocalSet<M, R>) -> Result<Self::Policy<'v>, Self::SyntaxError<'v>>
     where
         Self: Sized,
+        M: Authored + Identifiable + Message<'v>,
     {
         // Parse the policy in the messages one-by-one
         let mut add_error: bool = false;
         let mut spec = Spec { rules: vec![] };
-        for msg in msgs {
+        for msg in set {
             // Parse as UTF-8
             let snippet: &str = match std::str::from_utf8(msg.payload()) {
                 Ok(snippet) => snippet,
@@ -104,7 +133,7 @@ where
             };
 
             // Parse as Datalog
-            let msg_spec: Spec = match parse(msg.id(), snippet) {
+            let msg_spec: Spec = match parse(msg.id_v(), snippet) {
                 Ok(spec) => spec,
                 Err(err) => return Err(ParseError::Datalog { err }),
             };
@@ -114,10 +143,10 @@ where
                 'rules: for rule in &msg_spec.rules {
                     for cons in rule.consequences.values() {
                         // If a consequent begins with 'ctl-'...
-                        if cons.ident.value.value().starts_with("ctl-") {
+                        if cons.ident.value.value().starts_with("ctl-") || cons.ident.value.value().starts_with("ctl_") {
                             // ...and its first argument is _not_ the author of the message...
                             if let Some(arg) = cons.args.iter().flat_map(|a| a.args.values().next()).next() {
-                                if arg.ident().value.value() != msg.author() {
+                                if arg.ident().value.value() == msg.author() {
                                     continue;
                                 } else {
                                     // ...then we derive error

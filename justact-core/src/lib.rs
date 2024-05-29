@@ -4,7 +4,7 @@
 //  Created:
 //    13 Mar 2024, 15:36:47
 //  Last edited:
-//    17 May 2024, 14:37:01
+//    29 May 2024, 11:17:50
 //  Auto updated?
 //    Yes
 //
@@ -15,18 +15,11 @@
 
 
 // Declare submodules
-pub mod agent;
+pub mod agents;
+pub mod agreements;
 pub mod auxillary;
-pub mod global;
-pub mod local;
+pub mod iter;
 pub mod policy;
 pub mod set;
-pub mod wire;
-
-// Bring it into this namespace
-pub use agent::{Agent, AgentPoll, RationalAgent};
-pub use global::{Agreements, Times};
-pub use local::{Actions, Statements};
-pub use policy::{ExtractablePolicy, Policy};
-pub use set::{Map, Set};
-pub use wire::{Action, Agreement, Message, MessageSet};
+pub mod statements;
+pub mod times;
