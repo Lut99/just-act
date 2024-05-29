@@ -4,7 +4,7 @@
 //  Created:
 //    23 May 2024, 17:36:27
 //  Last edited:
-//    27 May 2024, 17:48:58
+//    29 May 2024, 13:40:28
 //  Auto updated?
 //    Yes
 //
@@ -98,6 +98,23 @@ impl GlobalTimesDictator {
 
         // OK, done
         res
+    }
+}
+impl JATimes for GlobalTimesDictator {
+    type Error = TimesDictatorError;
+
+    #[inline]
+    fn current(&self) -> Timestamp { self.current }
+
+    #[inline]
+    fn advance_to(&mut self, timestamp: Timestamp) -> Result<(), Self::Error> {
+        // Do not advance if we're not the dictator
+        if self.dictator == "<system>" {
+            self.current = timestamp;
+            Ok(())
+        } else {
+            Err(TimesDictatorError::NotTheDictator { agent: "<system>".into(), dictator: self.dictator.clone() })
+        }
     }
 }
 

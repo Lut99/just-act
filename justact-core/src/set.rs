@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 10:14:23
 //  Last edited:
-//    23 May 2024, 17:03:43
+//    29 May 2024, 13:35:03
 //  Auto updated?
 //    Yes
 //
@@ -18,8 +18,9 @@ use std::hash::{BuildHasher, Hash, RandomState};
 
 use nohash_hasher::BuildNoHashHasher;
 
-use crate::auxillary::Identifiable;
-use crate::statements::Extractable;
+use crate::auxillary::{Authored, Identifiable};
+use crate::policy::Extractor;
+use crate::statements::Message;
 
 
 /***** LIBRARY *****/
@@ -195,6 +196,24 @@ impl<V: Identifiable, S: BuildHasher> LocalSet<V, S> {
         self.data.insert(hash, elem)
     }
 
+    /// Adds a whole bunch of elements to the set.
+    ///
+    /// # Arguments
+    /// - `elems`: Something producing the elements to add.
+    #[inline]
+    pub fn extend(&mut self, elems: impl IntoIterator<Item = V>) {
+        // Get the size hint
+        let elems = elems.into_iter();
+        let size_hint: (usize, Option<usize>) = elems.size_hint();
+        let size_hint: usize = size_hint.1.unwrap_or(size_hint.0);
+
+        // Add the elements to a vector with enough space
+        self.reserve(size_hint);
+        for elem in elems {
+            self.add(elem);
+        }
+    }
+
     /// Removes an element from the set.
     ///
     /// # Arguments
@@ -225,7 +244,10 @@ impl<V: Identifiable, S: BuildHasher> LocalSet<V, S> {
     }
 }
 // JustAct functions
-impl<V, S> LocalSet<V, S> {
+impl<'v, V, S> LocalSet<V, S>
+where
+    V: 'v + Authored + Identifiable + Message<'v>,
+{
     /// Extracts the policy contained within this set if it's a set over messages.
     ///
     /// # Generics arguments
@@ -240,11 +262,11 @@ impl<V, S> LocalSet<V, S> {
     /// Note that **semantic incorrectness** is conventionally not treated as this kind of error,
     /// but instead returned as a valid but failing policy.
     #[inline]
-    pub fn extract<'v, P>(&self) -> Result<P, P::SyntaxError>
+    pub fn extract<'s, E>(&'s self) -> Result<E::Policy<'v>, E::SyntaxError<'v>>
     where
-        P: Extractable<'v, V>,
+        E: Extractor<V>,
     {
-        P::extract_from(self)
+        E::extract(self)
     }
 }
 // Iterator implementations

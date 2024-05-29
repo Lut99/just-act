@@ -4,7 +4,7 @@
 //  Created:
 //    23 May 2024, 13:54:33
 //  Last edited:
-//    27 May 2024, 18:05:34
+//    29 May 2024, 13:35:39
 //  Auto updated?
 //    Yes
 //
@@ -180,7 +180,7 @@ impl GlobalStatements {
     /// - `func`: Some function that is executed for this scope.
     ///
     /// # Returns
-    /// A new [`Statements`] that implements [`justact_core::agreements::Agreements`].
+    /// The result of the given closure `func`.
     #[inline]
     #[track_caller]
     pub fn scope<R>(&mut self, agent: &str, func: impl FnOnce(&mut Statements) -> R) -> R {
@@ -223,6 +223,65 @@ impl GlobalStatements {
 
         // OK, done
         res
+    }
+}
+impl JAStatements for GlobalStatements {
+    type Message = Message;
+    type Target = Target;
+    type Status = ();
+
+
+    #[inline]
+    #[track_caller]
+    fn state(&mut self, target: Self::Target, msg: Self::Message) -> Self::Status {
+        // Simply add directly
+        match target {
+            Target::All => {
+                for msgs in self.stmts.values_mut() {
+                    msgs.add(msg.clone());
+                }
+            },
+            Target::Agent(agent) => {
+                self.stmts.get_mut(&agent).map(|msgs| msgs.add(msg)).unwrap_or_else(|| panic!("Unknown agent '{agent}'"));
+            },
+        }
+    }
+
+    #[inline]
+    fn stated<'s>(&'s self) -> LocalSet<&'s Self::Message> {
+        // Build a set spanning all
+        let mut set: LocalSet<&'s Message> = LocalSet::with_capacity(self.stmts.values().map(LocalSet::len).sum());
+        for msgs in self.stmts.values() {
+            set.extend(msgs);
+        }
+        set
+    }
+
+
+
+    #[inline]
+    fn enact<'s>(&'s mut self, target: Self::Target, act: Action<Self::Message>) -> Self::Status {
+        // Simply push to the queue
+        match target {
+            Target::All => {
+                for acts in self.encts.values_mut() {
+                    acts.add(act.clone());
+                }
+            },
+            Target::Agent(agent) => {
+                self.encts.get_mut(&agent).map(|acts| acts.add(act)).unwrap_or_else(|| panic!("Unknown agent '{agent}'"));
+            },
+        }
+    }
+
+    #[inline]
+    fn enacted<'s>(&'s self) -> LocalSet<&'s Action<Self::Message>> {
+        // Build a set spanning all
+        let mut set: LocalSet<&'s Action<Message>> = LocalSet::with_capacity(self.encts.values().map(LocalSet::len).sum());
+        for acts in self.encts.values() {
+            set.extend(acts);
+        }
+        set
     }
 }
 

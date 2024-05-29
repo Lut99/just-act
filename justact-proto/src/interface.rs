@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 10:58:56
 //  Last edited:
-//    27 May 2024, 18:00:39
+//    29 May 2024, 13:43:26
 //  Auto updated?
 //    Yes
 //
@@ -190,7 +190,7 @@ impl Interface {
     /// - `id`: The identifier of the agent who is logging.
     /// - `act`: Some [`Action`] to emit.
     pub fn log_enact(&self, id: &str, act: &Action<Message>) {
-        let just: LocalSet<Message> = act.justification();
+        let just: LocalSet<&Message> = act.justification();
 
         // Retrieve the message IDs for the justication
         let mut just_ids: String = String::new();
@@ -333,7 +333,7 @@ impl Interface {
         );
 
         // Retrieve the message IDs for the justication
-        let just: LocalSet<Message> = act.justification();
+        let just: LocalSet<&Message> = act.justification();
         let mut just_ids: String = String::new();
         for msg in just.iter() {
             if !just_ids.is_empty() {
@@ -358,9 +358,9 @@ impl Interface {
         let sexpl: &str = sexpl.trim_end();
 
         // Write the sets
-        println!(" ├> {}", act.basis().display("Basis", " |  "));
-        println!(" ├> {}", just.display("Justification", " |  "));
-        println!(" ├> {}", act.enacts().display("Enacts", "    "));
+        print!(" ├> {}", act.basis().display("Basis", " |  "));
+        print!(" ├> {}", just.display("Justification", " |  "));
+        print!(" ├> {}", act.enacts().display("Enacts", " |  "));
         println!(" └> {sexpl}");
         println!();
     }

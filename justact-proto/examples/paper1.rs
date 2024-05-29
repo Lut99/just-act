@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:00:44
 //  Last edited:
-//    27 May 2024, 18:04:49
+//    29 May 2024, 13:41:57
 //  Auto updated?
 //    Yes
 //
@@ -21,7 +21,7 @@ mod paper;
 // Imports
 use clap::Parser;
 use console::Style;
-use datalog::ast::Spec;
+use datalog::justact::SpecExtractor;
 use error_trace::trace;
 use humanlog::{DebugMode, HumanLogger};
 use justact_prototype::Simulation;
@@ -66,7 +66,7 @@ fn main() {
 
     // Run it
     println!();
-    if let Err(err) = sim.run::<Spec>() {
+    if let Err(err) = sim.run::<SpecExtractor>() {
         error!("{}", trace!(("Failed to run simulation"), err));
         std::process::exit(1);
     };

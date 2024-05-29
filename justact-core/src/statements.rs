@@ -4,7 +4,7 @@
 //  Created:
 //    21 May 2024, 16:48:17
 //  Last edited:
-//    28 May 2024, 13:59:41
+//    29 May 2024, 13:55:26
 //  Auto updated?
 //    Yes
 //
@@ -12,10 +12,9 @@
 //!   Implements the globally synchronized set of stated messages.
 //
 
-use std::error::Error;
-
 use crate::agreements::{Agreement, Agreements};
 use crate::auxillary::{Authored, Identifiable};
+use crate::policy::{Extractor, Policy};
 use crate::set::LocalSet;
 use crate::times::Timestamp;
 
@@ -46,57 +45,6 @@ pub enum AuditExplanation<ID, SYN, SEM> {
 
 
 /***** LIBRARY *****/
-/// Defines the framework's notion of policy.
-///
-/// This is usually accompanied by [`Extractable`] in order to communicate that policy can be
-/// extracted from message sets.
-///
-/// # Generics
-/// - `'v`: The lifetime of the [`SystemView`](crate::SystemView) where the policy's data lives.
-pub trait Policy<'v> {
-    /// The type of error emitted when the policy is not valid (**semantically** incorrect).
-    type SemanticError: Error;
-
-    /// Checks whether this policy is valid according to its own semantics.
-    ///
-    /// # Errors
-    /// If the policy is not valid, this function errors. The resulting
-    /// [`Self::SemanticError`](Policy::SemanticError) encodes some explanation of why the policy
-    /// wasn't valid.
-    fn assert_validity(&self) -> Result<(), Self::SemanticError>;
-}
-
-/// Extends [`Policy`] with the power to be extracted from [`MessageSet`]s.
-///
-/// # Generics
-/// - `'v`: The lifetime of the [`SystemView`](crate::SystemView) where the set's (and therefore
-///   resulting policy's) data lives.
-/// - `M`: The type of messages that we can extract from.
-pub trait Extractable<'v, M> {
-    /// The type of error emitted when the policy is **syntactically** incorrect.
-    type SyntaxError: Error;
-
-    /// Extracts this policy from a given [`Set`] over messages.
-    ///
-    /// # Arguments
-    /// - `set`: The [`Set`] to extract from.
-    ///
-    /// # Returns
-    /// A new instance of Self which represents the parsed policy.
-    ///
-    /// # Errors
-    /// This function should throw a [`Self::SyntaxError`](Extractable::SyntaxError) if and only if
-    /// the combined messages' payloads did not make a **syntactically** correct policy.
-    ///
-    /// Semantic correctness is conventionally modelled by returning a legal policy, but that fails
-    /// the [`Policy::check_validity()`]-check.
-    fn extract_from<R>(set: &LocalSet<M, R>) -> Result<Self, Self::SyntaxError>
-    where
-        Self: Sized;
-}
-
-
-
 /// Implements a representation of messages in the framework.
 ///
 /// There's a lot of leeway for implementation w.r.t. identifying authors and
@@ -180,9 +128,9 @@ impl<M> Action<M> {
     //     AgreementFormatter { msg: self, prefix, indent }
     // }
 }
-impl<'v, M> Action<M>
+impl<'a, M> Action<M>
 where
-    &'v M: 'v + Message<'v>,
+    &'a M: 'a + Message<'a>,
 {
     /// Returns the justification of the action.
     ///
@@ -190,9 +138,9 @@ where
     ///
     /// # Returns
     /// A [`Set`] of messages that form the entire justification, including its basis and effects.
-    pub fn justification(&self) -> LocalSet<&M> {
+    pub fn justification(&'a self) -> LocalSet<&'a M> {
         // Get the justification first
-        let mut just: LocalSet<&M> = self.just.iter().collect();
+        let mut just: LocalSet<&'a M> = self.just.iter().collect();
         // Include the agreement
         just.add(&self.basis.msg);
         // Include the enactment
@@ -201,10 +149,10 @@ where
         just
     }
 }
-impl<'v, M> Action<M>
+impl<'a, M> Action<M>
 where
     M: Identifiable,
-    &'v M: 'v + Message<'v>,
+    &'a M: 'a + Message<'a>,
 {
     /// Audits this action, checking whether it satisfies the well-behaved properties specified in
     /// the paper.
@@ -222,22 +170,22 @@ where
     /// # Errors
     /// This function errors if one of the properties does not hold. The returned
     /// [`AuditExplanation`] encodes specifically which one did not.
-    pub fn audit<P, S, A>(
-        &self,
+    pub fn audit<'v: 'a, E, S, A>(
+        &'a self,
         stmts: &'v S,
-        agrmnts: &'v A,
-    ) -> Result<(), AuditExplanation<&'v <&'v M as Identifiable>::Id, P::SyntaxError, P::SemanticError>>
+        agrs: &'v A,
+    ) -> Result<(), AuditExplanation<&'a <&'a M as Identifiable>::Id, E::SyntaxError<'a>, <E::Policy<'a> as Policy>::SemanticError>>
     where
-        P: Extractable<'v, &'v M> + Policy<'v>,
+        E: Extractor<&'a M>,
         S: Statements<Message = M>,
         A: Agreements<Message = M>,
     {
-        let just: LocalSet<&M> = self.justification();
+        let just: LocalSet<&'a M> = self.justification();
 
         /* Property 3 */
         // Checks if the policy is stated correctly.
         for stmt in &just {
-            if !stmts.stated().contains(stmt.id()) {
+            if !agrs.agreed().contains((*stmt).id()) && !stmts.stated().contains(stmt.id()) {
                 return Err(AuditExplanation::Stated { stmt: stmt.id_v() });
             }
         }
@@ -252,7 +200,7 @@ where
 
         /* Property 5 */
         // Attempt to extract the policy
-        let policy: P = match just.extract::<P>() {
+        let policy: E::Policy<'a> = match just.extract::<E>() {
             Ok(policy) => policy,
             Err(err) => return Err(AuditExplanation::Extract { err }),
         };
@@ -266,7 +214,7 @@ where
 
         /* Property 6 */
         // Assert that the basis is an agreement
-        if !agrmnts.agreed().contains(self.basis.id()) {
+        if !agrs.agreed().contains(self.basis.id()) {
             return Err(AuditExplanation::Based { stmt: (&self.basis.msg).id_v() });
         }
 

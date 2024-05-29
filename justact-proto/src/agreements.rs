@@ -4,7 +4,7 @@
 //  Created:
 //    23 May 2024, 17:42:56
 //  Last edited:
-//    27 May 2024, 17:49:35
+//    29 May 2024, 13:40:32
 //  Auto updated?
 //    Yes
 //
@@ -106,6 +106,24 @@ impl GlobalAgreementsDictator {
         // OK, done
         res
     }
+}
+impl JAAgreements for GlobalAgreementsDictator {
+    type Message = Message;
+    type Error = AgreementsDictatorError;
+
+    #[inline]
+    fn agree(&mut self, agr: Agreement<Self::Message>) -> Result<(), Self::Error> {
+        // Do not advance if we're not the dictator
+        if self.dictator == "<system>" {
+            self.agrs.add(agr);
+            Ok(())
+        } else {
+            Err(AgreementsDictatorError::NotTheDictator { id: agr.id().into(), agent: "<system>".into(), dictator: self.dictator.clone() })
+        }
+    }
+
+    #[inline]
+    fn agreed<'s>(&'s self) -> LocalSet<&'s Agreement<Self::Message>> { self.agrs.iter().collect() }
 }
 
 /// Provides agents with a global view on the agreed upon agreements.

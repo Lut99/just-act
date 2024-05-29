@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 18:39:10
 //  Last edited:
-//    23 May 2024, 17:04:52
+//    29 May 2024, 13:57:12
 //  Auto updated?
 //    Yes
 //
@@ -18,8 +18,9 @@ use std::fmt::{Display, Formatter, Result as FResult};
 
 use ast_toolkit_punctuated::Punctuated;
 use justact_core::auxillary::{Authored, Identifiable};
+use justact_core::policy::{Extractor, Policy};
 use justact_core::set::LocalSet;
-use justact_core::statements::{Extractable, Message, Policy};
+use justact_core::statements::Message;
 
 use crate::ast::{Atom, Comma, Dot, Ident, Rule, Span, Spec};
 use crate::interpreter::interpretation::Interpretation;
@@ -77,18 +78,49 @@ impl<'f, 's> Error for ValidityError<'f, 's> {}
 
 
 
-/***** LIBRARY *****/
-// Implements `Extractable` for Datalog
-impl<'v, M> Extractable<'v, M> for Spec<'v, 'v>
-where
-    M: Authored<AuthorId = str> + Identifiable<Id = str> + Message<'v>,
-{
-    type SyntaxError = ParseError<'v, 'v>;
+/***** AUXILLARY *****/
+/// Represents the [`Extractor`] for Datalog's [`Spec`].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct SpecExtractor;
+
+
+
+
+
+/***** IMPLS *****/
+// Implements `Policy` for Datalog
+impl<'v> Policy for Spec<'v, 'v> {
+    type SemanticError = ValidityError<'v, 'v>;
 
     #[inline]
-    fn extract_from<R>(set: &LocalSet<M, R>) -> Result<Self, Self::SyntaxError>
+    #[track_caller]
+    fn assert_validity(&self) -> Result<(), Self::SemanticError> {
+        // Simply derive and see if `error` occurs.
+        let int: Interpretation<'v, 'v> = match self.alternating_fixpoint() {
+            Ok(int) => int,
+            Err(err) => panic!("Failed to run derivation: {err}"),
+        };
+        let error_truth: Option<bool> = int
+            .closed_world_truth(&Atom { ident: Ident { value: Span::new("<justact_policy::datalog::Policy::is_valid()>", "error") }, args: None });
+        if error_truth == Some(false) { Ok(()) } else { Err(ValidityError::ErrorHolds { int }) }
+    }
+}
+
+
+
+// Implements `Extractor` for Datalog
+impl<M> Extractor<M> for SpecExtractor
+where
+    M: Authored<AuthorId = str> + Identifiable<Id = str>,
+{
+    type Policy<'v> = Spec<'v, 'v> where Self: 'v;
+    type SyntaxError<'v> = ParseError<'v, 'v> where Self: 'v;
+
+    #[inline]
+    fn extract<'v, R>(set: &LocalSet<M, R>) -> Result<Self::Policy<'v>, Self::SyntaxError<'v>>
     where
         Self: Sized,
+        M: Authored + Identifiable + Message<'v>,
     {
         // Parse the policy in the messages one-by-one
         let mut add_error: bool = false;
@@ -111,10 +143,10 @@ where
                 'rules: for rule in &msg_spec.rules {
                     for cons in rule.consequences.values() {
                         // If a consequent begins with 'ctl-'...
-                        if cons.ident.value.value().starts_with("ctl-") {
+                        if cons.ident.value.value().starts_with("ctl-") || cons.ident.value.value().starts_with("ctl_") {
                             // ...and its first argument is _not_ the author of the message...
                             if let Some(arg) = cons.args.iter().flat_map(|a| a.args.values().next()).next() {
-                                if arg.ident().value.value() != msg.author() {
+                                if arg.ident().value.value() == msg.author() {
                                     continue;
                                 } else {
                                     // ...then we derive error
@@ -147,25 +179,5 @@ where
 
         // OK, return the spec
         Ok(spec)
-    }
-}
-
-
-
-// Implements `Policy` for Datalog
-impl<'v> Policy<'v> for Spec<'v, 'v> {
-    type SemanticError = ValidityError<'v, 'v>;
-
-    #[inline]
-    #[track_caller]
-    fn assert_validity(&self) -> Result<(), Self::SemanticError> {
-        // Simply derive and see if `error` occurs.
-        let int: Interpretation<'v, 'v> = match self.alternating_fixpoint() {
-            Ok(int) => int,
-            Err(err) => panic!("Failed to run derivation: {err}"),
-        };
-        let error_truth: Option<bool> = int
-            .closed_world_truth(&Atom { ident: Ident { value: Span::new("<justact_policy::datalog::Policy::is_valid()>", "error") }, args: None });
-        if error_truth == Some(false) { Ok(()) } else { Err(ValidityError::ErrorHolds { int }) }
     }
 }

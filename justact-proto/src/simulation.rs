@@ -4,7 +4,7 @@
 //  Created:
 //    16 Apr 2024, 11:06:51
 //  Last edited:
-//    27 May 2024, 18:07:14
+//    29 May 2024, 13:42:38
 //  Auto updated?
 //    Yes
 //
@@ -23,8 +23,8 @@ use std::rc::Rc;
 use console::Style;
 use justact_core::agents::{AgentPoll, RationalAgent};
 use justact_core::auxillary::Identifiable;
+use justact_core::policy::Extractor;
 use justact_core::set::LocalSet;
-use justact_core::statements::Extractable;
 use log::{debug, info};
 use stackvec::StackVec;
 
@@ -74,7 +74,7 @@ pub struct Simulation<A> {
     /// The (alive!) agents in the simulation.
     agents:    Vec<A>,
     /// A set of action (identifiers) of the ones we've already audited
-    audited:   HashSet<&'static str>,
+    audited:   HashSet<String>,
     /// An interface we use to log whatever happens in pretty ways.
     interface: Rc<RefCell<Interface>>,
 
@@ -250,20 +250,24 @@ where
     /// # Errors
     /// This function errors if any of the agents fails to communicate with the end-user or other agents.
     #[inline]
-    pub fn run<'s, P>(&'s mut self) -> Result<(), Error<<A as RationalAgent>::Error>>
+    pub fn run<E>(&mut self) -> Result<(), Error<<A as RationalAgent>::Error>>
     where
-        P: Extractable<'s, &'s Message>,
+        E: for<'e> Extractor<&'e Message>,
     {
         loop {
             // Run the next iteration
             let reiterate: bool = self.poll()?;
 
             // Run an audit
-            debug!("Running audit on {} actions...", self.stmts.encts.values().map(LocalSet::len).sum());
+            debug!("Running audit on {} actions...", self.stmts.encts.values().map(LocalSet::len).sum::<usize>());
             for enct in self.stmts.encts.values().flat_map(LocalSet::iter) {
-                if let Err(expl) = enct.audit() {
-                    // Write the problem
-                    self.interface.borrow().error_audit("<system>", enct, expl);
+                // Audit if we haven't yet
+                if !self.audited.contains(enct.id()) {
+                    if let Err(expl) = enct.audit::<E, GlobalStatements, GlobalAgreementsDictator>(&self.stmts, &self.agrs) {
+                        // Write the problem
+                        self.interface.borrow().error_audit("<system>", enct, expl);
+                    }
+                    self.audited.insert(enct.id().into());
                 }
             }
 
