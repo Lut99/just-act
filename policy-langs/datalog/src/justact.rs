@@ -4,7 +4,7 @@
 //  Created:
 //    13 May 2024, 18:39:10
 //  Last edited:
-//    29 May 2024, 14:04:42
+//    04 Jun 2024, 11:28:56
 //  Auto updated?
 //    Yes
 //
@@ -149,12 +149,12 @@ where
                                 if arg.ident().value.value() == msg.author() {
                                     continue;
                                 } else {
-                                    // ...then we derive error
+                                    // ...then we derive error (it is not the author)
                                     add_error = true;
                                     break 'rules;
                                 }
                             } else {
-                                // ...then we derive error
+                                // ...then we derive error (there are no arguments)
                                 add_error = true;
                                 break 'rules;
                             }
