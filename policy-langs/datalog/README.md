@@ -47,7 +47,7 @@ foo :- not foo.        // 'foo' will become 'unknown'
 ## Syntax
 The following represents the concrete syntax of $Datalog^\neg$ as a railroad diagram.
 
-![The railroad diagram for the $Datalog^\neg$ language.](./datalog/examples/railroad.svg)
+![The railroad diagram for the $Datalog^\neg$ language.](./examples/railroad.svg)
 
 
 ## JustAct
@@ -63,4 +63,4 @@ This crate supports the following features:
 - `justact`: Adds implementations for `justact_core::Policy` and `justact_core::ExtractablePolicy`. Implies `interpreter` and `parser`.
 - `log`: Enables `log`-traces during the derivation process for debugging purposes.
 - `parser`: Enables a parser that can parse $Datalog^\neg$-programs from source text.
-- `railroad`: Enables implementations of `ToNode` and associated traits from the [`ast-toolkit-railroad`]() for AST nodes. This allows railroad diagrams to be generated (see the [`railroad.rs`](./examples/railroad.rs)).
+- `railroad`: Enables implementations of `ToNode` and associated traits from the [`ast-toolkit-railroad`](https://github.com/Lut99/ast-toolkit-rs) for AST nodes. This allows railroad diagrams to be generated (see the [`railroad.rs`](./examples/railroad.rs)).

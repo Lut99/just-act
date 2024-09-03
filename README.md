@@ -48,7 +48,7 @@ Contributions to this codebase are welcome. Feel free to [raise an issue](https:
 
 
 ## License
-This project is licensed under TODO. See [LICENSE](./LICENSE) for more details.
+This project is licensed under the Apache 2.0 license. See [LICENSE](./LICENSE) for more details.
 
 
 ## References
