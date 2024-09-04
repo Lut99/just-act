@@ -1,0 +1,14 @@
+[package]
+name = "acting"
+version = "0.1.0"
+edition = "2021"
+repository.workspace = true
+authors = ["Tim Müller"]
+description = "A simple event -> action language for programming JustAct agents."
+
+
+[dependencies]
+
+
+[features]
+default = []
