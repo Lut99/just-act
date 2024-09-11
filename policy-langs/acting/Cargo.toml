@@ -12,8 +12,11 @@ regex = "1.10"
 
 ast-toolkit-punctuated = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack" }
 ast-toolkit-span = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack" }
+ast-toolkit-snack = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack", features = ["c", "derive"], optional = true }
 ast-toolkit-tokens = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack" }
 
 
 [features]
 default = []
+
+parser = ["ast-toolkit-snack", "ast-toolkit-tokens/snack"]

@@ -4,7 +4,7 @@
 //  Created:
 //    09 Sep 2024, 14:22:15
 //  Last edited:
-//    11 Sep 2024, 14:51:38
+//    11 Sep 2024, 15:11:36
 //  Auto updated?
 //    Yes
 //
@@ -13,7 +13,7 @@
 //
 
 use ast_toolkit_punctuated::Punctuated;
-use ast_toolkit_span::Span;
+use ast_toolkit_span::{Span, SpannableEq};
 use ast_toolkit_tokens::{utf8_delimiter, utf8_token};
 use regex::Regex;
 
@@ -42,7 +42,7 @@ pub struct Stmt<F, S> {
 }
 
 /// Defines the (optional) label preceding rules.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct StmtLabel<F, S> {
     /// The string value of the label.
     pub ident: LitStr<F, S>,
@@ -105,7 +105,7 @@ pub struct TriggerTick<F, S> {
 }
 
 /// Something that is triggered when a message is sent.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct TriggerMessage<F, S> {
     /// The `message`-keyword.
     pub message_token: Message<F, S>,
@@ -114,7 +114,7 @@ pub struct TriggerMessage<F, S> {
 }
 
 /// Something that is triggered when a message by a particular author is sent.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct TriggerMessageBy<F, S> {
     /// The `message`-keyword.
     pub message_token: Message<F, S>,
@@ -181,7 +181,7 @@ pub struct ActionTick<F, S> {
 }
 
 /// An action that emits a new agreement.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ActionAgree<F, S> {
     /// The `agree`-keyword itself.
     pub agree_token: Agree<F, S>,
@@ -194,7 +194,7 @@ pub struct ActionAgree<F, S> {
 }
 
 /// An action that states a new message.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ActionState<F, S> {
     /// The `state`-keyword itself.
     pub state_token: State<F, S>,
@@ -220,7 +220,7 @@ pub struct ActionEnact<F, S> {
 }
 
 /// Defines who to state a message to.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ActionTo<F, S> {
     /// The `to`-token.
     pub to_token: To<F, S>,
@@ -234,7 +234,7 @@ pub struct ActionTo<F, S> {
 
 /***** CONTENTS *****/
 /// Represents the toplevel node for message contents.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum Contents<F, S> {
     /// It's an external file.
     External(ContentsExternal<F, S>),
@@ -243,7 +243,7 @@ pub enum Contents<F, S> {
 }
 
 /// Represents an externally referenced file.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ContentsExternal<F, S> {
     /// The `#file`-token.
     pub file_token: File<F, S>,
@@ -355,7 +355,7 @@ pub enum Lit<F, S> {
 }
 
 /// Defines literals that serve as message IDs.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum MessageId<F, S> {
     /// It's an integer literal.
     Int(LitInt<F, S>),
@@ -364,7 +364,7 @@ pub enum MessageId<F, S> {
 }
 
 /// Defines literals that serve as rule IDs.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum RuleId<F, S> {
     /// It's an integer literal.
     Int(LitInt<F, S>),
@@ -382,6 +382,11 @@ pub struct LitBool<F, S> {
     /// The span where this literal may be found.
     pub span:  Span<F, S>,
 }
+impl<F, S> Eq for LitBool<F, S> {}
+impl<F, S> PartialEq for LitBool<F, S> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool { self.value == other.value }
+}
 
 /// Defines an integer literal.
 #[derive(Clone, Copy, Debug)]
@@ -390,6 +395,11 @@ pub struct LitInt<F, S> {
     pub value: i64,
     /// The span where this literal may be found.
     pub span:  Span<F, S>,
+}
+impl<F, S> Eq for LitInt<F, S> {}
+impl<F, S> PartialEq for LitInt<F, S> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool { self.value == other.value }
 }
 
 /// Defines a language literal.
@@ -400,12 +410,24 @@ pub struct LitLang<F, S> {
     /// The delimiting `<>`-tokens.
     pub triangle_tokens: Triangles<F, S>,
 }
+impl<F, S: SpannableEq> Eq for LitLang<F, S> {}
+impl<F, S: SpannableEq> PartialEq for LitLang<F, S> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool { self.value == other.value }
+}
 
 /// Defines the `now`-literal.
 #[derive(Clone, Copy, Debug)]
 pub struct LitNow<F, S> {
     /// The token itself.
     pub now_token: Now<F, S>,
+}
+impl<F, S> Eq for LitNow<F, S> {}
+impl<F, S> PartialEq for LitNow<F, S> {
+    #[inline]
+    fn eq(&self, _other: &Self) -> bool { true }
+    #[inline]
+    fn ne(&self, _other: &Self) -> bool { false }
 }
 
 /// Defines a regex literal.
@@ -418,14 +440,24 @@ pub struct LitRegex<F, S> {
     /// The quotes.
     pub quote_tokens: RQuotes<F, S>,
 }
+impl<F, S> Eq for LitRegex<F, S> {}
+impl<F, S> PartialEq for LitRegex<F, S> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool { self.value.as_str() == other.value.as_str() }
+}
 
 /// Defines a string literal.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct LitStr<F, S> {
     /// The value of the string literal.
-    pub value: Span<F, S>,
+    pub value: String,
     /// The quotes.
     pub quote_tokens: Quotes<F, S>,
+}
+impl<F, S> Eq for LitStr<F, S> {}
+impl<F, S> PartialEq for LitStr<F, S> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool { self.value == other.value }
 }
 
 
