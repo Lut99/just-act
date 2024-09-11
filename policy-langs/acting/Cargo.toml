@@ -1,0 +1,19 @@
+[package]
+name = "acting"
+version = "0.1.0"
+edition = "2021"
+repository.workspace = true
+authors = ["Tim Müller"]
+description = "A simple event -> action language for programming JustAct agents."
+
+
+[dependencies]
+regex = "1.10"
+
+ast-toolkit-punctuated = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack" }
+ast-toolkit-span = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack" }
+ast-toolkit-tokens = { git = "https://github.com/Lut99/ast-toolkit-rs", branch = "snack" }
+
+
+[features]
+default = []

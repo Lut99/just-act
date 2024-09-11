@@ -5,6 +5,7 @@ members = [
     "justact-proto",
 
     # Policy languages
+    "policy-langs/acting",
     "policy-langs/datalog",
 
     # The main framework library
