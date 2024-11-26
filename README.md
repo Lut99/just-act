@@ -1,4 +1,7 @@
 # JustAct: Actions Universally Justified by Partial Dynamic Policies
+
+> NOTE: This repository has been archived in favour of [justact-rs](https://github.com/Lut99/justact-rs) and [justact-prototype-rs](https://github.com/Lut99/justact-prototype-rs).
+
 Prototype implementation of the JustAct framework[1].
 
 Specifically, implements the ontology as described in the paper ([`justact-core`](./justact-core/)), some policy languages that can be plugged-in ([`justact-policy`](./justact-policy/)) and then a demo environment that runs scenario's ([`justact-demo`](./justact-demo/)).
